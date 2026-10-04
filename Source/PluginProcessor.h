@@ -20,7 +20,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "PRISMVST"; }
+    const juce::String getName() const override { return "PRISM Alpha 001"; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -38,7 +38,9 @@ public:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     juce::AudioProcessorValueTreeState apvts;
 
+    float getInputPeakDb() const noexcept { return inputPeakDb.load(); }
     float getPeakDb() const noexcept { return peakDb.load(); }
+    float getGainReductionDb() const noexcept { return gainReductionDb.load(); }
     float getLufsShort() const noexcept { return lufsShort.load(); }
     float getLufsIntegrated() const noexcept { return lufsIntegrated.load(); }
     void copySpectrum(std::array<float, spectrumBins>& destination) const noexcept;
@@ -49,6 +51,7 @@ private:
         std::array<juce::dsp::IIR::Filter<float>, 2> eq;
         std::array<juce::dsp::IIR::Filter<float>, 2> detector;
         float envelope = 0.0f;
+        float rmsState = 0.0f;
         float smoothedGainDb = 0.0f;
     };
 
@@ -70,7 +73,9 @@ private:
     double integratedEnergy = 0.0;
     uint64_t integratedSamples = 0;
 
+    std::atomic<float> inputPeakDb { -144.0f };
     std::atomic<float> peakDb { -144.0f };
+    std::atomic<float> gainReductionDb { 0.0f };
     std::atomic<float> lufsShort { -144.0f };
     std::atomic<float> lufsIntegrated { -144.0f };
 
