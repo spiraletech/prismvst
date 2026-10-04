@@ -4,12 +4,12 @@
 
 namespace
 {
-constexpr std::array<const char*, 6> kControlNames {
-    "CENTER", "TRIM", "WIDTH", "DEPTH", "ATTACK", "RELEASE"
+constexpr std::array<const char*, 7> kControlNames {
+    "CENTER", "TRIM", "WIDTH", "DEPTH", "SLOPE", "ATTACK", "RELEASE"
 };
 
 constexpr std::array<const char*, PRISMVSTAudioProcessor::numEqBands> kDomainNames {
-    "SUB", "KICK", "LOW", "MID", "HIGH"
+    "1", "2", "3", "4", "5", "6"
 };
 
 constexpr std::array<float, 9> kSolfeggio {
@@ -154,6 +154,38 @@ SpectrumAuraDisplay::SpectrumAuraDisplay(PRISMVSTAudioProcessor& p)
 float SpectrumAuraDisplay::parameter(const juce::String& parameterId) const
 {
     return readParameter(processor.apvts, parameterId);
+}
+
+void SpectrumAuraDisplay::setParameter(const juce::String& parameterId, float value)
+{
+    if (auto* p = processor.apvts.getParameter(parameterId))
+        p->setValueNotifyingHost(p->convertTo0to1(value));
+}
+
+juce::Point<float> SpectrumAuraDisplay::nodePosition(int node) const
+{
+    const auto b = graphBounds();
+    const auto freqId = "band" + juce::String(node + 1) + "_freq";
+    const float x = frequencyToX(parameter(freqId));
+    return { x, b.getBottom() - 28.0f };
+}
+
+int SpectrumAuraDisplay::findNodeAt(juce::Point<float> point) const
+{
+    int hit = -1;
+    float best = 16.0f;
+
+    for (int i = 0; i < PRISMVSTAudioProcessor::numEqBands; ++i)
+    {
+        const float distance = point.getDistanceFrom(nodePosition(i));
+        if (distance < best)
+        {
+            best = distance;
+            hit = i;
+        }
+    }
+
+    return hit;
 }
 
 juce::Rectangle<float> SpectrumAuraDisplay::graphBounds() const
@@ -442,20 +474,24 @@ void SpectrumAuraDisplay::paint(juce::Graphics& g)
                    1.0f + pressure * 1.4f);
     }
 
-    // Domain names stay subtle.
+    // Six independent numbered nodes. Identity follows the node, never screen order.
     for (int d = 0; d < PRISMVSTAudioProcessor::numEqBands; ++d)
     {
-        const float lo = d == 0 ? 20.0f : domainBumperFrequency(d - 1);
-        const float hi = d == PRISMVSTAudioProcessor::numEqBands - 1
-                           ? 20000.0f : domainBumperFrequency(d);
-        const float cx = (frequencyToX(lo) + frequencyToX(hi)) * 0.5f;
-        g.setColour(juce::Colour::fromRGB(170, 178, 188)
-                        .withAlpha(d == selectedBand ? 0.78f : 0.40f));
-        g.setFont(juce::Font(juce::FontOptions(10.0f,
-                    d == selectedBand ? juce::Font::bold : juce::Font::plain)));
-        g.drawText(kDomainNames[(size_t)d],
-                   juce::roundToInt(cx - 30.0f), juce::roundToInt(b.getY() + 12.0f),
-                   60, 14, juce::Justification::centred);
+        const auto p = nodePosition(d);
+        const bool selected = d == selectedBand;
+
+        g.setColour(selected
+            ? juce::Colour::fromRGB(88, 190, 226)
+            : juce::Colour::fromRGB(219, 225, 231));
+        const float radius = selected ? 8.0f : 6.5f;
+        g.fillEllipse(p.x - radius, p.y - radius, radius * 2.0f, radius * 2.0f);
+
+        g.setColour(juce::Colour::fromRGB(7, 9, 12));
+        g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
+        g.drawText(juce::String(d + 1),
+                   juce::roundToInt(p.x - 8.0f),
+                   juce::roundToInt(p.y - 7.0f),
+                   16, 14, juce::Justification::centred);
     }
 
     if (hasHover && b.contains(hoverPoint))
@@ -499,13 +535,58 @@ void SpectrumAuraDisplay::paint(juce::Graphics& g)
 
 void SpectrumAuraDisplay::mouseDown(const juce::MouseEvent& e)
 {
-    if (!graphBounds().contains(e.position))
+    draggingNode = findNodeAt(e.position);
+    if (draggingNode < 0)
         return;
 
-    const int domain = domainForFrequency(xToFrequency(e.position.x));
-    setSelectedBand(domain);
+    selectedBand = draggingNode;
+    dragStartFrequency = parameter("band" + juce::String(draggingNode + 1) + "_freq");
+    dragStartX = e.position.x;
+
+    if (auto* p = processor.apvts.getParameter(
+            "band" + juce::String(draggingNode + 1) + "_freq"))
+        p->beginChangeGesture();
+
     if (onBandSelected)
-        onBandSelected(domain);
+        onBandSelected(draggingNode);
+
+    repaint();
+}
+
+void SpectrumAuraDisplay::mouseDrag(const juce::MouseEvent& e)
+{
+    if (draggingNode < 0)
+        return;
+
+    int mode = juce::roundToInt(parameter("precision_mode"));
+    if (e.mods.isShiftDown())
+        mode = juce::jmax(mode, 1);
+    if (e.mods.isCtrlDown() || e.mods.isCommandDown())
+        mode = 2;
+
+    const float pixelsForFullRange = mode == 0 ? 1800.0f
+                                               : (mode == 1 ? 6000.0f : 14000.0f);
+
+    const float startNorm = std::log10(juce::jlimit(20.0f, 20000.0f, dragStartFrequency) / 20.0f)
+                            / std::log10(1000.0f);
+    const float norm = juce::jlimit(0.0f, 1.0f,
+                                    startNorm + (e.position.x - dragStartX) / pixelsForFullRange);
+    const float frequency = 20.0f * std::pow(1000.0f, norm);
+
+    setParameter("band" + juce::String(draggingNode + 1) + "_freq", frequency);
+    repaint();
+}
+
+void SpectrumAuraDisplay::mouseUp(const juce::MouseEvent&)
+{
+    if (draggingNode >= 0)
+    {
+        if (auto* p = processor.apvts.getParameter(
+                "band" + juce::String(draggingNode + 1) + "_freq"))
+            p->endChangeGesture();
+    }
+
+    draggingNode = -1;
 }
 
 void SpectrumAuraDisplay::mouseMove(const juce::MouseEvent& e)
@@ -609,7 +690,7 @@ float DynamicsTransferDisplay::dragScale(const juce::ModifierKeys& mods) const
         mode = juce::jmax(mode, 1);
     if (mods.isCtrlDown() || mods.isCommandDown())
         mode = 2;
-    return mode == 0 ? 700.0f : (mode == 1 ? 3000.0f : 6000.0f);
+    return mode == 0 ? 1800.0f : (mode == 1 ? 6000.0f : 14000.0f);
 }
 
 void DynamicsTransferDisplay::setSelectedBand(int band)
@@ -801,8 +882,8 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
     selectedBandLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(selectedBandLabel);
 
-    const std::array<PrecisionSlider*, 6> domainSliders {
-        &frequency, &gain, &q, &dynamicRange, &attack, &release
+    const std::array<PrecisionSlider*, 7> domainSliders {
+        &frequency, &gain, &q, &dynamicRange, &slope, &attack, &release
     };
 
     for (size_t i = 0; i < domainSliders.size(); ++i)
@@ -819,6 +900,7 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
     frequency.setTextValueSuffix(" Hz");
     gain.setTextValueSuffix(" dB");
     dynamicRange.setTextValueSuffix(" dB");
+    slope.setTextValueSuffix(":1");
     attack.setTextValueSuffix(" ms");
     release.setTextValueSuffix(" ms");
 
@@ -904,7 +986,7 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
     auto applyPrecision = [this]
     {
         const int mode = juce::jlimit(0, 2, precisionMode.getSelectedId() - 1);
-        for (auto* s : { &frequency, &gain, &q, &dynamicRange, &attack, &release,
+        for (auto* s : { &frequency, &gain, &q, &dynamicRange, &slope, &attack, &release,
                          &onyx, &onyxDrive, &masterTrim, &ceiling,
                          &analyzerSlope, &auraMemory, &colorAffinity })
             s->setPrecisionMode(mode);
@@ -960,6 +1042,7 @@ void PRISMVSTAudioProcessorEditor::bindSelectedBand(int band)
     gainA = std::make_unique<SliderAttachment>(processor.apvts, prefix + "gain", gain);
     qA = std::make_unique<SliderAttachment>(processor.apvts, prefix + "q", q);
     dynamicRangeA = std::make_unique<SliderAttachment>(processor.apvts, prefix + "dyn_range", dynamicRange);
+    slopeA = std::make_unique<SliderAttachment>(processor.apvts, prefix + "ratio", slope);
     attackA = std::make_unique<SliderAttachment>(processor.apvts, prefix + "attack", attack);
     releaseA = std::make_unique<SliderAttachment>(processor.apvts, prefix + "release", release);
 
@@ -967,12 +1050,13 @@ void PRISMVSTAudioProcessorEditor::bindSelectedBand(int band)
     enableDefaultReset(gain, prefix + "gain");
     enableDefaultReset(q, prefix + "q");
     enableDefaultReset(dynamicRange, prefix + "dyn_range");
+    enableDefaultReset(slope, prefix + "ratio");
     enableDefaultReset(attack, prefix + "attack");
     enableDefaultReset(release, prefix + "release");
 
     selectedBandLabel.setText(
-        juce::String(kDomainNames[(size_t)selectedBand])
-        + " DOMAIN   |   transfer map = threshold / ratio geometry   |   "
+        "NODE " + juce::String(selectedBand + 1)
+        + "   |   independent center + dynamics slope   |   "
           "SHIFT = fine   CTRL/CMD = micro",
         juce::dontSendNotification);
 }
@@ -1039,13 +1123,13 @@ void PRISMVSTAudioProcessorEditor::resized()
 
     const int controlsY = labelY + 20;
     const int controlH = juce::jmax(88, h - controlsY - 12);
-    const int cellW = graphW / 6;
+    const int cellW = graphW / 7;
 
-    const std::array<PrecisionSlider*, 6> sliders {
-        &frequency, &gain, &q, &dynamicRange, &attack, &release
+    const std::array<PrecisionSlider*, 7> sliders {
+        &frequency, &gain, &q, &dynamicRange, &slope, &attack, &release
     };
 
-    for (int i = 0; i < 6; ++i)
+    for (int i = 0; i < 7; ++i)
     {
         const int x = left + i * cellW;
         controlLabels[(size_t)i].setBounds(x, controlsY, cellW, 16);
