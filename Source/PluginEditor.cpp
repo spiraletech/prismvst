@@ -269,40 +269,43 @@ juce::Colour SpectrumAuraDisplay::auraColourFor(float frequency,
 {
     const float strictness = juce::jlimit(0.0f, 1.0f, parameter("color_affinity"));
 
+    // Treat every canonical reference as an octave family so the whole
+    // 20 Hz -> 20 kHz analyzer can carry meaningful colour instead of all
+    // upper frequencies collapsing to the 963 Hz colour.
     int nearest = 0;
     float nearestDistance = std::numeric_limits<float>::max();
+    float nearestFamilyHz = kSolfeggio.front();
+
     for (int i = 0; i < (int)kSolfeggio.size(); ++i)
     {
-        const float d = std::abs(std::log2(juce::jmax(1.0f, frequency) / kSolfeggio[(size_t)i]));
-        if (d < nearestDistance)
+        const float base = kSolfeggio[(size_t)i];
+
+        for (int octave = -5; octave <= 6; ++octave)
         {
-            nearestDistance = d;
-            nearest = i;
+            const float familyHz = base * std::pow(2.0f, (float)octave);
+            if (familyHz < 10.0f || familyHz > 40000.0f)
+                continue;
+
+            const float d = std::abs(std::log2(
+                juce::jmax(1.0f, frequency) / familyHz));
+
+            if (d < nearestDistance)
+            {
+                nearestDistance = d;
+                nearest = i;
+                nearestFamilyHz = familyHz;
+            }
         }
     }
 
-    referenceHz = kSolfeggio[(size_t)nearest];
-    const float sigmaOctaves = juce::jmap(strictness, 0.0f, 1.0f, 0.48f, 0.10f);
+    referenceHz = nearestFamilyHz;
+
+    const float sigmaOctaves = juce::jmap(strictness, 0.0f, 1.0f, 0.30f, 0.055f);
     affinity = std::exp(-0.5f * (nearestDistance * nearestDistance)
                         / (sigmaOctaves * sigmaOctaves));
 
-    if (frequency <= kSolfeggio.front())
-        return kSolfeggioColours.front();
-    if (frequency >= kSolfeggio.back())
-        return kSolfeggioColours.back();
-
-    for (int i = 0; i < (int)kSolfeggio.size() - 1; ++i)
-    {
-        const float a = kSolfeggio[(size_t)i];
-        const float b = kSolfeggio[(size_t)i + 1];
-        if (frequency >= a && frequency <= b)
-        {
-            const float t = (frequency - a) / (b - a);
-            return kSolfeggioColours[(size_t)i]
-                .interpolatedWith(kSolfeggioColours[(size_t)i + 1], t);
-        }
-    }
-
+    // Preserve the canonical hue identity of the winning reference family.
+    // Strength/brightness still comes from measured signal energy.
     return kSolfeggioColours[(size_t)nearest];
 }
 
@@ -404,10 +407,12 @@ void SpectrumAuraDisplay::paint(juce::Graphics& g)
     }
 
     // Stationary Heat Aura.
+    // This is deliberately NOT a history buffer or scrolling spectrogram:
+    // every x position is permanently tied to one log-frequency cell.
     for (int i = 0; i < auraColumns; ++i)
     {
         const float energy = auraEnergy[(size_t)i];
-        if (energy < 0.015f)
+        if (energy < 0.008f)
             continue;
 
         const float norm = (float)i / (float)(auraColumns - 1);
@@ -422,18 +427,25 @@ void SpectrumAuraDisplay::paint(juce::Graphics& g)
             ? auraColourFor(freq, affinity, ref)
             : juce::Colour::fromRGB(70, 169, 205);
 
-        const float alpha = juce::jlimit(0.0f, 0.42f,
-                                         0.035f + energy * 0.27f
-                                         * (0.45f + 0.55f * affinity));
-        const float width = 8.0f + energy * 18.0f;
-        const float height = 8.0f + energy * 48.0f;
+        // Make colour unmistakable. Energy controls brightness/presence;
+        // affinity controls saturation emphasis, never the DSP.
+        const float alpha = juce::jlimit(0.0f, 0.82f,
+            0.06f + energy * (0.42f + 0.34f * affinity));
 
-        g.setColour(c.withAlpha(alpha * 0.35f));
-        g.fillEllipse(x - width, y - height, width * 2.0f, height * 2.0f);
+        const float width = 5.0f + energy * 14.0f;
+        const float height = 10.0f + energy * 62.0f;
+
+        g.setColour(c.withAlpha(alpha * 0.22f));
+        g.fillEllipse(x - width * 1.9f, y - height * 1.15f,
+                      width * 3.8f, height * 2.30f);
+
+        g.setColour(c.withAlpha(alpha * 0.50f));
+        g.fillEllipse(x - width, y - height * 0.72f,
+                      width * 2.0f, height * 1.44f);
 
         g.setColour(c.withAlpha(alpha));
-        g.fillEllipse(x - width * 0.38f, y - height * 0.38f,
-                      width * 0.76f, height * 0.76f);
+        g.fillEllipse(x - width * 0.34f, y - height * 0.24f,
+                      width * 0.68f, height * 0.48f);
     }
 
     // Actual spectrum trace remains a measurement layer separate from aura.
