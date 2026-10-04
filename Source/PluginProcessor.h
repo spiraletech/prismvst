@@ -6,7 +6,7 @@
 class PRISMVSTAudioProcessor final : public juce::AudioProcessor
 {
 public:
-    static constexpr int numEqBands = 5;
+    static constexpr int numEqBands = 6;
     static constexpr int spectrumBins = 512;
 
     PRISMVSTAudioProcessor();
