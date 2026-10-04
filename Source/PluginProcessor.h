@@ -6,6 +6,9 @@
 class PRISMVSTAudioProcessor final : public juce::AudioProcessor
 {
 public:
+    static constexpr int numEqBands = 6;
+    static constexpr int spectrumBins = 512;
+
     PRISMVSTAudioProcessor();
     ~PRISMVSTAudioProcessor() override = default;
 
@@ -38,23 +41,28 @@ public:
     float getPeakDb() const noexcept { return peakDb.load(); }
     float getLufsShort() const noexcept { return lufsShort.load(); }
     float getLufsIntegrated() const noexcept { return lufsIntegrated.load(); }
+    void copySpectrum(std::array<float, spectrumBins>& destination) const noexcept;
 
 private:
-    static constexpr int numBands = 5;
-    enum Band : int { Sub = 0, Kick, Low, Mid, High };
-
-    struct BandState {
-        juce::AudioBuffer<float> buffer;
+    struct DynamicBand
+    {
+        std::array<juce::dsp::IIR::Filter<float>, 2> eq;
+        std::array<juce::dsp::IIR::Filter<float>, 2> detector;
         float envelope = 0.0f;
-        float gainSmooth = 1.0f;
+        float smoothedGainDb = 0.0f;
     };
 
-    std::array<BandState, numBands> bands;
-    std::array<std::array<juce::dsp::LinkwitzRileyFilter<float>, 2>, 4> lp;
-    std::array<std::array<juce::dsp::LinkwitzRileyFilter<float>, 2>, 4> hp;
-
+    std::array<DynamicBand, numEqBands> bands;
     std::array<juce::dsp::IIR::Filter<float>, 2> loudHp;
     std::array<juce::dsp::IIR::Filter<float>, 2> loudShelf;
+
+    static constexpr int fftOrder = 11;
+    static constexpr int fftSize = 1 << fftOrder;
+    juce::dsp::FFT fft { fftOrder };
+    juce::dsp::WindowingFunction<float> fftWindow { fftSize, juce::dsp::WindowingFunction<float>::hann };
+    std::array<float, fftSize * 2> fftData {};
+    int fftWritePos = 0;
+    std::array<std::atomic<float>, spectrumBins> spectrum {};
 
     double currentSampleRate = 44100.0;
     double integratedEnergy = 0.0;
@@ -64,11 +72,14 @@ private:
     std::atomic<float> lufsShort { -100.0f };
     std::atomic<float> lufsIntegrated { -100.0f };
 
-    void splitBands(const juce::AudioBuffer<float>& source);
-    void processBand(int bandIndex, int numSamples);
+    void updateBandCoefficients(int bandIndex);
+    void processDynamicEq(juce::AudioBuffer<float>& buffer);
+    void processOnyx(juce::AudioBuffer<float>& buffer);
     void updateMeters(const juce::AudioBuffer<float>& buffer);
+    void pushAnalyzerSamples(const juce::AudioBuffer<float>& buffer);
+    void renderSpectrumFrame();
 
-    static juce::String bandPrefix(int i);
+    static juce::String bandId(int band, const juce::String& suffix);
     static float read(const juce::AudioProcessorValueTreeState& state, const juce::String& id);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PRISMVSTAudioProcessor)
