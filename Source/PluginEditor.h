@@ -17,9 +17,9 @@ private:
     int dragStartY = 0;
     int precisionMode = 0;
 
-    static constexpr double normalPixelsForFullRange = 700.0;
-    static constexpr double finePixelsForFullRange = 3000.0;
-    static constexpr double microPixelsForFullRange = 6000.0;
+    static constexpr double normalPixelsForFullRange = 1800.0;
+    static constexpr double finePixelsForFullRange = 6000.0;
+    static constexpr double microPixelsForFullRange = 14000.0;
 };
 
 class EtherTechLookAndFeel final : public juce::LookAndFeel_V4
@@ -37,6 +37,8 @@ public:
 
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
     void mouseMove(const juce::MouseEvent&) override;
     void mouseExit(const juce::MouseEvent&) override;
 
@@ -55,6 +57,7 @@ private:
     std::array<float, auraColumns> auraEnergy {};
     bool hasHover = false;
     juce::Point<float> hoverPoint;
+    int draggingNode = -1;
 
     juce::Rectangle<float> graphBounds() const;
     float frequencyToX(float frequency) const;
@@ -62,6 +65,9 @@ private:
     float levelToY(float db) const;
     float displayFloorDb() const;
     float parameter(const juce::String& id) const;
+    void setParameter(const juce::String& id, float value);
+    juce::Point<float> nodePosition(int node) const;
+    int findNodeAt(juce::Point<float> point) const;
     float spectrumDbAt(float frequency) const;
     float displayedSpectrumDbAt(float frequency) const;
     int domainForFrequency(float frequency) const;
@@ -135,8 +141,8 @@ private:
     std::array<juce::TextButton, PRISMVSTAudioProcessor::numEqBands> domainButtons;
     juce::Label selectedBandLabel;
 
-    std::array<juce::Label, 6> controlLabels;
-    PrecisionSlider frequency, gain, q, dynamicRange, attack, release;
+    std::array<juce::Label, 7> controlLabels;
+    PrecisionSlider frequency, gain, q, dynamicRange, slope, attack, release;
 
     PrecisionSlider onyx, onyxDrive, masterTrim, ceiling;
     PrecisionSlider analyzerSlope, auraMemory, colorAffinity;
@@ -149,7 +155,7 @@ private:
     juce::Label onyxLabel, driveLabel, trimLabel, ceilingLabel;
     juce::Label analyzerSlopeLabel, auraMemoryLabel, affinityLabel, depthLabel, precisionLabel;
 
-    std::unique_ptr<SliderAttachment> frequencyA, gainA, qA, dynamicRangeA;
+    std::unique_ptr<SliderAttachment> frequencyA, gainA, qA, dynamicRangeA, slopeA;
     std::unique_ptr<SliderAttachment> attackA, releaseA;
     std::unique_ptr<SliderAttachment> onyxA, onyxDriveA, masterTrimA, ceilingA;
     std::unique_ptr<SliderAttachment> analyzerSlopeA, auraMemoryA, colorAffinityA;
