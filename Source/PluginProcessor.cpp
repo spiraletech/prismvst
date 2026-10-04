@@ -2,13 +2,15 @@
 #include "PluginEditor.h"
 #include <cmath>
 
-namespace {
-constexpr std::array<const char*, 5> kNames { "SUB", "KICK", "LOW", "MID", "HIGH" };
-constexpr std::array<float, 4> kDefaultXover { 90.0f, 180.0f, 650.0f, 4500.0f };
+namespace
+{
 constexpr float kFloorDb = -100.0f;
+constexpr std::array<float, PRISMVSTAudioProcessor::numEqBands> kDefaultFreq {
+    60.0f, 120.0f, 400.0f, 1200.0f, 4000.0f, 10000.0f
+};
 
-inline float db(float g) { return juce::Decibels::gainToDecibels(g, kFloorDb); }
-inline float gain(float d) { return juce::Decibels::decibelsToGain(d); }
+inline float toDb(float g) { return juce::Decibels::gainToDecibels(g, kFloorDb); }
+inline float toGain(float d) { return juce::Decibels::decibelsToGain(d); }
 }
 
 PRISMVSTAudioProcessor::PRISMVSTAudioProcessor()
@@ -17,6 +19,8 @@ PRISMVSTAudioProcessor::PRISMVSTAudioProcessor()
         .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "PARAMETERS", createParameterLayout())
 {
+    for (auto& v : spectrum)
+        v.store(kFloorDb);
 }
 
 bool PRISMVSTAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -25,9 +29,9 @@ bool PRISMVSTAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) 
         && layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
 }
 
-juce::String PRISMVSTAudioProcessor::bandPrefix(int i)
+juce::String PRISMVSTAudioProcessor::bandId(int band, const juce::String& suffix)
 {
-    return juce::String(kNames[(size_t) juce::jlimit(0, numBands - 1, i)]).toLowerCase();
+    return "band" + juce::String(band + 1) + "_" + suffix;
 }
 
 float PRISMVSTAudioProcessor::read(const juce::AudioProcessorValueTreeState& state, const juce::String& id)
@@ -41,42 +45,85 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
 
-    for (int i = 0; i < numBands; ++i) {
-        const auto pre = bandPrefix(i);
-        p.push_back(std::make_unique<juce::AudioParameterFloat>(
-            juce::ParameterID { pre + "_scrape", 1 }, juce::String(kNames[(size_t)i]) + " Scrape",
-            juce::NormalisableRange<float>(-60.0f, 0.0f, 0.1f), -18.0f));
-        p.push_back(std::make_unique<juce::AudioParameterFloat>(
-            juce::ParameterID { pre + "_depth", 1 }, juce::String(kNames[(size_t)i]) + " Depth",
-            juce::NormalisableRange<float>(0.0f, 24.0f, 0.1f), 0.0f));
-        p.push_back(std::make_unique<juce::AudioParameterFloat>(
-            juce::ParameterID { pre + "_tone", 1 }, juce::String(kNames[(size_t)i]) + " Tone",
-            juce::NormalisableRange<float>(-1.0f, 1.0f, 0.01f), 0.0f));
-        p.push_back(std::make_unique<juce::AudioParameterFloat>(
-            juce::ParameterID { pre + "_density", 1 }, juce::String(kNames[(size_t)i]) + " Density",
-            juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.35f));
-        p.push_back(std::make_unique<juce::AudioParameterFloat>(
-            juce::ParameterID { pre + "_trim", 1 }, juce::String(kNames[(size_t)i]) + " Trim",
-            juce::NormalisableRange<float>(-18.0f, 18.0f, 0.1f), 0.0f));
+    juce::NormalisableRange<float> freqRange(20.0f, 20000.0f, 0.01f);
+    freqRange.setSkewForCentre(1000.0f);
+
+    juce::NormalisableRange<float> qRange(0.10f, 20.0f, 0.01f);
+    qRange.setSkewForCentre(1.0f);
+
+    juce::NormalisableRange<float> attackRange(0.10f, 200.0f, 0.01f);
+    attackRange.setSkewForCentre(10.0f);
+
+    juce::NormalisableRange<float> releaseRange(5.0f, 1000.0f, 0.1f);
+    releaseRange.setSkewForCentre(120.0f);
+
+    for (int i = 0; i < numEqBands; ++i)
+    {
+        const auto prefix = "Band " + juce::String(i + 1) + " ";
+
         p.push_back(std::make_unique<juce::AudioParameterBool>(
-            juce::ParameterID { pre + "_solo", 1 }, juce::String(kNames[(size_t)i]) + " Solo", false));
-        p.push_back(std::make_unique<juce::AudioParameterBool>(
-            juce::ParameterID { pre + "_bypass", 1 }, juce::String(kNames[(size_t)i]) + " Bypass", false));
+            juce::ParameterID { bandId(i, "enabled"), 2 }, prefix + "Enabled", true));
+
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { bandId(i, "freq"), 2 }, prefix + "Frequency",
+            freqRange, kDefaultFreq[(size_t)i]));
+
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { bandId(i, "gain"), 2 }, prefix + "Gain",
+            juce::NormalisableRange<float>(-18.0f, 18.0f, 0.01f), 0.0f));
+
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { bandId(i, "q"), 2 }, prefix + "Q",
+            qRange, 0.85f));
+
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { bandId(i, "dyn_range"), 2 }, prefix + "Dynamic Range",
+            juce::NormalisableRange<float>(0.0f, 18.0f, 0.01f), 0.0f));
+
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { bandId(i, "threshold"), 2 }, prefix + "Threshold",
+            juce::NormalisableRange<float>(-60.0f, 0.0f, 0.01f), -18.0f));
+
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { bandId(i, "ratio"), 2 }, prefix + "Ratio",
+            juce::NormalisableRange<float>(1.0f, 20.0f, 0.01f), 2.0f));
+
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { bandId(i, "attack"), 2 }, prefix + "Attack",
+            attackRange, 10.0f));
+
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { bandId(i, "release"), 2 }, prefix + "Release",
+            releaseRange, 120.0f));
     }
 
     p.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "xover_1", 1 }, "SUB/KICK", juce::NormalisableRange<float>(45.0f, 140.0f, 1.0f), kDefaultXover[0]));
-    p.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "xover_2", 1 }, "KICK/LOW", juce::NormalisableRange<float>(120.0f, 350.0f, 1.0f), kDefaultXover[1]));
-    p.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "xover_3", 1 }, "LOW/MID", juce::NormalisableRange<float>(300.0f, 1800.0f, 1.0f), kDefaultXover[2]));
-    p.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "xover_4", 1 }, "MID/HIGH", juce::NormalisableRange<float>(1800.0f, 9000.0f, 1.0f), kDefaultXover[3]));
+        juce::ParameterID { "onyx", 2 }, "ONYX",
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.0f));
 
     p.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "master_trim", 1 }, "Master Trim", juce::NormalisableRange<float>(-18.0f, 12.0f, 0.1f), 0.0f));
+        juce::ParameterID { "onyx_drive", 2 }, "ONYX Drive",
+        juce::NormalisableRange<float>(0.0f, 18.0f, 0.01f), 3.0f));
+
     p.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "ceiling", 1 }, "Ceiling", juce::NormalisableRange<float>(-12.0f, 0.0f, 0.1f), -0.3f));
+        juce::ParameterID { "onyx_bias", 2 }, "ONYX Bias",
+        juce::NormalisableRange<float>(-1.0f, 1.0f, 0.001f), 0.05f));
+
+    p.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "onyx_density", 2 }, "ONYX Density",
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.35f));
+
+    p.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID { "solfeggio_grid", 2 }, "Solfeggio Grid", false));
+
+    p.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "master_trim", 1 }, "Master Trim",
+        juce::NormalisableRange<float>(-18.0f, 12.0f, 0.01f), 0.0f));
+
+    p.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "ceiling", 1 }, "Ceiling",
+        juce::NormalisableRange<float>(-12.0f, 0.0f, 0.01f), -0.3f));
+
     p.push_back(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID { "master_bypass", 1 }, "Master Bypass", false));
 
@@ -86,136 +133,196 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
 void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     currentSampleRate = sampleRate;
-    juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32)samplesPerBlock, 1 };
 
-    for (auto& stage : lp)
-        for (auto& f : stage) { f.reset(); f.prepare(spec); f.setType(juce::dsp::LinkwitzRileyFilterType::lowpass); }
-    for (auto& stage : hp)
-        for (auto& f : stage) { f.reset(); f.prepare(spec); f.setType(juce::dsp::LinkwitzRileyFilterType::highpass); }
+    juce::dsp::ProcessSpec monoSpec {
+        sampleRate,
+        static_cast<juce::uint32>(samplesPerBlock),
+        1
+    };
 
-    for (auto& b : bands) {
-        b.buffer.setSize(2, samplesPerBlock, false, false, true);
-        b.envelope = 0.0f;
-        b.gainSmooth = 1.0f;
+    for (auto& band : bands)
+    {
+        band.envelope = 0.0f;
+        band.smoothedGainDb = 0.0f;
+
+        for (int c = 0; c < 2; ++c)
+        {
+            band.eq[(size_t)c].reset();
+            band.eq[(size_t)c].prepare(monoSpec);
+            band.detector[(size_t)c].reset();
+            band.detector[(size_t)c].prepare(monoSpec);
+        }
     }
 
+    for (int i = 0; i < numEqBands; ++i)
+        updateBandCoefficients(i);
+
     auto hpC = juce::dsp::IIR::Coefficients<float>::makeHighPass(sampleRate, 38.0);
-    auto shC = juce::dsp::IIR::Coefficients<float>::makeHighShelf(sampleRate, 1681.0, 0.7071f, gain(4.0f));
-    for (int c = 0; c < 2; ++c) {
+    auto shC = juce::dsp::IIR::Coefficients<float>::makeHighShelf(sampleRate, 1681.0, 0.7071f, toGain(4.0f));
+
+    for (int c = 0; c < 2; ++c)
+    {
         loudHp[(size_t)c].reset();
         loudShelf[(size_t)c].reset();
         *loudHp[(size_t)c].coefficients = *hpC;
         *loudShelf[(size_t)c].coefficients = *shC;
     }
 
+    fftWritePos = 0;
+    fftData.fill(0.0f);
+    for (auto& v : spectrum)
+        v.store(kFloorDb);
+
     integratedEnergy = 0.0;
     integratedSamples = 0;
 }
 
-void PRISMVSTAudioProcessor::splitBands(const juce::AudioBuffer<float>& source)
+void PRISMVSTAudioProcessor::updateBandCoefficients(int bandIndex)
 {
-    const int n = source.getNumSamples();
-    for (auto& b : bands) {
-        b.buffer.setSize(2, n, false, false, true);
-        b.buffer.clear();
+    auto& band = bands[(size_t)bandIndex];
+
+    const float freq = juce::jlimit(20.0f, static_cast<float>(currentSampleRate * 0.45),
+                                   read(apvts, bandId(bandIndex, "freq")));
+    const float q = juce::jlimit(0.10f, 20.0f, read(apvts, bandId(bandIndex, "q")));
+    const float staticGain = read(apvts, bandId(bandIndex, "gain"));
+
+    const float effectiveGain = staticGain + band.smoothedGainDb;
+
+    auto eqC = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+        currentSampleRate, freq, q, toGain(effectiveGain));
+
+    auto detectorC = juce::dsp::IIR::Coefficients<float>::makeBandPass(
+        currentSampleRate, freq, q);
+
+    for (int c = 0; c < 2; ++c)
+    {
+        *band.eq[(size_t)c].coefficients = *eqC;
+        *band.detector[(size_t)c].coefficients = *detectorC;
     }
+}
 
-    std::array<float, 4> xo {
-        read(apvts, "xover_1"), read(apvts, "xover_2"),
-        read(apvts, "xover_3"), read(apvts, "xover_4")
-    };
+void PRISMVSTAudioProcessor::processDynamicEq(juce::AudioBuffer<float>& buffer)
+{
+    const int n = buffer.getNumSamples();
 
-    xo[1] = juce::jmax(xo[1], xo[0] + 20.0f);
-    xo[2] = juce::jmax(xo[2], xo[1] + 80.0f);
-    xo[3] = juce::jmax(xo[3], xo[2] + 300.0f);
+    for (int b = 0; b < numEqBands; ++b)
+    {
+        if (read(apvts, bandId(b, "enabled")) < 0.5f)
+            continue;
 
-    for (int s = 0; s < 4; ++s)
-        for (int c = 0; c < 2; ++c) {
-            lp[(size_t)s][(size_t)c].setCutoffFrequency(xo[(size_t)s]);
-            hp[(size_t)s][(size_t)c].setCutoffFrequency(xo[(size_t)s]);
+        auto& band = bands[(size_t)b];
+
+        const float threshold = read(apvts, bandId(b, "threshold"));
+        const float dynamicRange = read(apvts, bandId(b, "dyn_range"));
+        const float ratio = juce::jmax(1.0f, read(apvts, bandId(b, "ratio")));
+        const float attackMs = juce::jmax(0.10f, read(apvts, bandId(b, "attack")));
+        const float releaseMs = juce::jmax(5.0f, read(apvts, bandId(b, "release")));
+
+        const float attackCoeff = std::exp(-1.0f / (0.001f * attackMs * (float)currentSampleRate));
+        const float releaseCoeff = std::exp(-1.0f / (0.001f * releaseMs * (float)currentSampleRate));
+
+        const float* left = buffer.getReadPointer(0);
+        const float* right = buffer.getReadPointer(1);
+
+        for (int i = 0; i < n; ++i)
+        {
+            const float dl = band.detector[0].processSample(left[i]);
+            const float dr = band.detector[1].processSample(right[i]);
+            const float detected = juce::jmax(std::abs(dl), std::abs(dr));
+
+            const float coeff = detected > band.envelope ? attackCoeff : releaseCoeff;
+            band.envelope = coeff * band.envelope + (1.0f - coeff) * detected;
         }
 
-    for (int c = 0; c < 2; ++c) {
-        const float* in = source.getReadPointer(c);
-        float* b0 = bands[0].buffer.getWritePointer(c);
-        float* b1 = bands[1].buffer.getWritePointer(c);
-        float* b2 = bands[2].buffer.getWritePointer(c);
-        float* b3 = bands[3].buffer.getWritePointer(c);
-        float* b4 = bands[4].buffer.getWritePointer(c);
+        const float levelDb = toDb(band.envelope + 1.0e-9f);
+        const float overDb = juce::jmax(0.0f, levelDb - threshold);
+        const float compressedDb = overDb * (1.0f - 1.0f / ratio);
+        const float targetDynamicDb = -juce::jmin(dynamicRange, compressedDb);
 
-        for (int i = 0; i < n; ++i) {
-            const float x = in[i];
-            const float lo0 = lp[0][(size_t)c].processSample(0, x);
-            float rem = hp[0][(size_t)c].processSample(0, x);
-            const float lo1 = lp[1][(size_t)c].processSample(0, rem);
-            rem = hp[1][(size_t)c].processSample(0, rem);
-            const float lo2 = lp[2][(size_t)c].processSample(0, rem);
-            rem = hp[2][(size_t)c].processSample(0, rem);
-            const float lo3 = lp[3][(size_t)c].processSample(0, rem);
-            const float hi3 = hp[3][(size_t)c].processSample(0, rem);
+        band.smoothedGainDb += 0.35f * (targetDynamicDb - band.smoothedGainDb);
+        updateBandCoefficients(b);
 
-            b0[i] = lo0;
-            b1[i] = lo1;
-            b2[i] = lo2;
-            b3[i] = lo3;
-            b4[i] = hi3;
+        for (int c = 0; c < 2; ++c)
+        {
+            float* x = buffer.getWritePointer(c);
+            auto& filter = band.eq[(size_t)c];
+
+            for (int i = 0; i < n; ++i)
+                x[i] = filter.processSample(x[i]);
         }
     }
 }
 
-void PRISMVSTAudioProcessor::processBand(int bandIndex, int numSamples)
+void PRISMVSTAudioProcessor::processOnyx(juce::AudioBuffer<float>& buffer)
 {
-    auto& st = bands[(size_t)bandIndex];
-    const auto pre = bandPrefix(bandIndex);
-
-    if (read(apvts, pre + "_bypass") > 0.5f)
+    const float amount = read(apvts, "onyx");
+    if (amount <= 0.0001f)
         return;
 
-    const float threshold = read(apvts, pre + "_scrape");
-    const float maxDepth = read(apvts, pre + "_depth");
-    const float tone = read(apvts, pre + "_tone");
-    const float density = read(apvts, pre + "_density");
-    const float trim = gain(read(apvts, pre + "_trim"));
+    const float driveDb = read(apvts, "onyx_drive");
+    const float drive = toGain(driveDb) * (1.0f + amount * 1.75f);
+    const float bias = read(apvts, "onyx_bias") * 0.18f * amount;
+    const float density = read(apvts, "onyx_density");
+    const float wet = juce::jlimit(0.0f, 1.0f, amount * (0.55f + 0.45f * density));
+    const float norm = std::tanh(drive + std::abs(bias));
 
-    const float attackMs = 2.0f;
-    const float releaseMs = juce::jmap(density, 160.0f, 35.0f);
-    const float a = std::exp(-1.0f / (0.001f * attackMs * (float)currentSampleRate));
-    const float r = std::exp(-1.0f / (0.001f * releaseMs * (float)currentSampleRate));
-    const float saturation = juce::jlimit(0.0f, 0.45f, std::abs(tone) * (0.08f + density * 0.30f));
+    for (int c = 0; c < juce::jmin(2, buffer.getNumChannels()); ++c)
+    {
+        float* x = buffer.getWritePointer(c);
 
-    auto* l = st.buffer.getWritePointer(0);
-    auto* rr = st.buffer.getWritePointer(1);
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+        {
+            const float dry = x[i];
+            float shaped = std::tanh(dry * drive + bias) / juce::jmax(0.001f, norm);
+            shaped -= std::tanh(bias) / juce::jmax(0.001f, norm);
 
-    for (int i = 0; i < numSamples; ++i) {
-        const float detector = juce::jmax(std::abs(l[i]), std::abs(rr[i]));
-        const float coeff = detector > st.envelope ? a : r;
-        st.envelope = coeff * st.envelope + (1.0f - coeff) * detector;
-
-        const float level = db(st.envelope + 1.0e-9f);
-        const float over = juce::jmax(0.0f, level - threshold);
-        const float densityShape = 0.45f + density * 1.55f;
-        const float reductionDb = juce::jmin(maxDepth, over * densityShape);
-        const float targetGain = gain(-reductionDb);
-        st.gainSmooth += 0.04f * (targetGain - st.gainSmooth);
-
-        float sl = l[i] * st.gainSmooth * trim;
-        float sr = rr[i] * st.gainSmooth * trim;
-
-        if (saturation > 0.0f) {
-            const float drive = 1.0f + saturation * 5.0f;
-            const float norm = std::tanh(drive);
-            const float shapedL = std::tanh(sl * drive) / norm;
-            const float shapedR = std::tanh(sr * drive) / norm;
-            const float mix = saturation;
-            sl = juce::jmap(mix, sl, shapedL);
-            sr = juce::jmap(mix, sr, shapedR);
+            const float dense = 0.5f * (shaped + std::tanh(shaped * (1.0f + density * 2.5f)));
+            x[i] = dry + wet * (dense - dry);
         }
-
-        // Tone is deliberately not an EQ shelf/curve: it biases the nonlinear blend polarity.
-        const float toneGain = gain(tone * 1.5f);
-        l[i] = sl * toneGain;
-        rr[i] = sr * toneGain;
     }
+}
+
+void PRISMVSTAudioProcessor::pushAnalyzerSamples(const juce::AudioBuffer<float>& buffer)
+{
+    const int n = buffer.getNumSamples();
+    const float* left = buffer.getReadPointer(0);
+    const float* right = buffer.getReadPointer(1);
+
+    for (int i = 0; i < n; ++i)
+    {
+        fftData[(size_t)fftWritePos++] = 0.5f * (left[i] + right[i]);
+
+        if (fftWritePos >= fftSize)
+        {
+            renderSpectrumFrame();
+            fftWritePos = 0;
+        }
+    }
+}
+
+void PRISMVSTAudioProcessor::renderSpectrumFrame()
+{
+    for (int i = fftSize; i < fftSize * 2; ++i)
+        fftData[(size_t)i] = 0.0f;
+
+    fftWindow.multiplyWithWindowingTable(fftData.data(), fftSize);
+    fft.performFrequencyOnlyForwardTransform(fftData.data());
+
+    const int maxBin = fftSize / 2;
+
+    for (int i = 0; i < spectrumBins; ++i)
+    {
+        const float pos = (float)i / (float)(spectrumBins - 1);
+        const int bin = juce::jlimit(0, maxBin, juce::roundToInt(pos * (float)maxBin));
+        const float magnitude = fftData[(size_t)bin] / (float)fftSize;
+        spectrum[(size_t)i].store(toDb(magnitude + 1.0e-9f));
+    }
+}
+
+void PRISMVSTAudioProcessor::copySpectrum(std::array<float, spectrumBins>& destination) const noexcept
+{
+    for (int i = 0; i < spectrumBins; ++i)
+        destination[(size_t)i] = spectrum[(size_t)i].load();
 }
 
 void PRISMVSTAudioProcessor::updateMeters(const juce::AudioBuffer<float>& buffer)
@@ -224,9 +331,12 @@ void PRISMVSTAudioProcessor::updateMeters(const juce::AudioBuffer<float>& buffer
     float peak = 0.0f;
     double weightedEnergy = 0.0;
 
-    for (int c = 0; c < juce::jmin(2, buffer.getNumChannels()); ++c) {
+    for (int c = 0; c < juce::jmin(2, buffer.getNumChannels()); ++c)
+    {
         const float* x = buffer.getReadPointer(c);
-        for (int i = 0; i < n; ++i) {
+
+        for (int i = 0; i < n; ++i)
+        {
             peak = juce::jmax(peak, std::abs(x[i]));
             float y = loudHp[(size_t)c].processSample(x[i]);
             y = loudShelf[(size_t)c].processSample(y);
@@ -234,7 +344,7 @@ void PRISMVSTAudioProcessor::updateMeters(const juce::AudioBuffer<float>& buffer
         }
     }
 
-    peakDb.store(db(peak + 1.0e-9f));
+    peakDb.store(toDb(peak + 1.0e-9f));
 
     const auto count = (uint64_t)n * 2u;
     integratedEnergy += weightedEnergy;
@@ -243,10 +353,13 @@ void PRISMVSTAudioProcessor::updateMeters(const juce::AudioBuffer<float>& buffer
     const double blockMean = count > 0 ? weightedEnergy / (double)count : 0.0;
     const double intMean = integratedSamples > 0 ? integratedEnergy / (double)integratedSamples : 0.0;
 
-    const float shortL = blockMean > 1.0e-12 ? (float)(-0.691 + 10.0 * std::log10(blockMean)) : kFloorDb;
-    const float intL = intMean > 1.0e-12 ? (float)(-0.691 + 10.0 * std::log10(intMean)) : kFloorDb;
-    lufsShort.store(shortL);
-    lufsIntegrated.store(intL);
+    lufsShort.store(blockMean > 1.0e-12
+        ? (float)(-0.691 + 10.0 * std::log10(blockMean))
+        : kFloorDb);
+
+    lufsIntegrated.store(intMean > 1.0e-12
+        ? (float)(-0.691 + 10.0 * std::log10(intMean))
+        : kFloorDb);
 }
 
 void PRISMVSTAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -256,39 +369,28 @@ void PRISMVSTAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     for (int c = getTotalNumInputChannels(); c < getTotalNumOutputChannels(); ++c)
         buffer.clear(c, 0, buffer.getNumSamples());
 
-    if (read(apvts, "master_bypass") > 0.5f) {
+    if (read(apvts, "master_bypass") > 0.5f)
+    {
+        pushAnalyzerSamples(buffer);
         updateMeters(buffer);
         return;
     }
 
-    juce::AudioBuffer<float> dry;
-    dry.makeCopyOf(buffer, true);
+    processDynamicEq(buffer);
+    processOnyx(buffer);
 
-    splitBands(dry);
-    for (int b = 0; b < numBands; ++b)
-        processBand(b, buffer.getNumSamples());
+    buffer.applyGain(toGain(read(apvts, "master_trim")));
 
-    bool anySolo = false;
-    for (int b = 0; b < numBands; ++b)
-        anySolo = anySolo || read(apvts, bandPrefix(b) + "_solo") > 0.5f;
+    const float ceiling = toGain(read(apvts, "ceiling"));
 
-    buffer.clear();
-    for (int b = 0; b < numBands; ++b) {
-        if (anySolo && read(apvts, bandPrefix(b) + "_solo") <= 0.5f)
-            continue;
-        for (int c = 0; c < 2; ++c)
-            buffer.addFrom(c, 0, bands[(size_t)b].buffer, c, 0, buffer.getNumSamples());
-    }
-
-    buffer.applyGain(gain(read(apvts, "master_trim")));
-
-    const float ceiling = gain(read(apvts, "ceiling"));
-    for (int c = 0; c < 2; ++c) {
+    for (int c = 0; c < juce::jmin(2, buffer.getNumChannels()); ++c)
+    {
         float* x = buffer.getWritePointer(c);
         for (int i = 0; i < buffer.getNumSamples(); ++i)
             x[i] = juce::jlimit(-ceiling, ceiling, x[i]);
     }
 
+    pushAnalyzerSamples(buffer);
     updateMeters(buffer);
 }
 
