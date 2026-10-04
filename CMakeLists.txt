@@ -14,12 +14,23 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(JUCE)
 
+set(PRISMVST_VST2_SDK_PATH "" CACHE PATH "Path to a licensed Steinberg VST2 SDK include directory")
+set(PRISMVST_FORMATS VST3)
+
+if(PRISMVST_VST2_SDK_PATH)
+  juce_set_vst2_sdk_path("${PRISMVST_VST2_SDK_PATH}")
+  list(APPEND PRISMVST_FORMATS VST)
+  message(STATUS "PRISMVST VST2 build enabled: ${PRISMVST_VST2_SDK_PATH}")
+else()
+  message(STATUS "PRISMVST VST2 build disabled. Set PRISMVST_VST2_SDK_PATH to build PRISMVST.dll")
+endif()
+
 juce_add_plugin(PRISMVST
   COMPANY_NAME "SpiralEtech"
   BUNDLE_ID "com.spiraletech.prismvst"
   PLUGIN_MANUFACTURER_CODE SpEt
   PLUGIN_CODE Prsm
-  FORMATS VST3
+  FORMATS ${PRISMVST_FORMATS}
   PRODUCT_NAME "PRISMVST"
   VST3_CATEGORIES Fx Mastering
   COPY_PLUGIN_AFTER_BUILD FALSE
