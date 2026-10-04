@@ -1,6 +1,45 @@
 #include "PluginEditor.h"
 
+void PrecisionSlider::mouseDown(const juce::MouseEvent& e)
+{
+    dragStartValue = getValue();
+    dragStartY = e.getScreenY();
+    precisionDrag = e.mods.isCtrlDown();
+
+    juce::Slider::mouseDown(e);
+}
+
+void PrecisionSlider::mouseDrag(const juce::MouseEvent& e)
+{
+    const bool wantsPrecision = e.mods.isCtrlDown();
+
+    if (wantsPrecision) {
+        if (!precisionDrag) {
+            dragStartValue = getValue();
+            dragStartY = e.getScreenY();
+            precisionDrag = true;
+        }
+
+        const auto range = getRange();
+        const double span = range.getLength();
+        const double deltaPixels = static_cast<double>(dragStartY - e.getScreenY());
+        const double newValue = dragStartValue + (deltaPixels * span / precisionPixelsForFullRange);
+        setValue(juce::jlimit(range.getStart(), range.getEnd(), newValue), juce::sendNotificationSync);
+        return;
+    }
+
+    precisionDrag = false;
+    juce::Slider::mouseDrag(e);
+}
+
+void PrecisionSlider::mouseUp(const juce::MouseEvent& e)
+{
+    precisionDrag = false;
+    juce::Slider::mouseUp(e);
+}
+
 namespace {
+
 constexpr std::array<const char*, 5> names { "SUB", "KICK", "LOW", "MID", "HIGH" };
 juce::String pre(int i) { return juce::String(names[(size_t)i]).toLowerCase(); }
 }
