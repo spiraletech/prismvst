@@ -67,13 +67,23 @@ juce::Colour referenceColourForFrequency(float frequency,
                                          float& affinity,
                                          float& familyFrequency)
 {
-    int nearest = 0;
-    float nearestDistance = std::numeric_limits<float>::max();
-    float nearestFamily = kSolfeggio.front();
+    // Smooth weighted affinity across ALL Solfeggio octave families.
+    // The previous hard "nearest family wins" switch created visually random
+    // color islands even when the spectrum itself was smooth.
+    const float sigmaOctaves = juce::jmap(
+        juce::jlimit(0.0f, 1.0f, strictness),
+        0.0f, 1.0f, 0.34f, 0.075f);
+
+    float totalWeight = 0.0f;
+    float maxWeight = 0.0f;
+    float outR = 0.0f, outG = 0.0f, outB = 0.0f;
+    float winningFamily = kSolfeggio.front();
 
     for (int i = 0; i < (int)kSolfeggio.size(); ++i)
     {
         const float base = kSolfeggio[(size_t)i];
+        float familyDistance = std::numeric_limits<float>::max();
+        float nearestFamily = base;
 
         for (int octave = -5; octave <= 6; ++octave)
         {
@@ -81,27 +91,43 @@ juce::Colour referenceColourForFrequency(float frequency,
             if (family < 10.0f || family > 40000.0f)
                 continue;
 
-            const float distance = std::abs(std::log2(
+            const float d = std::abs(std::log2(
                 juce::jmax(1.0f, frequency) / family));
 
-            if (distance < nearestDistance)
+            if (d < familyDistance)
             {
-                nearestDistance = distance;
-                nearest = i;
+                familyDistance = d;
                 nearestFamily = family;
             }
         }
+
+        const float weight = std::exp(
+            -0.5f * familyDistance * familyDistance
+            / (sigmaOctaves * sigmaOctaves));
+
+        totalWeight += weight;
+        outR += kSolfeggioColours[(size_t)i].getFloatRed() * weight;
+        outG += kSolfeggioColours[(size_t)i].getFloatGreen() * weight;
+        outB += kSolfeggioColours[(size_t)i].getFloatBlue() * weight;
+
+        if (weight > maxWeight)
+        {
+            maxWeight = weight;
+            winningFamily = nearestFamily;
+        }
     }
 
-    familyFrequency = nearestFamily;
-    const float sigmaOctaves = juce::jmap(
-        juce::jlimit(0.0f, 1.0f, strictness),
-        0.0f, 1.0f, 0.30f, 0.055f);
+    familyFrequency = winningFamily;
+    affinity = juce::jlimit(0.0f, 1.0f, maxWeight);
 
-    affinity = std::exp(-0.5f * nearestDistance * nearestDistance
-                        / (sigmaOctaves * sigmaOctaves));
+    if (totalWeight <= 1.0e-6f)
+        return juce::Colour::fromRGB(110, 123, 137);
 
-    return kSolfeggioColours[(size_t)nearest];
+    return juce::Colour::fromFloatRGBA(
+        outR / totalWeight,
+        outG / totalWeight,
+        outB / totalWeight,
+        1.0f);
 }
 
 float meterNormalised(float db)
@@ -258,8 +284,13 @@ void EtherTechLookAndFeel::drawToggleButton(juce::Graphics& g,
     auto b = button.getLocalBounds().toFloat().reduced(0.5f);
     const bool on = button.getToggleState();
 
-    auto fill = on ? juce::Colour::fromRGB(35, 55, 64)
-                   : juce::Colour::fromRGB(15, 19, 24);
+    const bool isBypassed = button.getButtonText().containsIgnoreCase("BYPASSED");
+
+    auto fill = isBypassed
+        ? juce::Colour::fromRGB(82, 28, 31)
+        : (on ? juce::Colour::fromRGB(35, 55, 64)
+              : juce::Colour::fromRGB(15, 19, 24));
+
     if (highlighted)
         fill = fill.brighter(0.06f);
     if (down)
@@ -267,11 +298,14 @@ void EtherTechLookAndFeel::drawToggleButton(juce::Graphics& g,
 
     g.setColour(fill);
     g.fillRoundedRectangle(b, 5.0f);
-    g.setColour(on ? juce::Colour::fromRGB(79, 176, 210)
-                   : juce::Colour::fromRGB(57, 64, 74));
-    g.drawRoundedRectangle(b, 5.0f, 1.0f);
 
-    g.setColour(on ? juce::Colours::white.withAlpha(0.94f) : textMuted());
+    g.setColour(isBypassed
+        ? juce::Colour::fromRGB(231, 84, 91)
+        : (on ? juce::Colour::fromRGB(79, 176, 210)
+              : juce::Colour::fromRGB(57, 64, 74)));
+    g.drawRoundedRectangle(b, 5.0f, isBypassed ? 1.6f : 1.0f);
+
+    g.setColour((on || isBypassed) ? juce::Colours::white.withAlpha(0.94f) : textMuted());
     g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
     g.drawFittedText(button.getButtonText(), button.getLocalBounds().reduced(7, 2),
                      juce::Justification::centred, 1);
@@ -365,13 +399,16 @@ float SpectrumAuraDisplay::levelToY(float db) const
 
 float SpectrumAuraDisplay::spectrumDbAt(float frequency) const
 {
-    const double sr = processor.getSampleRate() > 1.0 ? processor.getSampleRate() : 48000.0;
-    const double nyquist = sr * 0.5;
+    // Processor stores analyzer cells in the same logarithmic 20 Hz -> 20 kHz
+    // coordinate system used by the graph.
+    const float norm = juce::jlimit(
+        0.0f, 1.0f,
+        std::log10(juce::jlimit(20.0f, 20000.0f, frequency) / 20.0f)
+        / std::log10(1000.0f));
 
     const int bin = juce::jlimit(
         0, PRISMVSTAudioProcessor::spectrumBins - 1,
-        juce::roundToInt((float)(frequency / nyquist)
-                         * (PRISMVSTAudioProcessor::spectrumBins - 1)));
+        juce::roundToInt(norm * (PRISMVSTAudioProcessor::spectrumBins - 1)));
 
     return latestSpectrum[(size_t)bin];
 }
@@ -536,11 +573,14 @@ void SpectrumAuraDisplay::paint(juce::Graphics& g)
         }
     }
 
-    // Fixed-frequency aura cells. X never encodes time.
+    // Stationary thermal ribbon. X = frequency only; there are no floating
+    // "orbs" and no time-scrolling rows. Persistence changes intensity in place.
+    const float cellW = b.getWidth() / (float)(auraColumns - 1);
+
     for (int i = 0; i < auraColumns; ++i)
     {
         const float energy = auraEnergy[(size_t)i];
-        if (energy < 0.006f)
+        if (energy < 0.004f)
             continue;
 
         const float norm = (float)i / (float)(auraColumns - 1);
@@ -551,29 +591,32 @@ void SpectrumAuraDisplay::paint(juce::Graphics& g)
 
         float affinity = 0.0f;
         float reference = 0.0f;
-
         auto colour = parameter("solfeggio_grid") > 0.5f
             ? auraColourFor(freq, affinity, reference)
             : juce::Colour::fromRGB(73, 169, 203);
 
-        const float alpha = juce::jlimit(
-            0.0f, 0.88f,
-            0.07f + energy * (0.46f + 0.34f * affinity));
+        const float bodyAlpha = juce::jlimit(
+            0.0f, 0.34f, energy * (0.12f + 0.22f * affinity));
+        const float crestAlpha = juce::jlimit(
+            0.0f, 0.88f, 0.12f + energy * (0.48f + 0.22f * affinity));
 
-        const float width = 4.0f + energy * 13.0f;
-        const float height = 10.0f + energy * 68.0f;
+        // Low-opacity energy column builds a coherent heat field under the
+        // measured spectrum instead of disconnected bubbles.
+        g.setColour(colour.withAlpha(bodyAlpha));
+        g.fillRect(juce::Rectangle<float>(
+            x - cellW * 0.62f,
+            y,
+            cellW * 1.24f,
+            juce::jmax(1.0f, b.getBottom() - y)));
 
-        g.setColour(colour.withAlpha(alpha * 0.18f));
-        g.fillEllipse(x - width * 2.2f, y - height * 1.2f,
-                      width * 4.4f, height * 2.4f);
-
-        g.setColour(colour.withAlpha(alpha * 0.46f));
-        g.fillEllipse(x - width, y - height * 0.74f,
-                      width * 2.0f, height * 1.48f);
-
-        g.setColour(colour.withAlpha(alpha));
-        g.fillEllipse(x - width * 0.30f, y - height * 0.22f,
-                      width * 0.60f, height * 0.44f);
+        // Bright crest hugs the actual spectrum.
+        g.setColour(colour.withAlpha(crestAlpha));
+        g.fillRoundedRectangle(
+            x - juce::jmax(1.0f, cellW * 0.46f),
+            y - 2.5f,
+            juce::jmax(2.0f, cellW * 0.92f),
+            5.0f,
+            2.0f);
     }
 
     // Neutral measurement trace remains separate from aura colour.
@@ -748,21 +791,6 @@ void SpectrumAuraDisplay::mouseUp(const juce::MouseEvent&)
     }
 
     draggingNode = -1;
-}
-
-void SpectrumAuraDisplay::mouseDoubleClick(const juce::MouseEvent& e)
-{
-    const int node = findNodeAt(e.position);
-    if (node < 0)
-        return;
-
-    const auto enabledId = "band" + juce::String(node + 1) + "_enabled";
-    setParameter(enabledId, parameter(enabledId) > 0.5f ? 0.0f : 1.0f);
-
-    if (onBandSelected)
-        onBandSelected(node);
-
-    repaint();
 }
 
 void SpectrumAuraDisplay::mouseMove(const juce::MouseEvent& e)
@@ -1193,6 +1221,7 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
 
     addAndMakeVisible(nodeEnabled);
     addAndMakeVisible(solfeggio);
+    masterBypass.setButtonText("PROCESSING ON");
     addAndMakeVisible(masterBypass);
 
     for (auto* label : { &inputPeakLabel, &grLabel, &peakLabel,
@@ -1492,6 +1521,16 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
     g.drawText("SELECTED NODE ENGINE",
                left + 10, engineY + 6, graphW - 20, 14,
                juce::Justification::centredLeft);
+
+    if (readParameter(processor.apvts, "master_bypass") > 0.5f)
+    {
+        g.setColour(juce::Colour::fromRGB(231, 84, 91).withAlpha(0.94f));
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(3.0f), 8.0f, 3.0f);
+        g.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold)));
+        g.drawText("BYPASSED — DSP OFF",
+                   getWidth() - 250, 15, 220, 22,
+                   juce::Justification::centredRight);
+    }
 }
 
 void PRISMVSTAudioProcessorEditor::resized()
@@ -1616,6 +1655,10 @@ void PRISMVSTAudioProcessorEditor::timerCallback()
     spectrumDisplay.pushSpectrum(spectrum);
     transferDisplay.repaint();
     updateNodeButtonText();
+
+    const bool bypassed = readParameter(processor.apvts, "master_bypass") > 0.5f;
+    masterBypass.setButtonText(
+        bypassed ? "BYPASSED — DSP OFF" : "PROCESSING ON");
 
     inputPeakLabel.setText(
         "IN   " + juce::String(processor.getInputPeakDb(), 1) + " dBFS",
