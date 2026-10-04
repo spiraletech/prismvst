@@ -23,6 +23,20 @@ PRISMVSTAudioProcessor::PRISMVSTAudioProcessor()
         v.store(kFloorDb);
 }
 
+PRISMVSTAudioProcessor::~PRISMVSTAudioProcessor()
+{
+    analyzerWorker.signalThreadShouldExit();
+    analyzerEvent.signal();
+    analyzerWorker.stopThread(1000);
+}
+
+void PRISMVSTAudioProcessor::releaseResources()
+{
+    analyzerWorker.signalThreadShouldExit();
+    analyzerEvent.signal();
+    analyzerWorker.stopThread(1000);
+}
+
 bool PRISMVSTAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
     return layouts.getMainInputChannelSet() == juce::AudioChannelSet::stereo()
@@ -180,6 +194,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
 
 void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+    analyzerWorker.signalThreadShouldExit();
+    analyzerEvent.signal();
+    analyzerWorker.stopThread(1000);
+
     currentSampleRate = sampleRate;
 
     juce::dsp::ProcessSpec monoSpec {
@@ -217,15 +235,20 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
         *loudShelf[(size_t)c].coefficients = *shC;
     }
 
+    analyzerFifo.reset();
+    analyzerQueue.fill(0.0f);
     fftWritePos = 0;
     fftHopCounter = 0;
     fftFifo.fill(0.0f);
     fftData.fill(0.0f);
+
     for (auto& v : spectrum)
         v.store(kFloorDb);
 
     integratedEnergy = 0.0;
     integratedSamples = 0;
+
+    analyzerWorker.startThread();
 }
 
 void PRISMVSTAudioProcessor::updateBandCoefficients(int bandIndex)
@@ -363,20 +386,70 @@ void PRISMVSTAudioProcessor::processOnyx(juce::AudioBuffer<float>& buffer)
 
 void PRISMVSTAudioProcessor::pushAnalyzerSamples(const juce::AudioBuffer<float>& buffer)
 {
-    const int n = buffer.getNumSamples();
+    // Audio thread does only bounded lock-free queue writes. FFT work is
+    // performed by AnalyzerWorker and never blocks processBlock().
+    const int requested = buffer.getNumSamples();
     const float* left = buffer.getReadPointer(0);
     const float* right = buffer.getReadPointer(1);
 
-    for (int i = 0; i < n; ++i)
-    {
-        fftFifo[(size_t)fftWritePos] = 0.5f * (left[i] + right[i]);
-        fftWritePos = (fftWritePos + 1) % fftSize;
+    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+    analyzerFifo.prepareToWrite(requested, start1, size1, start2, size2);
 
-        if (++fftHopCounter >= fftHopSize)
+    for (int i = 0; i < size1; ++i)
+        analyzerQueue[(size_t)(start1 + i)] = 0.5f * (left[i] + right[i]);
+
+    for (int i = 0; i < size2; ++i)
+    {
+        const int source = size1 + i;
+        analyzerQueue[(size_t)(start2 + i)] = 0.5f * (left[source] + right[source]);
+    }
+
+    const int written = size1 + size2;
+    analyzerFifo.finishedWrite(written);
+
+    if (written > 0)
+        analyzerEvent.signal();
+}
+
+void PRISMVSTAudioProcessor::runAnalyzerThread()
+{
+    while (!analyzerWorker.threadShouldExit())
+    {
+        analyzerEvent.wait(25);
+
+        for (;;)
         {
-            renderSpectrumFrame();
-            fftHopCounter = 0;
+            const int ready = analyzerFifo.getNumReady();
+            if (ready <= 0)
+                break;
+
+            const int amount = juce::jmin(ready, 4096);
+            int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+            analyzerFifo.prepareToRead(amount, start1, size1, start2, size2);
+
+            for (int i = 0; i < size1; ++i)
+                consumeAnalyzerSample(analyzerQueue[(size_t)(start1 + i)]);
+
+            for (int i = 0; i < size2; ++i)
+                consumeAnalyzerSample(analyzerQueue[(size_t)(start2 + i)]);
+
+            analyzerFifo.finishedRead(size1 + size2);
+
+            if (analyzerWorker.threadShouldExit())
+                break;
         }
+    }
+}
+
+void PRISMVSTAudioProcessor::consumeAnalyzerSample(float sample)
+{
+    fftFifo[(size_t)fftWritePos] = sample;
+    fftWritePos = (fftWritePos + 1) % fftSize;
+
+    if (++fftHopCounter >= fftHopSize)
+    {
+        renderSpectrumFrame();
+        fftHopCounter = 0;
     }
 }
 
