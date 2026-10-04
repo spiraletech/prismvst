@@ -52,6 +52,51 @@ int main()
                 return 2;
             }
 
-    std::cout << "PRISMVST DSP smoke tests passed\n";
+
+    // Six nodes must remain independent and expose their own transfer slope.
+    if (PRISMVSTAudioProcessor::numEqBands != 6) {
+        std::cerr << "Expected six independent nodes\n";
+        return 3;
+    }
+
+    auto* node1Slope = p.apvts.getParameter("band1_ratio");
+    auto* node2Slope = p.apvts.getParameter("band2_ratio");
+    auto* node6Slope = p.apvts.getParameter("band6_ratio");
+    auto* node1ReleaseB = p.apvts.getParameter("band1_release2");
+    auto* node1Detector = p.apvts.getParameter("band1_detector_mix");
+
+    if (node1Slope == nullptr || node2Slope == nullptr || node6Slope == nullptr
+        || node1ReleaseB == nullptr || node1Detector == nullptr) {
+        std::cerr << "Missing per-node dynamics parameters\n";
+        return 4;
+    }
+
+    const float node2Before = node2Slope->getValue();
+    node1Slope->setValueNotifyingHost(node1Slope->convertTo0to1(7.5f));
+    if (!near(node2Slope->getValue(), node2Before, 1.0e-7f)) {
+        std::cerr << "Node parameter state leaked across nodes\n";
+        return 5;
+    }
+
+    // Extreme detector/timing settings must remain finite.
+    node1ReleaseB->setValueNotifyingHost(node1ReleaseB->convertTo0to1(4000.0f));
+    node1Detector->setValueNotifyingHost(node1Detector->convertTo0to1(1.0f));
+    if (auto* curve = p.apvts.getParameter("band1_curve"))
+        curve->setValueNotifyingHost(curve->convertTo0to1(1.0f));
+
+    b.clear();
+    for (int c = 0; c < 2; ++c)
+        for (int i = 0; i < 512; ++i)
+            b.setSample(c, i, std::sin((float)i * 0.13f) * 0.95f);
+
+    p.processBlock(b, midi);
+    for (int c = 0; c < 2; ++c)
+        for (int i = 0; i < 512; ++i)
+            if (!std::isfinite(b.getSample(c, i))) {
+                std::cerr << "Non-finite DSP output\n";
+                return 6;
+            }
+
+    std::cout << "PRISM Alpha 001 DSP smoke tests passed\n";
     return 0;
 }
