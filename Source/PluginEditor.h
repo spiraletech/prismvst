@@ -10,10 +10,12 @@ public:
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+    void setPrecisionMode(int mode) noexcept { precisionMode = juce::jlimit(0, 2, mode); }
 
 private:
     double dragStartProportion = 0.0;
     int dragStartY = 0;
+    int precisionMode = 0;
 
     static constexpr double normalPixelsForFullRange = 700.0;
     static constexpr double finePixelsForFullRange = 3000.0;
@@ -138,20 +140,20 @@ private:
 
     PrecisionSlider onyx, onyxDrive, masterTrim, ceiling;
     PrecisionSlider analyzerSlope, auraMemory, colorAffinity;
-    juce::ComboBox analyzerDepth;
+    juce::ComboBox analyzerDepth, precisionMode;
 
     juce::ToggleButton solfeggio { "AURA COLOR" };
     juce::ToggleButton masterBypass { "BYPASS" };
 
     juce::Label peakLabel, lufsShortLabel, lufsIntLabel;
     juce::Label onyxLabel, driveLabel, trimLabel, ceilingLabel;
-    juce::Label analyzerSlopeLabel, auraMemoryLabel, affinityLabel, depthLabel;
+    juce::Label analyzerSlopeLabel, auraMemoryLabel, affinityLabel, depthLabel, precisionLabel;
 
     std::unique_ptr<SliderAttachment> frequencyA, gainA, qA, dynamicRangeA;
     std::unique_ptr<SliderAttachment> attackA, releaseA;
     std::unique_ptr<SliderAttachment> onyxA, onyxDriveA, masterTrimA, ceilingA;
     std::unique_ptr<SliderAttachment> analyzerSlopeA, auraMemoryA, colorAffinityA;
-    std::unique_ptr<ComboBoxAttachment> analyzerDepthA;
+    std::unique_ptr<ComboBoxAttachment> analyzerDepthA, precisionModeA;
     std::unique_ptr<ButtonAttachment> solfeggioA, masterBypassA;
 
     void configureRotary(juce::Slider&, const juce::String& suffix = {});
