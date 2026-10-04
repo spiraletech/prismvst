@@ -58,6 +58,8 @@ private:
     bool hasHover = false;
     juce::Point<float> hoverPoint;
     int draggingNode = -1;
+    float dragStartFrequency = 0.0f;
+    float dragStartX = 0.0f;
 
     juce::Rectangle<float> graphBounds() const;
     float frequencyToX(float frequency) const;
