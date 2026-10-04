@@ -6,7 +6,7 @@ namespace
 {
 constexpr float kFloorDb = -144.0f;
 constexpr std::array<float, PRISMVSTAudioProcessor::numEqBands> kDefaultFreq {
-    45.0f, 100.0f, 280.0f, 1200.0f, 6500.0f
+    45.0f, 95.0f, 240.0f, 900.0f, 3200.0f, 10500.0f
 };
 
 inline float toDb(float g) { return juce::Decibels::gainToDecibels(g, kFloorDb); }
