@@ -134,6 +134,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
         juce::ParameterID { "color_affinity", 1 }, "Color Affinity",
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.65f));
 
+    p.push_back(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID { "precision_mode", 1 }, "Control Precision",
+        juce::StringArray { "NORMAL", "FINE", "MICRO" }, 0));
+
     p.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "master_trim", 1 }, "Master Trim",
         juce::NormalisableRange<float>(-18.0f, 12.0f, 0.01f), 0.0f));
