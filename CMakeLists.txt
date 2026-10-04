@@ -52,7 +52,8 @@ target_link_libraries(PRISMVST PRIVATE
 option(PRISMVST_BUILD_TESTS "Build DSP smoke tests" ON)
 if(PRISMVST_BUILD_TESTS)
   enable_testing()
-  add_executable(prismvst_tests
+  juce_add_console_app(prismvst_tests PRODUCT_NAME "PRISMVST Tests")
+  target_sources(prismvst_tests PRIVATE
     Tests/ProcessorTests.cpp
     Source/PluginProcessor.cpp
     Source/PluginProcessor.h
