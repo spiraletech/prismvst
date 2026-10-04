@@ -55,6 +55,33 @@ float PRISMVSTAudioProcessor::read(const juce::AudioProcessorValueTreeState& sta
     return 0.0f;
 }
 
+void PRISMVSTAudioProcessor::sanitizeNodeFrequencies()
+{
+    // Node identity is fixed: 1..6 never re-sort or inherit another node.
+    // Invalid/restored legacy states are clamped in-place, left to right.
+    constexpr float minimumRatio = 1.059463094f; // one semitone
+    float previous = 20.0f / minimumRatio;
+
+    for (int i = 0; i < numEqBands; ++i)
+    {
+        const float minForIndex = 20.0f * std::pow(minimumRatio, (float)i);
+        const float maxForIndex = 20000.0f
+            / std::pow(minimumRatio, (float)(numEqBands - 1 - i));
+
+        const float low = juce::jmax(minForIndex, previous * minimumRatio);
+        const float current = read(apvts, bandId(i, "freq"));
+        const float corrected = juce::jlimit(low, maxForIndex, current);
+
+        if (auto* p = apvts.getParameter(bandId(i, "freq")))
+        {
+            if (std::abs(corrected - current) > 0.001f)
+                p->setValueNotifyingHost(p->convertTo0to1(corrected));
+        }
+
+        previous = corrected;
+    }
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
@@ -199,6 +226,7 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     analyzerWorker.stopThread(1000);
 
     currentSampleRate = sampleRate;
+    sanitizeNodeFrequencies();
 
     juce::dsp::ProcessSpec monoSpec {
         sampleRate,
@@ -455,8 +483,7 @@ void PRISMVSTAudioProcessor::consumeAnalyzerSample(float sample)
 
 void PRISMVSTAudioProcessor::renderSpectrumFrame()
 {
-    // Copy the circular FIFO oldest -> newest so analysis frames overlap
-    // without any scrolling-history representation in the UI.
+    // Copy circular FIFO oldest -> newest. UI history is NOT encoded here.
     for (int i = 0; i < fftSize; ++i)
     {
         const int source = (fftWritePos + i) % fftSize;
@@ -470,17 +497,44 @@ void PRISMVSTAudioProcessor::renderSpectrumFrame()
     fft.performFrequencyOnlyForwardTransform(fftData.data());
 
     const int maxBin = fftSize / 2;
+    const double sr = juce::jmax(1.0, currentSampleRate);
 
+    // Store LOG-FREQUENCY display cells directly. The previous build sampled
+    // a linear FFT array and then read it back as if it were perceptual/log,
+    // which made the low end sparse and the 0..-36 view look almost empty.
     for (int i = 0; i < spectrumBins; ++i)
     {
-        const float pos = (float)i / (float)(spectrumBins - 1);
-        const int bin = juce::jlimit(0, maxBin,
-                                     juce::roundToInt(pos * (float)maxBin));
+        const float centrePos = (float)i / (float)(spectrumBins - 1);
+        const float loPos = juce::jlimit(0.0f, 1.0f,
+            ((float)i - 0.5f) / (float)(spectrumBins - 1));
+        const float hiPos = juce::jlimit(0.0f, 1.0f,
+            ((float)i + 0.5f) / (float)(spectrumBins - 1));
 
-        // Hann coherent-gain compensation keeps the display meaningfully
-        // calibrated while retaining the independent -144 dBFS analysis floor.
-        const float magnitude = (2.0f * fftData[(size_t)bin]) / (float)fftSize;
-        spectrum[(size_t)i].store(toDb(magnitude + 1.0e-12f));
+        const float centreHz = 20.0f * std::pow(1000.0f, centrePos);
+        const float loHz = 20.0f * std::pow(1000.0f, loPos);
+        const float hiHz = 20.0f * std::pow(1000.0f, hiPos);
+
+        const int loBin = juce::jlimit(1, maxBin,
+            (int)std::floor(loHz * (double)fftSize / sr));
+        const int hiBin = juce::jlimit(loBin, maxBin,
+            (int)std::ceil(hiHz * (double)fftSize / sr));
+
+        float peakMagnitude = 0.0f;
+        for (int bin = loBin; bin <= hiBin; ++bin)
+            peakMagnitude = juce::jmax(
+                peakMagnitude,
+                (2.0f * fftData[(size_t)bin]) / (float)fftSize);
+
+        // If a very narrow low-frequency cell contains no FFT centre yet,
+        // sample the nearest physical bin instead of fabricating silence.
+        if (peakMagnitude <= 0.0f)
+        {
+            const int nearest = juce::jlimit(1, maxBin,
+                juce::roundToInt(centreHz * (float)fftSize / (float)sr));
+            peakMagnitude = (2.0f * fftData[(size_t)nearest]) / (float)fftSize;
+        }
+
+        spectrum[(size_t)i].store(toDb(peakMagnitude + 1.0e-12f));
     }
 }
 
@@ -574,8 +628,13 @@ void PRISMVSTAudioProcessor::getStateInformation(juce::MemoryBlock& dest)
 void PRISMVSTAudioProcessor::setStateInformation(const void* data, int size)
 {
     if (auto xml = getXmlFromBinary(data, size))
+    {
         if (xml->hasTagName(apvts.state.getType()))
+        {
             apvts.replaceState(juce::ValueTree::fromXml(*xml));
+            sanitizeNodeFrequencies();
+        }
+    }
 }
 
 juce::AudioProcessorEditor* PRISMVSTAudioProcessor::createEditor()
