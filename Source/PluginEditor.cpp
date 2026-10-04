@@ -606,12 +606,16 @@ void SpectrumAuraDisplay::paint(juce::Graphics& g)
     {
         const auto p = nodePosition(node);
         const bool selected = node == selectedBand;
+        const bool enabled = parameter("band" + juce::String(node + 1) + "_enabled") > 0.5f;
         const float freq = parameter("band" + juce::String(node + 1) + "_freq");
 
         float affinity = 0.0f;
         float ref = 0.0f;
         auto nodeColour = referenceColourForFrequency(
             freq, parameter("color_affinity"), affinity, ref);
+
+        if (!enabled)
+            nodeColour = juce::Colour::fromRGB(83, 89, 97);
 
         const float radius = selected ? 9.0f : 7.0f;
 
@@ -744,6 +748,21 @@ void SpectrumAuraDisplay::mouseUp(const juce::MouseEvent&)
     }
 
     draggingNode = -1;
+}
+
+void SpectrumAuraDisplay::mouseDoubleClick(const juce::MouseEvent& e)
+{
+    const int node = findNodeAt(e.position);
+    if (node < 0)
+        return;
+
+    const auto enabledId = "band" + juce::String(node + 1) + "_enabled";
+    setParameter(enabledId, parameter(enabledId) > 0.5f ? 0.0f : 1.0f);
+
+    if (onBandSelected)
+        onBandSelected(node);
+
+    repaint();
 }
 
 void SpectrumAuraDisplay::mouseMove(const juce::MouseEvent& e)
@@ -1133,7 +1152,7 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
 
     onyxDrive.setTextValueSuffix(" dB");
     masterTrim.setTextValueSuffix(" dB");
-    ceiling.setTextValueSuffix(" dBTP");
+    ceiling.setTextValueSuffix(" dBFS");
     analyzerSlope.setTextValueSuffix(" dB/oct");
     auraMemory.setTextValueSuffix(" s");
 
@@ -1172,6 +1191,7 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
     precisionMode.addItem("MICRO", 3);
     addAndMakeVisible(precisionMode);
 
+    addAndMakeVisible(nodeEnabled);
     addAndMakeVisible(solfeggio);
     addAndMakeVisible(masterBypass);
 
@@ -1312,6 +1332,11 @@ void PRISMVSTAudioProcessorEditor::updateNodeButtonText()
 
         nodeButtons[(size_t)i].setButtonText(
             juce::String(i + 1) + "   " + formatFrequency(freq) + " Hz");
+
+        const bool enabled = readParameter(
+            processor.apvts,
+            "band" + juce::String(i + 1) + "_enabled") > 0.5f;
+        nodeButtons[(size_t)i].setAlpha(enabled ? 1.0f : 0.52f);
     }
 }
 
@@ -1354,6 +1379,9 @@ void PRISMVSTAudioProcessorEditor::bindSelectedBand(int band)
         processor.apvts, prefix + "sustain", sustain);
     detectorMixA = std::make_unique<SliderAttachment>(
         processor.apvts, prefix + "detector_mix", detectorMix);
+
+    nodeEnabledA = std::make_unique<ButtonAttachment>(
+        processor.apvts, prefix + "enabled", nodeEnabled);
 
     for (const auto& pair : std::array<std::pair<juce::Slider*, juce::String>, nodeControlCount> {{
         { &frequency, prefix + "freq" },
@@ -1502,7 +1530,9 @@ void PRISMVSTAudioProcessorEditor::resized()
     transferDisplay.setBounds(left, transferY, graphW, transferH);
 
     selectedBandLabel.setBounds(
-        left + 8, transferY + transferH + 1, graphW - 16, labelH);
+        left + 8, transferY + transferH + 1, graphW - 142, labelH);
+    nodeEnabled.setBounds(
+        left + graphW - 126, transferY + transferH + 1, 118, labelH);
 
     // Twelve selected-node controls, two rows of six.
     const int controlsTop = engineY + 22;
