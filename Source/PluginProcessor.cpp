@@ -4,9 +4,9 @@
 
 namespace
 {
-constexpr float kFloorDb = -100.0f;
+constexpr float kFloorDb = -144.0f;
 constexpr std::array<float, PRISMVSTAudioProcessor::numEqBands> kDefaultFreq {
-    60.0f, 120.0f, 400.0f, 1200.0f, 4000.0f, 10000.0f
+    45.0f, 100.0f, 280.0f, 1200.0f, 6500.0f
 };
 
 inline float toDb(float g) { return juce::Decibels::gainToDecibels(g, kFloorDb); }
@@ -114,7 +114,25 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.35f));
 
     p.push_back(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID { "solfeggio_grid", 2 }, "Solfeggio Grid", false));
+        juce::ParameterID { "solfeggio_grid", 3 }, "Solfeggio Aura", true));
+
+    p.push_back(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID { "analyzer_depth", 1 }, "Analyzer Depth",
+        juce::StringArray { "MIX -36", "DEEP -72", "FORENSIC -120" }, 0));
+
+    p.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "analyzer_slope", 1 }, "Analyzer Slope",
+        juce::NormalisableRange<float>(0.0f, 6.0f, 0.1f), 4.5f));
+
+    juce::NormalisableRange<float> auraMemoryRange(0.05f, 10.0f, 0.01f);
+    auraMemoryRange.setSkewForCentre(1.5f);
+    p.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "aura_memory", 1 }, "Aura Memory",
+        auraMemoryRange, 1.5f));
+
+    p.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "color_affinity", 1 }, "Color Affinity",
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.65f));
 
     p.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "master_trim", 1 }, "Master Trim",
@@ -122,7 +140,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
 
     p.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "ceiling", 1 }, "Ceiling",
-        juce::NormalisableRange<float>(-12.0f, 0.0f, 0.01f), -0.3f));
+        juce::NormalisableRange<float>(-12.0f, 0.0f, 0.01f), -1.0f));
 
     p.push_back(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID { "master_bypass", 1 }, "Master Bypass", false));
