@@ -1,47 +1,81 @@
-# PRISMVST
+# PRISM Alpha 001
 
-PRISMVST is EtherTech's Windows-first VST3 for frequency-specialized dynamics,
-sound study, and precision spectral editing in FL Studio.
+PRISM is EtherTech's Windows-first VST3 for precision spectral dynamics, sound
+study, and stationary frequency-state visualization in FL Studio.
 
-## EtherTech interaction model
+## AAA interaction laws
 
-PRISM separates **measurement**, **visualization**, and **processing**.
+PRISM treats interaction quality as part of the audio engine:
 
-- Analyzer engine: 16384-point FFT with an internal display floor down to -144 dBFS.
-- Default analyzer viewport: MIX, 0 to -36 dBFS.
-- Deeper viewports: DEEP (0 to -72 dBFS) and FORENSIC (0 to -120 dBFS).
-- Spectrum slope: visualization-only compensation, default 4.5 dB/oct.
-- Stationary **Heat Aura**: frequency positions stay fixed; energy blooms and decays
-  in place instead of scrolling through a waterfall spectrogram.
-- Optional Solfeggio Aura palette: 174 / 285 / 396 / 417 / 528 / 639 / 741 /
-  852 / 963 Hz use a fixed EtherTech color canon with smooth interpolation.
-  This is a perceptual visualization language, not a medical or healing claim.
-- Hover inspection reports frequency, dBFS, derived wavelength, nearest aura
-  reference, and affinity.
-- SUB / KICK / LOW / MID / HIGH are semantic spectral territories separated by
-  subtle visual bumpers rather than EQ-style graph nodes.
-- A second **Dynamics Transfer Map** exposes threshold / ratio behavior as
-  input-to-output geometry, Maximus-style, instead of duplicating those values
-  as front-panel knobs.
-- UAD-like deliberate control feel: no velocity acceleration, long virtual drag
-  travel, NORMAL / FINE / MICRO precision modes, modifier precision, numeric
-  readouts, and double-click reset.
+- Six persistent nodes: **1 / 2 / 3 / 4 / 5 / 6**.
+- Node identity never changes when another node is selected.
+- Analyzer background clicks never silently select or move a node.
+- Node dragging uses explicit hit targets and cannot cross a neighboring node.
+- A one-semitone minimum spacing prevents stacked / ambiguous node handles.
+- Controls use acceleration-free, long-travel movement:
+  - NORMAL: ~3000 px full sweep
+  - FINE: ~9000 px full sweep
+  - MICRO: ~24000 px full sweep
+- Shift temporarily invokes fine movement; Ctrl/Cmd invokes micro movement.
+- Double-click reset and direct numeric entry remain available.
 
-## Current DSP core
+## Per-node engine
 
-The current processor branch uses five dynamic spectral peak domains plus the
-master stage. Each domain exposes center frequency, trim, width, maximum dynamic
-depth, attack, and release. The transfer map controls the existing threshold and
-ratio parameters.
+Every node owns independent state for:
 
-The next DSP milestone is a complementary crossover reconstruction engine with
-full Maximus-derived per-domain PRE / POST, stereo-link, dual-release,
-sustain/RMS detector behavior, saturation ceiling/shape, lookahead, and
-multiband mix. Those controls should only be exposed when their DSP paths are
-real; PRISM does not add decorative controls that do nothing.
+- Center frequency
+- Static trim
+- Q / width
+- Maximum dynamic depth (0 to 24 dB)
+- Dynamics slope / ratio
+- Attack
+- Transfer-curve shape
+- Release A
+- Release B
+- Release blend
+- Sustain / RMS integration time
+- Peak-to-RMS detector weighting
 
-MASTER currently provides ONYX shaping, drive, output trim, ceiling, bypass,
-peak monitoring, and short/integrated loudness telemetry.
+Threshold and slope are also exposed through a Maximus-derived input-to-output
+transfer map. The curve display uses the same depth and curve law as the DSP.
+
+## Heat Aura analyzer
+
+**ANALYZER VIEW != DSP.** Display behavior never feeds back into processing.
+
+- 16384-point FFT.
+- Overlapping FFT snapshots via a circular FIFO.
+- Internal analysis floor to -144 dBFS.
+- MIX viewport: 0 to -36 dBFS.
+- DEEP viewport: 0 to -72 dBFS.
+- FORENSIC viewport: 0 to -120 dBFS.
+- Display compensation slope: 0 to 6 dB/oct, default 4.5 dB/oct.
+- Stationary Heat Aura: x is always frequency. There is no time-scrolling
+  waterfall or row-history buffer.
+- Aura memory controls in-place persistence / afterglow.
+- Solfeggio Aura colors use EtherTech's canonical reference palette and octave
+  families across 20 Hz to 20 kHz.
+- Hover inspection reports Hz, dBFS, derived acoustic wavelength, nearest Aura
+  family, and affinity.
+
+The Solfeggio palette is a creative/perceptual visualization language, not a
+medical, healing, or physical-science claim.
+
+## Metering
+
+The Alpha 001 UI now exposes input peak, current maximum node gain reduction,
+output peak, LUFS short-term, and LUFS integrated telemetry.
+
+## Current DSP architecture
+
+The current Alpha uses six dynamic spectral peak nodes plus the master stage.
+Each node has a band-limited detector and independent peak/RMS timing law.
+The master stage includes ONYX nonlinear shaping, output trim, and ceiling.
+
+The next architectural milestone is complementary crossover reconstruction and
+full per-band PRE/POST, stereo linking, per-band saturation, lookahead, and
+parallel multiband mix. Those controls are intentionally not displayed until
+their DSP paths are real.
 
 ## Build
 
@@ -53,10 +87,5 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-On Windows, the VST3 bundle is produced under the JUCE artefacts directory in
-`build`.
-
-## Design law
-
-**ANALYZER VIEW != DSP.** Display range, slope, persistence, aura color, and
-other visual transforms never alter the audio or dynamics measurements.
+The Windows workflow builds and uploads the distinct **PRISM Alpha 001.vst3**
+artifact so FL Studio cannot confuse it with earlier PRISMVST prototypes.
