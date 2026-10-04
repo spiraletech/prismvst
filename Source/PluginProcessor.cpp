@@ -54,8 +54,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
     juce::NormalisableRange<float> attackRange(0.10f, 200.0f, 0.01f);
     attackRange.setSkewForCentre(10.0f);
 
-    juce::NormalisableRange<float> releaseRange(5.0f, 1000.0f, 0.1f);
-    releaseRange.setSkewForCentre(120.0f);
+    juce::NormalisableRange<float> releaseRange(5.0f, 2000.0f, 0.1f);
+    releaseRange.setSkewForCentre(180.0f);
+
+    juce::NormalisableRange<float> release2Range(20.0f, 4000.0f, 0.1f);
+    release2Range.setSkewForCentre(450.0f);
+
+    juce::NormalisableRange<float> sustainRange(1.0f, 1000.0f, 0.1f);
+    sustainRange.setSkewForCentre(80.0f);
 
     for (int i = 0; i < numEqBands; ++i)
     {
@@ -77,8 +83,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             qRange, 0.85f));
 
         p.push_back(std::make_unique<juce::AudioParameterFloat>(
-            juce::ParameterID { bandId(i, "dyn_range"), 2 }, prefix + "Dynamic Range",
-            juce::NormalisableRange<float>(0.0f, 18.0f, 0.01f), 0.0f));
+            juce::ParameterID { bandId(i, "dyn_range"), 3 }, prefix + "Dynamic Range",
+            juce::NormalisableRange<float>(0.0f, 24.0f, 0.01f), 6.0f));
 
         p.push_back(std::make_unique<juce::AudioParameterFloat>(
             juce::ParameterID { bandId(i, "threshold"), 2 }, prefix + "Threshold",
@@ -93,8 +99,28 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             attackRange, 10.0f));
 
         p.push_back(std::make_unique<juce::AudioParameterFloat>(
-            juce::ParameterID { bandId(i, "release"), 2 }, prefix + "Release",
-            releaseRange, 120.0f));
+            juce::ParameterID { bandId(i, "release"), 3 }, prefix + "Release A",
+            releaseRange, 180.0f));
+
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { bandId(i, "release2"), 1 }, prefix + "Release B",
+            release2Range, 450.0f));
+
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { bandId(i, "release_blend"), 1 }, prefix + "Release Blend",
+            juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.0f));
+
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { bandId(i, "curve"), 1 }, prefix + "Dynamics Curve",
+            juce::NormalisableRange<float>(-1.0f, 1.0f, 0.001f), 0.0f));
+
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { bandId(i, "sustain"), 1 }, prefix + "Sustain",
+            sustainRange, 80.0f));
+
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { bandId(i, "detector_mix"), 1 }, prefix + "Peak RMS",
+            juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.0f));
     }
 
     p.push_back(std::make_unique<juce::AudioParameterFloat>(
@@ -165,6 +191,7 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     for (auto& band : bands)
     {
         band.envelope = 0.0f;
+        band.rmsState = 0.0f;
         band.smoothedGainDb = 0.0f;
 
         for (int c = 0; c < 2; ++c)
@@ -226,6 +253,7 @@ void PRISMVSTAudioProcessor::updateBandCoefficients(int bandIndex)
 void PRISMVSTAudioProcessor::processDynamicEq(juce::AudioBuffer<float>& buffer)
 {
     const int n = buffer.getNumSamples();
+    float maxReduction = 0.0f;
 
     for (int b = 0; b < numEqBands; ++b)
     {
@@ -235,13 +263,22 @@ void PRISMVSTAudioProcessor::processDynamicEq(juce::AudioBuffer<float>& buffer)
         auto& band = bands[(size_t)b];
 
         const float threshold = read(apvts, bandId(b, "threshold"));
-        const float dynamicRange = read(apvts, bandId(b, "dyn_range"));
-        const float ratio = juce::jmax(1.0f, read(apvts, bandId(b, "ratio")));
+        const float dynamicRange = juce::jlimit(0.0f, 24.0f, read(apvts, bandId(b, "dyn_range")));
+        const float ratio = juce::jlimit(1.0f, 20.0f, read(apvts, bandId(b, "ratio")));
         const float attackMs = juce::jmax(0.10f, read(apvts, bandId(b, "attack")));
-        const float releaseMs = juce::jmax(5.0f, read(apvts, bandId(b, "release")));
+        const float releaseAMs = juce::jmax(5.0f, read(apvts, bandId(b, "release")));
+        const float releaseBMs = juce::jmax(20.0f, read(apvts, bandId(b, "release2")));
+        const float releaseBlend = juce::jlimit(0.0f, 1.0f, read(apvts, bandId(b, "release_blend")));
+        const float curve = juce::jlimit(-1.0f, 1.0f, read(apvts, bandId(b, "curve")));
+        const float sustainMs = juce::jmax(1.0f, read(apvts, bandId(b, "sustain")));
+        const float detectorMix = juce::jlimit(0.0f, 1.0f, read(apvts, bandId(b, "detector_mix")));
 
-        const float attackCoeff = std::exp(-1.0f / (0.001f * attackMs * (float)currentSampleRate));
-        const float releaseCoeff = std::exp(-1.0f / (0.001f * releaseMs * (float)currentSampleRate));
+        const float sr = (float)currentSampleRate;
+        const float attackCoeff = std::exp(-1.0f / (0.001f * attackMs * sr));
+        const float releaseACoeff = std::exp(-1.0f / (0.001f * releaseAMs * sr));
+        const float releaseBCoeff = std::exp(-1.0f / (0.001f * releaseBMs * sr));
+        const float releaseCoeff = releaseACoeff + (releaseBCoeff - releaseACoeff) * releaseBlend;
+        const float rmsCoeff = std::exp(-1.0f / (0.001f * sustainMs * sr));
 
         const float* left = buffer.getReadPointer(0);
         const float* right = buffer.getReadPointer(1);
@@ -250,7 +287,12 @@ void PRISMVSTAudioProcessor::processDynamicEq(juce::AudioBuffer<float>& buffer)
         {
             const float dl = band.detector[0].processSample(left[i]);
             const float dr = band.detector[1].processSample(right[i]);
-            const float detected = juce::jmax(std::abs(dl), std::abs(dr));
+            const float peakDetected = juce::jmax(std::abs(dl), std::abs(dr));
+
+            band.rmsState = rmsCoeff * band.rmsState
+                          + (1.0f - rmsCoeff) * peakDetected * peakDetected;
+            const float rmsDetected = std::sqrt(juce::jmax(0.0f, band.rmsState));
+            const float detected = peakDetected + (rmsDetected - peakDetected) * detectorMix;
 
             const float coeff = detected > band.envelope ? attackCoeff : releaseCoeff;
             band.envelope = coeff * band.envelope + (1.0f - coeff) * detected;
@@ -258,10 +300,21 @@ void PRISMVSTAudioProcessor::processDynamicEq(juce::AudioBuffer<float>& buffer)
 
         const float levelDb = toDb(band.envelope + 1.0e-9f);
         const float overDb = juce::jmax(0.0f, levelDb - threshold);
-        const float compressedDb = overDb * (1.0f - 1.0f / ratio);
+
+        // Curve is a true transfer-shape control: negative values soften the
+        // onset, positive values make the compression law progressively firmer.
+        const float exponent = juce::jmap(curve, -1.0f, 1.0f, 0.65f, 1.75f);
+        const float shapedOver = overDb > 0.0f
+            ? 24.0f * std::pow(overDb / 24.0f, exponent)
+            : 0.0f;
+        const float compressedDb = shapedOver * (1.0f - 1.0f / ratio);
         const float targetDynamicDb = -juce::jmin(dynamicRange, compressedDb);
 
-        band.smoothedGainDb += 0.35f * (targetDynamicDb - band.smoothedGainDb);
+        const float gainSmoothCoeff = std::exp(-(float)n / (0.010f * sr));
+        band.smoothedGainDb = gainSmoothCoeff * band.smoothedGainDb
+                            + (1.0f - gainSmoothCoeff) * targetDynamicDb;
+
+        maxReduction = juce::jmax(maxReduction, -band.smoothedGainDb);
         updateBandCoefficients(b);
 
         for (int c = 0; c < 2; ++c)
@@ -273,6 +326,8 @@ void PRISMVSTAudioProcessor::processDynamicEq(juce::AudioBuffer<float>& buffer)
                 x[i] = filter.processSample(x[i]);
         }
     }
+
+    gainReductionDb.store(maxReduction);
 }
 
 void PRISMVSTAudioProcessor::processOnyx(juce::AudioBuffer<float>& buffer)
@@ -391,8 +446,14 @@ void PRISMVSTAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
     for (int c = getTotalNumInputChannels(); c < getTotalNumOutputChannels(); ++c)
         buffer.clear(c, 0, buffer.getNumSamples());
 
+    float inputPeak = 0.0f;
+    for (int c = 0; c < juce::jmin(2, buffer.getNumChannels()); ++c)
+        inputPeak = juce::jmax(inputPeak, buffer.getMagnitude(c, 0, buffer.getNumSamples()));
+    inputPeakDb.store(toDb(inputPeak + 1.0e-9f));
+
     if (read(apvts, "master_bypass") > 0.5f)
     {
+        gainReductionDb.store(0.0f);
         pushAnalyzerSamples(buffer);
         updateMeters(buffer);
         return;
