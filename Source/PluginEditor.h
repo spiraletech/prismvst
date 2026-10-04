@@ -57,6 +57,7 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
+    void mouseDoubleClick(const juce::MouseEvent&) override;
     void mouseMove(const juce::MouseEvent&) override;
     void mouseExit(const juce::MouseEvent&) override;
 
@@ -175,6 +176,7 @@ private:
     PrecisionSlider analyzerSlope, auraMemory, colorAffinity;
     juce::ComboBox analyzerDepth, precisionMode;
 
+    juce::ToggleButton nodeEnabled { "NODE ACTIVE" };
     juce::ToggleButton solfeggio { "AURA COLOR" };
     juce::ToggleButton masterBypass { "BYPASS" };
 
@@ -187,7 +189,7 @@ private:
     std::unique_ptr<SliderAttachment> onyxA, onyxDriveA, masterTrimA, ceilingA;
     std::unique_ptr<SliderAttachment> analyzerSlopeA, auraMemoryA, colorAffinityA;
     std::unique_ptr<ComboBoxAttachment> analyzerDepthA, precisionModeA;
-    std::unique_ptr<ButtonAttachment> solfeggioA, masterBypassA;
+    std::unique_ptr<ButtonAttachment> nodeEnabledA, solfeggioA, masterBypassA;
 
     void configureRotary(juce::Slider&, const juce::String& suffix = {});
     void enableDefaultReset(juce::Slider&, const juce::String& parameterId);
