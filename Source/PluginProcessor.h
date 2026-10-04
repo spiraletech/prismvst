@@ -65,8 +65,11 @@ private:
     static constexpr int fftSize = 1 << fftOrder;
     juce::dsp::FFT fft { fftOrder };
     juce::dsp::WindowingFunction<float> fftWindow { fftSize, juce::dsp::WindowingFunction<float>::hann };
+    static constexpr int fftHopSize = 4096;
+    std::array<float, fftSize> fftFifo {};
     std::array<float, fftSize * 2> fftData {};
     int fftWritePos = 0;
+    int fftHopCounter = 0;
     std::array<std::atomic<float>, spectrumBins> spectrum {};
 
     double currentSampleRate = 44100.0;
