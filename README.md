@@ -35,6 +35,7 @@ Every node owns independent state for:
 - Release blend
 - Sustain / RMS integration time
 - Peak-to-RMS detector weighting
+- Per-node active/bypass state (including direct node double-click toggle)
 
 Threshold and slope are also exposed through a Maximus-derived input-to-output
 transfer map. The curve display uses the same depth and curve law as the DSP.
@@ -45,6 +46,8 @@ transfer map. The curve display uses the same depth and curve law as the DSP.
 
 - 16384-point FFT.
 - Overlapping FFT snapshots via a circular FIFO.
+- FFT work runs on a dedicated analyzer worker; the audio thread only performs
+  bounded lock-free sample queue writes.
 - Internal analysis floor to -144 dBFS.
 - MIX viewport: 0 to -36 dBFS.
 - DEEP viewport: 0 to -72 dBFS.
@@ -70,7 +73,8 @@ output peak, LUFS short-term, and LUFS integrated telemetry.
 
 The current Alpha uses six dynamic spectral peak nodes plus the master stage.
 Each node has a band-limited detector and independent peak/RMS timing law.
-The master stage includes ONYX nonlinear shaping, output trim, and ceiling.
+The master stage includes ONYX nonlinear shaping, output trim, and a
+sample-peak ceiling. True-peak limiting is not claimed in Alpha 001.
 
 The next architectural milestone is complementary crossover reconstruction and
 full per-band PRE/POST, stereo linking, per-band saturation, lookahead, and
