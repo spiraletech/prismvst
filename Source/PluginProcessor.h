@@ -6,7 +6,7 @@
 class PRISMVSTAudioProcessor final : public juce::AudioProcessor
 {
 public:
-    static constexpr int numEqBands = 6;
+    static constexpr int numEqBands = 5;
     static constexpr int spectrumBins = 512;
 
     PRISMVSTAudioProcessor();
@@ -56,7 +56,9 @@ private:
     std::array<juce::dsp::IIR::Filter<float>, 2> loudHp;
     std::array<juce::dsp::IIR::Filter<float>, 2> loudShelf;
 
-    static constexpr int fftOrder = 11;
+    // Analyzer measurement precision is intentionally deeper than the visible
+    // viewport. UI range/slope/aura transforms never feed back into DSP.
+    static constexpr int fftOrder = 14; // 16384 samples
     static constexpr int fftSize = 1 << fftOrder;
     juce::dsp::FFT fft { fftOrder };
     juce::dsp::WindowingFunction<float> fftWindow { fftSize, juce::dsp::WindowingFunction<float>::hann };
@@ -68,9 +70,9 @@ private:
     double integratedEnergy = 0.0;
     uint64_t integratedSamples = 0;
 
-    std::atomic<float> peakDb { -100.0f };
-    std::atomic<float> lufsShort { -100.0f };
-    std::atomic<float> lufsIntegrated { -100.0f };
+    std::atomic<float> peakDb { -144.0f };
+    std::atomic<float> lufsShort { -144.0f };
+    std::atomic<float> lufsIntegrated { -144.0f };
 
     void updateBandCoefficients(int bandIndex);
     void processDynamicEq(juce::AudioBuffer<float>& buffer);
