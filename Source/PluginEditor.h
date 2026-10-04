@@ -12,21 +12,31 @@ public:
     void mouseUp(const juce::MouseEvent& e) override;
 
 private:
-    double dragStartValue = 0.0;
+    double dragStartProportion = 0.0;
     int dragStartY = 0;
-    bool precisionDrag = false;
-    static constexpr double precisionPixelsForFullRange = 3000.0;
+
+    static constexpr double normalPixelsForFullRange = 700.0;
+    static constexpr double finePixelsForFullRange = 3000.0;
+    static constexpr double microPixelsForFullRange = 6000.0;
 };
 
-class SpectrumEQDisplay final : public juce::Component
+class EtherTechLookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
-    explicit SpectrumEQDisplay(PRISMVSTAudioProcessor&);
+    void drawRotarySlider(juce::Graphics&, int x, int y, int width, int height,
+                          float sliderPosProportional, float rotaryStartAngle,
+                          float rotaryEndAngle, juce::Slider&) override;
+};
+
+class SpectrumAuraDisplay final : public juce::Component
+{
+public:
+    explicit SpectrumAuraDisplay(PRISMVSTAudioProcessor&);
 
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
-    void mouseDrag(const juce::MouseEvent&) override;
-    void mouseDoubleClick(const juce::MouseEvent&) override;
+    void mouseMove(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
 
     void pushSpectrum(const std::array<float, PRISMVSTAudioProcessor::spectrumBins>&);
     void setSelectedBand(int band);
@@ -35,27 +45,67 @@ public:
     std::function<void(int)> onBandSelected;
 
 private:
-    static constexpr int heatColumns = 144;
-    static constexpr int heatRows = 42;
+    static constexpr int auraColumns = 160;
 
     PRISMVSTAudioProcessor& processor;
     int selectedBand = 0;
     std::array<float, PRISMVSTAudioProcessor::spectrumBins> latestSpectrum {};
-    std::array<std::array<float, heatColumns>, heatRows> heatHistory {};
-    int heatWriteRow = 0;
+    std::array<float, auraColumns> auraEnergy {};
+    bool hasHover = false;
+    juce::Point<float> hoverPoint;
 
     juce::Rectangle<float> graphBounds() const;
     float frequencyToX(float frequency) const;
     float xToFrequency(float x) const;
-    float gainToY(float gainDb) const;
-    float yToGain(float y) const;
-    juce::Point<float> nodePosition(int band) const;
-    int findNearestNode(juce::Point<float>) const;
+    float levelToY(float db) const;
+    float displayFloorDb() const;
     float parameter(const juce::String& id) const;
-    void setParameter(const juce::String& id, float value);
-    juce::String id(int band, const juce::String& suffix) const;
+    float spectrumDbAt(float frequency) const;
+    float displayedSpectrumDbAt(float frequency) const;
+    int domainForFrequency(float frequency) const;
+    float domainBumperFrequency(int leftDomain) const;
+    juce::Colour auraColourFor(float frequency, float& affinity, float& referenceHz) const;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumEQDisplay)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumAuraDisplay)
+};
+
+class DynamicsTransferDisplay final : public juce::Component
+{
+public:
+    explicit DynamicsTransferDisplay(PRISMVSTAudioProcessor&);
+
+    void paint(juce::Graphics&) override;
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    void mouseDoubleClick(const juce::MouseEvent&) override;
+
+    void setSelectedBand(int band);
+
+private:
+    enum class DragTarget { none, threshold, ratio };
+
+    PRISMVSTAudioProcessor& processor;
+    int selectedBand = 0;
+    DragTarget dragTarget = DragTarget::none;
+    float dragStartValue = 0.0f;
+    float dragStartPixel = 0.0f;
+
+    juce::Rectangle<float> graphBounds() const;
+    juce::String id(const juce::String& suffix) const;
+    float parameter(const juce::String& suffix) const;
+    void setParameter(const juce::String& suffix, float value);
+    juce::RangedAudioParameter* rangedParameter(const juce::String& suffix) const;
+
+    float dbToX(float db) const;
+    float dbToY(float db) const;
+    float xToDb(float x) const;
+    float yToDb(float y) const;
+    juce::Point<float> thresholdPoint() const;
+    juce::Point<float> ratioPoint() const;
+    float dragScale(const juce::ModifierKeys&) const;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DynamicsTransferDisplay)
 };
 
 class PRISMVSTAudioProcessorEditor final : public juce::AudioProcessorEditor,
@@ -63,7 +113,7 @@ class PRISMVSTAudioProcessorEditor final : public juce::AudioProcessorEditor,
 {
 public:
     explicit PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcessor&);
-    ~PRISMVSTAudioProcessorEditor() override = default;
+    ~PRISMVSTAudioProcessorEditor() override;
 
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -71,29 +121,41 @@ public:
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
+    using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
 
     PRISMVSTAudioProcessor& processor;
-    SpectrumEQDisplay spectrumDisplay;
+    EtherTechLookAndFeel lookAndFeel;
+    SpectrumAuraDisplay spectrumDisplay;
+    DynamicsTransferDisplay transferDisplay;
 
     int selectedBand = 0;
 
+    std::array<juce::TextButton, PRISMVSTAudioProcessor::numEqBands> domainButtons;
     juce::Label selectedBandLabel;
-    std::array<juce::Label, 8> controlLabels;
-    PrecisionSlider frequency, gain, q, dynamicRange, threshold, ratio, attack, release;
+
+    std::array<juce::Label, 6> controlLabels;
+    PrecisionSlider frequency, gain, q, dynamicRange, attack, release;
 
     PrecisionSlider onyx, onyxDrive, masterTrim, ceiling;
-    juce::ToggleButton solfeggio { "SOLFEGGIO" };
+    PrecisionSlider analyzerSlope, auraMemory, colorAffinity;
+    juce::ComboBox analyzerDepth;
+
+    juce::ToggleButton solfeggio { "AURA COLOR" };
     juce::ToggleButton masterBypass { "BYPASS" };
 
     juce::Label peakLabel, lufsShortLabel, lufsIntLabel;
     juce::Label onyxLabel, driveLabel, trimLabel, ceilingLabel;
+    juce::Label analyzerSlopeLabel, auraMemoryLabel, affinityLabel, depthLabel;
 
     std::unique_ptr<SliderAttachment> frequencyA, gainA, qA, dynamicRangeA;
-    std::unique_ptr<SliderAttachment> thresholdA, ratioA, attackA, releaseA;
+    std::unique_ptr<SliderAttachment> attackA, releaseA;
     std::unique_ptr<SliderAttachment> onyxA, onyxDriveA, masterTrimA, ceilingA;
+    std::unique_ptr<SliderAttachment> analyzerSlopeA, auraMemoryA, colorAffinityA;
+    std::unique_ptr<ComboBoxAttachment> analyzerDepthA;
     std::unique_ptr<ButtonAttachment> solfeggioA, masterBypassA;
 
     void configureRotary(juce::Slider&, const juce::String& suffix = {});
+    void enableDefaultReset(juce::Slider&, const juce::String& parameterId);
     void bindSelectedBand(int band);
     void timerCallback() override;
 
