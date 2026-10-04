@@ -25,6 +25,8 @@ juce_add_plugin(PRISMVST
   COPY_PLUGIN_AFTER_BUILD FALSE
 )
 
+juce_generate_juce_header(PRISMVST)
+
 target_sources(PRISMVST PRIVATE
   Source/PluginProcessor.cpp
   Source/PluginProcessor.h
@@ -57,6 +59,7 @@ if(PRISMVST_BUILD_TESTS)
     Source/PluginEditor.cpp
     Source/PluginEditor.h
   )
+  juce_generate_juce_header(prismvst_tests)
   target_compile_definitions(prismvst_tests PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
