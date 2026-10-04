@@ -101,6 +101,7 @@ private:
     std::atomic<float> lufsShort { -144.0f };
     std::atomic<float> lufsIntegrated { -144.0f };
 
+    void sanitizeNodeFrequencies();
     void updateBandCoefficients(int bandIndex);
     void processDynamicEq(juce::AudioBuffer<float>& buffer);
     void processOnyx(juce::AudioBuffer<float>& buffer);
