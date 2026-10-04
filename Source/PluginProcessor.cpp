@@ -218,6 +218,8 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     }
 
     fftWritePos = 0;
+    fftHopCounter = 0;
+    fftFifo.fill(0.0f);
     fftData.fill(0.0f);
     for (auto& v : spectrum)
         v.store(kFloorDb);
@@ -367,18 +369,27 @@ void PRISMVSTAudioProcessor::pushAnalyzerSamples(const juce::AudioBuffer<float>&
 
     for (int i = 0; i < n; ++i)
     {
-        fftData[(size_t)fftWritePos++] = 0.5f * (left[i] + right[i]);
+        fftFifo[(size_t)fftWritePos] = 0.5f * (left[i] + right[i]);
+        fftWritePos = (fftWritePos + 1) % fftSize;
 
-        if (fftWritePos >= fftSize)
+        if (++fftHopCounter >= fftHopSize)
         {
             renderSpectrumFrame();
-            fftWritePos = 0;
+            fftHopCounter = 0;
         }
     }
 }
 
 void PRISMVSTAudioProcessor::renderSpectrumFrame()
 {
+    // Copy the circular FIFO oldest -> newest so analysis frames overlap
+    // without any scrolling-history representation in the UI.
+    for (int i = 0; i < fftSize; ++i)
+    {
+        const int source = (fftWritePos + i) % fftSize;
+        fftData[(size_t)i] = fftFifo[(size_t)source];
+    }
+
     for (int i = fftSize; i < fftSize * 2; ++i)
         fftData[(size_t)i] = 0.0f;
 
@@ -390,9 +401,13 @@ void PRISMVSTAudioProcessor::renderSpectrumFrame()
     for (int i = 0; i < spectrumBins; ++i)
     {
         const float pos = (float)i / (float)(spectrumBins - 1);
-        const int bin = juce::jlimit(0, maxBin, juce::roundToInt(pos * (float)maxBin));
-        const float magnitude = fftData[(size_t)bin] / (float)fftSize;
-        spectrum[(size_t)i].store(toDb(magnitude + 1.0e-9f));
+        const int bin = juce::jlimit(0, maxBin,
+                                     juce::roundToInt(pos * (float)maxBin));
+
+        // Hann coherent-gain compensation keeps the display meaningfully
+        // calibrated while retaining the independent -144 dBFS analysis floor.
+        const float magnitude = (2.0f * fftData[(size_t)bin]) / (float)fftSize;
+        spectrum[(size_t)i].store(toDb(magnitude + 1.0e-12f));
     }
 }
 
