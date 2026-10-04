@@ -10,10 +10,10 @@ public:
     static constexpr int spectrumBins = 512;
 
     PRISMVSTAudioProcessor();
-    ~PRISMVSTAudioProcessor() override = default;
+    ~PRISMVSTAudioProcessor() override;
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
-    void releaseResources() override {}
+    void releaseResources() override;
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
@@ -66,6 +66,25 @@ private:
     juce::dsp::FFT fft { fftOrder };
     juce::dsp::WindowingFunction<float> fftWindow { fftSize, juce::dsp::WindowingFunction<float>::hann };
     static constexpr int fftHopSize = 4096;
+    static constexpr int analyzerQueueSize = 65536;
+
+    class AnalyzerWorker final : public juce::Thread
+    {
+    public:
+        explicit AnalyzerWorker(PRISMVSTAudioProcessor& ownerIn)
+            : juce::Thread("PRISM Analyzer"), owner(ownerIn) {}
+
+        void run() override { owner.runAnalyzerThread(); }
+
+    private:
+        PRISMVSTAudioProcessor& owner;
+    };
+
+    juce::AbstractFifo analyzerFifo { analyzerQueueSize };
+    std::array<float, analyzerQueueSize> analyzerQueue {};
+    juce::WaitableEvent analyzerEvent;
+    AnalyzerWorker analyzerWorker { *this };
+
     std::array<float, fftSize> fftFifo {};
     std::array<float, fftSize * 2> fftData {};
     int fftWritePos = 0;
@@ -87,6 +106,8 @@ private:
     void processOnyx(juce::AudioBuffer<float>& buffer);
     void updateMeters(const juce::AudioBuffer<float>& buffer);
     void pushAnalyzerSamples(const juce::AudioBuffer<float>& buffer);
+    void runAnalyzerThread();
+    void consumeAnalyzerSample(float sample);
     void renderSpectrumFrame();
 
     static juce::String bandId(int band, const juce::String& suffix);
