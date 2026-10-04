@@ -285,11 +285,14 @@ void EtherTechLookAndFeel::drawToggleButton(juce::Graphics& g,
     const bool on = button.getToggleState();
 
     const bool isBypassed = button.getButtonText().containsIgnoreCase("BYPASSED");
+    const bool isProcessing = button.getButtonText().containsIgnoreCase("PROCESSING ON");
 
     auto fill = isBypassed
         ? juce::Colour::fromRGB(82, 28, 31)
-        : (on ? juce::Colour::fromRGB(35, 55, 64)
-              : juce::Colour::fromRGB(15, 19, 24));
+        : (isProcessing
+            ? juce::Colour::fromRGB(25, 62, 66)
+            : (on ? juce::Colour::fromRGB(35, 55, 64)
+                  : juce::Colour::fromRGB(15, 19, 24)));
 
     if (highlighted)
         fill = fill.brighter(0.06f);
@@ -301,11 +304,15 @@ void EtherTechLookAndFeel::drawToggleButton(juce::Graphics& g,
 
     g.setColour(isBypassed
         ? juce::Colour::fromRGB(231, 84, 91)
-        : (on ? juce::Colour::fromRGB(79, 176, 210)
-              : juce::Colour::fromRGB(57, 64, 74)));
-    g.drawRoundedRectangle(b, 5.0f, isBypassed ? 1.6f : 1.0f);
+        : (isProcessing
+            ? juce::Colour::fromRGB(72, 194, 180)
+            : (on ? juce::Colour::fromRGB(79, 176, 210)
+                  : juce::Colour::fromRGB(57, 64, 74))));
+    g.drawRoundedRectangle(b, 5.0f, (isBypassed || isProcessing) ? 1.6f : 1.0f);
 
-    g.setColour((on || isBypassed) ? juce::Colours::white.withAlpha(0.94f) : textMuted());
+    g.setColour((on || isBypassed || isProcessing)
+                    ? juce::Colours::white.withAlpha(0.94f)
+                    : textMuted());
     g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
     g.drawFittedText(button.getButtonText(), button.getLocalBounds().reduced(7, 2),
                      juce::Justification::centred, 1);
