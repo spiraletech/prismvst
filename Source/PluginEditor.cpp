@@ -4,7 +4,8 @@
 
 namespace
 {
-constexpr std::array<const char*, PRISMVSTAudioProcessorEditor::nodeControlCount> kControlNames {
+constexpr int kNodeControlCount = 12;
+constexpr std::array<const char*, kNodeControlCount> kControlNames {
     "CENTER", "TRIM", "WIDTH / Q", "DEPTH", "DYN SLOPE", "ATTACK",
     "CURVE", "REL A", "REL B", "REL MIX", "SUSTAIN", "PEAK / RMS"
 };
