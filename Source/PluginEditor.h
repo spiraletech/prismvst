@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 #include <array>
 #include <functional>
+#include <memory>
 
 class PrecisionSlider final : public juce::Slider
 {
@@ -14,7 +15,6 @@ public:
 private:
     double dragStartProportion = 0.0;
     int dragStartY = 0;
-
     static constexpr double normalPixelsForFullRange = 3000.0;
     static constexpr double finePixelsForFullRange = 9000.0;
     static constexpr double microPixelsForFullRange = 24000.0;
@@ -53,6 +53,8 @@ private:
     PRISMVSTAudioProcessor& processor;
     int selectedSection = 0;
     int draggingCrossover = -1;
+    float dragStartFrequency = 0.0f;
+    float dragStartX = 0.0f;
 
     std::array<float, PRISMVSTAudioProcessor::spectrumBins> latestSpectrum {};
     std::array<float, auraColumns> auraEnergy {};
@@ -66,16 +68,19 @@ private:
     float levelToY(float db) const;
     float yToLevel(float y) const;
     float displayFloorDb() const;
+
     float parameter(const juce::String&) const;
     void setParameter(const juce::String&, float);
     float crossoverFrequency(int index) const;
     float clampedCrossoverFrequency(int index, float frequency) const;
     int findCrossoverAt(juce::Point<float>) const;
     int sectionForX(float x) const;
+
     float spectrumDbAt(float frequency) const;
     float displayedSpectrumDbAt(float frequency) const;
+    juce::Colour heatColourFor(float frequency) const;
+    void drawLotusGrid(juce::Graphics&, juce::Rectangle<float>) const;
     void showContextMenu(juce::Point<int> position);
-    void resetSection(int section);
     void resetCrossovers();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumAuraDisplay)
@@ -108,12 +113,15 @@ private:
     juce::String id(const juce::String&) const;
     float parameter(const juce::String&) const;
     void setParameter(const juce::String&, float);
+    juce::RangedAudioParameter* rangedParameter(const juce::String&) const;
+
     float dbToX(float db) const;
     float dbToY(float db) const;
     float xToDb(float x) const;
+    float outputDbForInput(float inputDb) const;
     juce::Point<float> thresholdPoint() const;
     juce::Point<float> ratioPoint() const;
-    float outputDbForInput(float inputDb) const;
+    float dragScale(const juce::ModifierKeys&) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DynamicsTransferDisplay)
 };
@@ -149,7 +157,7 @@ private:
     std::array<juce::Label, controlCount> controlLabels;
     PrecisionSlider input, output, attack, release, width, onyx;
 
-    juce::Label inputPeakLabel, grLabel, peakLabel, lufsShortLabel, lufsIntLabel;
+    juce::Label inputPeakLabel, grLabel, outputPeakLabel;
 
     std::unique_ptr<SliderAttachment> inputA, outputA, attackA, releaseA, widthA, onyxA;
     std::unique_ptr<ButtonAttachment> sectionOnA, sectionSoloA;
