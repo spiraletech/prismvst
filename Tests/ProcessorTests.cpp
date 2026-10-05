@@ -60,6 +60,7 @@ bool finiteBuffer(const juce::AudioBuffer<float>& buffer)
 
 int main()
 {
+    std::cerr << "TEST 1 schema" << std::endl;
     // -------------------------------------------------------------------------
     // Contract: seven named sections, six crossovers, no legacy master bypass.
     {
@@ -105,6 +106,7 @@ int main()
         }
     }
 
+    std::cerr << "TEST 2 off mute" << std::endl;
     // -------------------------------------------------------------------------
     // OFF means muted. A soloed-but-OFF section must produce silence.
     {
@@ -127,6 +129,7 @@ int main()
         }
     }
 
+    std::cerr << "TEST 3 solo" << std::endl;
     // -------------------------------------------------------------------------
     // SOLO means audible isolation, and the section path must remain finite.
     {
@@ -150,6 +153,7 @@ int main()
         }
     }
 
+    std::cerr << "TEST 4 neutral" << std::endl;
     // -------------------------------------------------------------------------
     // Neutral seven-way reconstruction must not grossly change amplitude.
     {
@@ -190,6 +194,7 @@ int main()
         }
     }
 
+    std::cerr << "TEST 5 width" << std::endl;
     // -------------------------------------------------------------------------
     // WIDTH 0% must collapse side information for the selected section.
     {
@@ -216,6 +221,7 @@ int main()
         }
     }
 
+    std::cerr << "TEST 6 sanitize" << std::endl;
     // -------------------------------------------------------------------------
     // Invalid crossover ordering must repair without changing the 7-section law.
     {
