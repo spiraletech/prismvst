@@ -2,12 +2,13 @@
 #include "../Source/PluginProcessor.h"
 #include <cmath>
 #include <iostream>
+#include <memory>
 
 namespace
 {
 bool setActual(PRISMVSTAudioProcessor& p, const juce::String& id, float value)
 {
-    if (auto* parameter = p.apvts.getParameter(id))
+    if (auto* parameter = p->apvts.getParameter(id))
     {
         parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
         return true;
@@ -64,7 +65,7 @@ int main()
     // -------------------------------------------------------------------------
     // Contract: seven named sections, six crossovers, no legacy master bypass.
     {
-        PRISMVSTAudioProcessor p;
+        auto p = std::make_unique<PRISMVSTAudioProcessor>();
 
         if (PRISMVSTAudioProcessor::numSections != 7
             || PRISMVSTAudioProcessor::numCrossovers != 6)
@@ -80,7 +81,7 @@ int main()
                      "attack_ms", "release_ms", "width_pct", "onyx_pct",
                      "threshold_db", "ratio", "curve" })
             {
-                if (p.apvts.getParameter(PRISMVSTAudioProcessor::sectionId(s, suffix)) == nullptr)
+                if (p->apvts.getParameter(PRISMVSTAudioProcessor::sectionId(s, suffix)) == nullptr)
                 {
                     std::cerr << "Missing section parameter: "
                               << PRISMVSTAudioProcessor::sectionId(s, suffix) << "\n";
@@ -90,16 +91,16 @@ int main()
         }
 
         for (int x = 0; x < PRISMVSTAudioProcessor::numCrossovers; ++x)
-            if (p.apvts.getParameter(PRISMVSTAudioProcessor::crossoverId(x)) == nullptr)
+            if (p->apvts.getParameter(PRISMVSTAudioProcessor::crossoverId(x)) == nullptr)
             {
                 std::cerr << "Missing crossover parameter\n";
                 return 3;
             }
 
-        if (p.apvts.getParameter("master_bypass") != nullptr
-            || p.apvts.getParameter("master_trim") != nullptr
-            || p.apvts.getParameter("ceiling") != nullptr
-            || p.apvts.getParameter("band1_freq") != nullptr)
+        if (p->apvts.getParameter("master_bypass") != nullptr
+            || p->apvts.getParameter("master_trim") != nullptr
+            || p->apvts.getParameter("ceiling") != nullptr
+            || p->apvts.getParameter("band1_freq") != nullptr)
         {
             std::cerr << "Legacy master/node parameters survived migration\n";
             return 4;
@@ -110,16 +111,16 @@ int main()
     // -------------------------------------------------------------------------
     // OFF means muted. A soloed-but-OFF section must produce silence.
     {
-        PRISMVSTAudioProcessor p;
-        p.prepareToPlay(48000.0, 512);
+        auto p = std::make_unique<PRISMVSTAudioProcessor>();
+        p->prepareToPlay(48000.0, 512);
 
-        setActual(p, PRISMVSTAudioProcessor::sectionId(1, "solo"), 1.0f);
-        setActual(p, PRISMVSTAudioProcessor::sectionId(1, "on"), 0.0f);
+        setActual(*p, PRISMVSTAudioProcessor::sectionId(1, "solo"), 1.0f);
+        setActual(*p, PRISMVSTAudioProcessor::sectionId(1, "on"), 0.0f);
 
         juce::AudioBuffer<float> b(2, 512);
         juce::MidiBuffer midi;
         fillTone(b, 90.0f, 0.6f, 48000.0, 0);
-        p.processBlock(b, midi);
+        p->processBlock(b, midi);
 
         if (b.getMagnitude(0, 0, b.getNumSamples()) > 1.0e-7f
             || b.getMagnitude(1, 0, b.getNumSamples()) > 1.0e-7f)
@@ -133,9 +134,9 @@ int main()
     // -------------------------------------------------------------------------
     // SOLO means audible isolation, and the section path must remain finite.
     {
-        PRISMVSTAudioProcessor p;
-        p.prepareToPlay(48000.0, 512);
-        setActual(p, PRISMVSTAudioProcessor::sectionId(1, "solo"), 1.0f);
+        auto p = std::make_unique<PRISMVSTAudioProcessor>();
+        p->prepareToPlay(48000.0, 512);
+        setActual(*p, PRISMVSTAudioProcessor::sectionId(1, "solo"), 1.0f);
 
         juce::AudioBuffer<float> b(2, 512);
         juce::MidiBuffer midi;
@@ -143,7 +144,7 @@ int main()
         for (int block = 0; block < 12; ++block)
         {
             fillTone(b, 90.0f, 0.5f, 48000.0, (int64_t)block * 512);
-            p.processBlock(b, midi);
+            p->processBlock(b, midi);
         }
 
         if (!finiteBuffer(b) || rms(b) < 0.005)
@@ -157,8 +158,8 @@ int main()
     // -------------------------------------------------------------------------
     // Neutral seven-way reconstruction must not grossly change amplitude.
     {
-        PRISMVSTAudioProcessor p;
-        p.prepareToPlay(48000.0, 512);
+        auto p = std::make_unique<PRISMVSTAudioProcessor>();
+        p->prepareToPlay(48000.0, 512);
 
         juce::AudioBuffer<float> b(2, 512);
         juce::AudioBuffer<float> dry(2, 512);
@@ -171,7 +172,7 @@ int main()
         {
             fillTone(b, 1000.0f, 0.35f, 48000.0, (int64_t)block * 512);
             dry.makeCopyOf(b);
-            p.processBlock(b, midi);
+            p->processBlock(b, midi);
 
             if (block == 47)
             {
@@ -198,12 +199,12 @@ int main()
     // -------------------------------------------------------------------------
     // WIDTH 0% must collapse side information for the selected section.
     {
-        PRISMVSTAudioProcessor p;
-        p.prepareToPlay(48000.0, 512);
+        auto p = std::make_unique<PRISMVSTAudioProcessor>();
+        p->prepareToPlay(48000.0, 512);
 
         const int mid = 4; // MID: nominally 500 Hz -> 2 kHz.
-        setActual(p, PRISMVSTAudioProcessor::sectionId(mid, "solo"), 1.0f);
-        setActual(p, PRISMVSTAudioProcessor::sectionId(mid, "width_pct"), 0.0f);
+        setActual(*p, PRISMVSTAudioProcessor::sectionId(mid, "solo"), 1.0f);
+        setActual(*p, PRISMVSTAudioProcessor::sectionId(mid, "width_pct"), 0.0f);
 
         juce::AudioBuffer<float> b(2, 512);
         juce::MidiBuffer midi;
@@ -211,7 +212,7 @@ int main()
         for (int block = 0; block < 16; ++block)
         {
             fillTone(b, 1000.0f, 0.4f, 48000.0, (int64_t)block * 512, true);
-            p.processBlock(b, midi);
+            p->processBlock(b, midi);
         }
 
         if (rms(b) > 0.003)
@@ -225,15 +226,15 @@ int main()
     // -------------------------------------------------------------------------
     // Invalid crossover ordering must repair without changing the 7-section law.
     {
-        PRISMVSTAudioProcessor p;
-        setActual(p, PRISMVSTAudioProcessor::crossoverId(4), 11000.0f);
-        setActual(p, PRISMVSTAudioProcessor::crossoverId(5), 900.0f);
-        p.prepareToPlay(48000.0, 512);
+        auto p = std::make_unique<PRISMVSTAudioProcessor>();
+        setActual(*p, PRISMVSTAudioProcessor::crossoverId(4), 11000.0f);
+        setActual(*p, PRISMVSTAudioProcessor::crossoverId(5), 900.0f);
+        p->prepareToPlay(48000.0, 512);
 
         float previous = 20.0f;
         for (int x = 0; x < PRISMVSTAudioProcessor::numCrossovers; ++x)
         {
-            const auto* value = p.apvts.getRawParameterValue(PRISMVSTAudioProcessor::crossoverId(x));
+            const auto* value = p->apvts.getRawParameterValue(PRISMVSTAudioProcessor::crossoverId(x));
             if (value == nullptr || value->load() <= previous)
             {
                 std::cerr << "Crossover sanitizer failed\n";
