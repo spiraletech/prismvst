@@ -8,7 +8,7 @@ namespace
 {
 bool setActual(PRISMVSTAudioProcessor& p, const juce::String& id, float value)
 {
-    if (auto* parameter = p->apvts.getParameter(id))
+    if (auto* parameter = p.apvts.getParameter(id))
     {
         parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
         return true;
