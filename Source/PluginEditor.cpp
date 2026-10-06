@@ -661,8 +661,9 @@ void SpectrumAuraDisplay::showContextMenu(juce::Point<int>)
 }
 
 //==============================================================================
-// Maximus-style dB-in -> dB-out transfer map. Threshold / ratio live on the
-// map; the CURVE shape is changed with the mouse wheel instead of another knob.
+// Maximus-style dB-in -> dB-out transfer map. Threshold / ratio remain explicit,
+// but the magenta transfer line itself is now a direct manipulation surface:
+// grab the line and drag it vertically to bend the curve under the mouse.
 DynamicsTransferDisplay::DynamicsTransferDisplay(PRISMVSTAudioProcessor& p)
     : processor(p)
 {
@@ -714,17 +715,36 @@ float DynamicsTransferDisplay::xToDb(float x) const
                       b.getX(), b.getRight(), -60.0f, 0.0f);
 }
 
+float DynamicsTransferDisplay::yToDb(float y) const
+{
+    const auto b = graphBounds();
+    return juce::jmap(juce::jlimit(b.getY(), b.getBottom(), y),
+                      b.getBottom(), b.getY(), -60.0f, 0.0f);
+}
+
 float DynamicsTransferDisplay::outputDbForInput(float inputDb) const
+{
+    return outputDbForInput(
+        inputDb,
+        juce::jlimit(1.0f, 20.0f, parameter("ratio")),
+        juce::jlimit(-1.0f, 1.0f, parameter("curve")));
+}
+
+float DynamicsTransferDisplay::outputDbForInput(float inputDb,
+                                                 float ratio,
+                                                 float curve) const
 {
     const float threshold = parameter("threshold_db");
     if (inputDb <= threshold)
         return inputDb;
 
-    const float ratio = juce::jlimit(1.0f, 20.0f, parameter("ratio"));
-    const float curve = juce::jlimit(-1.0f, 1.0f, parameter("curve"));
+    ratio = juce::jlimit(1.0f, 20.0f, ratio);
+    curve = juce::jlimit(-1.0f, 1.0f, curve);
+
     const float over = inputDb - threshold;
     const float exponent = juce::jmap(curve, -1.0f, 1.0f, 0.65f, 1.75f);
-    const float shaped = 24.0f * std::pow(over / 24.0f, exponent);
+    const float normalisedOver = juce::jlimit(0.0f, 1.0f, over / 24.0f);
+    const float shaped = 24.0f * std::pow(normalisedOver, exponent);
     return inputDb - shaped * (1.0f - 1.0f / ratio);
 }
 
@@ -739,6 +759,77 @@ juce::Point<float> DynamicsTransferDisplay::ratioPoint() const
     const float threshold = parameter("threshold_db");
     const float inputDb = juce::jmin(0.0f, threshold + 18.0f);
     return { dbToX(inputDb), dbToY(outputDbForInput(inputDb)) };
+}
+
+juce::Point<float> DynamicsTransferDisplay::curvePoint() const
+{
+    const float threshold = parameter("threshold_db");
+    const float inputDb = juce::jmap(0.58f, threshold, 0.0f);
+    return { dbToX(inputDb), dbToY(outputDbForInput(inputDb)) };
+}
+
+bool DynamicsTransferDisplay::isCurveNear(juce::Point<float> point) const
+{
+    if (!graphBounds().contains(point))
+        return false;
+
+    const float inputDb = xToDb(point.x);
+    const float threshold = parameter("threshold_db");
+    if (inputDb <= threshold + 0.75f)
+        return false;
+
+    const float expectedY = dbToY(outputDbForInput(inputDb));
+    return std::abs(point.y - expectedY) <= 15.0f;
+}
+
+float DynamicsTransferDisplay::solveCurveForPoint(float inputDb,
+                                                   float targetOutputDb,
+                                                   float ratio) const
+{
+    float bestCurve = parameter("curve");
+    float bestError = std::numeric_limits<float>::max();
+
+    for (int i = 0; i <= 256; ++i)
+    {
+        const float candidate = -1.0f + 2.0f * (float)i / 256.0f;
+        const float output = outputDbForInput(inputDb, ratio, candidate);
+        const float error = std::abs(output - targetOutputDb);
+
+        if (error < bestError)
+        {
+            bestError = error;
+            bestCurve = candidate;
+        }
+    }
+
+    return bestCurve;
+}
+
+float DynamicsTransferDisplay::solveRatioForPoint(float inputDb,
+                                                   float targetOutputDb,
+                                                   float curve) const
+{
+    const float threshold = parameter("threshold_db");
+    if (inputDb <= threshold)
+        return 1.0f;
+
+    const float targetReduction = juce::jmax(0.0f, inputDb - targetOutputDb);
+    if (targetReduction <= 0.001f)
+        return 1.0f;
+
+    const float over = inputDb - threshold;
+    const float exponent = juce::jmap(
+        juce::jlimit(-1.0f, 1.0f, curve),
+        -1.0f, 1.0f, 0.65f, 1.75f);
+
+    const float normalisedOver = juce::jlimit(0.0f, 1.0f, over / 24.0f);
+    const float shaped = 24.0f * std::pow(normalisedOver, exponent);
+
+    if (shaped <= 0.001f)
+        return 1.0f;
+
+    const float factor = juce::jlimit(0.0f, 0.95f, targetReduction / shaped);
+    return juce::jlimit(1.0f, 20.0f, 1.0f / juce::jmax(0.05f, 1.0f - factor));
 }
 
 float DynamicsTransferDisplay::dragScale(const juce::ModifierKeys& mods) const
@@ -800,18 +891,25 @@ void DynamicsTransferDisplay::paint(juce::Graphics& g)
 
     const auto threshold = thresholdPoint();
     const auto ratio = ratioPoint();
+    const auto bend = curvePoint();
 
     g.setColour(colour);
     g.fillEllipse(threshold.x - 6.0f, threshold.y - 6.0f, 12.0f, 12.0f);
+
     g.setColour(juce::Colours::white.withAlpha(0.94f));
     g.fillEllipse(ratio.x - 5.0f, ratio.y - 5.0f, 10.0f, 10.0f);
+
+    g.setColour(curveHover || dragTarget == DragTarget::curve
+                    ? juce::Colours::white.withAlpha(0.96f)
+                    : colour.withAlpha(0.90f));
+    g.drawEllipse(bend.x - 6.5f, bend.y - 6.5f, 13.0f, 13.0f, 1.8f);
 
     const juce::String info =
         juce::String(PRISMVSTAudioProcessor::sectionName(selectedSection))
         + " TRANSFER   THR " + juce::String(parameter("threshold_db"), 1) + " dB"
         + "   RATIO " + juce::String(parameter("ratio"), 2) + ":1"
         + "   CURVE " + juce::String(parameter("curve"), 2)
-        + "   • wheel = curve";
+        + "   • drag magenta line to bend   • wheel = fine";
 
     g.setColour(textMuted());
     g.setFont(juce::Font(juce::FontOptions(9.2f, juce::Font::bold)));
@@ -845,10 +943,24 @@ void DynamicsTransferDisplay::mouseDown(const juce::MouseEvent& e)
         if (auto* p = rangedParameter("ratio"))
             p->beginChangeGesture();
     }
+    else if (isCurveNear(e.position))
+    {
+        dragTarget = DragTarget::curve;
+        dragStartValue = parameter("curve");
+        dragStartPixel = e.position.y;
+        dragAnchorInputDb = xToDb(e.position.x);
+
+        if (auto* p = rangedParameter("curve"))
+            p->beginChangeGesture();
+        if (auto* p = rangedParameter("ratio"))
+            p->beginChangeGesture();
+    }
     else
     {
         dragTarget = DragTarget::none;
     }
+
+    repaint();
 }
 
 void DynamicsTransferDisplay::mouseDrag(const juce::MouseEvent& e)
@@ -865,6 +977,40 @@ void DynamicsTransferDisplay::mouseDrag(const juce::MouseEvent& e)
         const float delta = (dragStartPixel - e.position.y) * 19.0f / scale;
         setParameter("ratio", juce::jlimit(1.0f, 20.0f, dragStartValue + delta));
     }
+    else if (dragTarget == DragTarget::curve)
+    {
+        float targetOutputDb = yToDb(e.position.y);
+        targetOutputDb = juce::jmin(dragAnchorInputDb, targetOutputDb);
+
+        float ratio = parameter("ratio");
+        const float curve = parameter("curve");
+
+        // Neutral 1:1 used to make CURVE look broken. The first downward drag
+        // now creates the minimum ratio required to make the grabbed point move.
+        if (ratio <= 1.001f && targetOutputDb < dragAnchorInputDb - 0.05f)
+        {
+            ratio = solveRatioForPoint(dragAnchorInputDb, targetOutputDb, curve);
+            setParameter("ratio", ratio);
+        }
+
+        if (ratio > 1.001f)
+        {
+            float solvedCurve = solveCurveForPoint(
+                dragAnchorInputDb, targetOutputDb, ratio);
+
+            // Modifier keys retain PRISM's deliberate precision law.
+            if (e.mods.isShiftDown() || e.mods.isCtrlDown() || e.mods.isCommandDown())
+            {
+                const float fineScale =
+                    (e.mods.isCtrlDown() || e.mods.isCommandDown()) ? 0.12f : 0.35f;
+                solvedCurve = juce::jlimit(
+                    -1.0f, 1.0f,
+                    dragStartValue + (solvedCurve - dragStartValue) * fineScale);
+            }
+
+            setParameter("curve", solvedCurve);
+        }
+    }
 
     repaint();
 }
@@ -879,7 +1025,16 @@ void DynamicsTransferDisplay::mouseUp(const juce::MouseEvent&)
         if (auto* p = rangedParameter("ratio"))
             p->endChangeGesture();
 
+    if (dragTarget == DragTarget::curve)
+    {
+        if (auto* p = rangedParameter("curve"))
+            p->endChangeGesture();
+        if (auto* p = rangedParameter("ratio"))
+            p->endChangeGesture();
+    }
+
     dragTarget = DragTarget::none;
+    repaint();
 }
 
 void DynamicsTransferDisplay::mouseDoubleClick(const juce::MouseEvent& e)
@@ -888,7 +1043,25 @@ void DynamicsTransferDisplay::mouseDoubleClick(const juce::MouseEvent& e)
         setParameter("threshold_db", -18.0f);
     else if (e.position.getDistanceFrom(ratioPoint()) <= 16.0f)
         setParameter("ratio", 1.0f);
+    else if (isCurveNear(e.position))
+        setParameter("curve", 0.0f);
 
+    repaint();
+}
+
+void DynamicsTransferDisplay::mouseMove(const juce::MouseEvent& e)
+{
+    curveHover = isCurveNear(e.position);
+    setMouseCursor(curveHover
+        ? juce::MouseCursor::UpDownResizeCursor
+        : juce::MouseCursor::CrosshairCursor);
+    repaint();
+}
+
+void DynamicsTransferDisplay::mouseExit(const juce::MouseEvent&)
+{
+    curveHover = false;
+    setMouseCursor(juce::MouseCursor::CrosshairCursor);
     repaint();
 }
 
@@ -1082,7 +1255,7 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
 
     g.setColour(accentColour());
     g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
-    g.drawText("ALPHA 001  •  v0.3.0", 122, 18, 132, 17, juce::Justification::centredLeft);
+    g.drawText("ALPHA 001  •  v0.3.1", 122, 18, 132, 17, juce::Justification::centredLeft);
 
     g.setColour(textMuted());
     g.setFont(juce::Font(juce::FontOptions(9.4f)));
