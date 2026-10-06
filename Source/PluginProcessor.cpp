@@ -271,7 +271,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
 
     p.push_back(std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID { "analyzer_depth", 2 }, "Analyzer Depth",
-        juce::StringArray { "MIX -36", "DEEP -72", "FORENSIC -120" }, 1));
+        juce::StringArray { "FULL -96", "DEEP -120", "FORENSIC -144" }, 0));
 
     p.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "analyzer_slope", 2 }, "Analyzer Display Slope",
@@ -530,7 +530,7 @@ void PRISMVSTAudioProcessor::runAnalyzerThread()
 {
     while (!analyzerWorker.threadShouldExit())
     {
-        analyzerEvent.wait(25);
+        analyzerEvent.wait(10);
         for (;;)
         {
             const int ready = analyzerFifo.getNumReady();
