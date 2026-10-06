@@ -303,10 +303,9 @@ float SpectrumAuraDisplay::spectrumDbAt(float frequency) const
 
 float SpectrumAuraDisplay::displayedSpectrumDbAt(float frequency) const
 {
-    const float raw = spectrumDbAt(frequency);
-    const float slope = parameter("analyzer_slope");
-    const float octavesFrom1k = std::log2(juce::jmax(20.0f, frequency) / 1000.0f);
-    return raw + slope * octavesFrom1k;
+    // True spectrum display: no octave compensation / tilt.
+    // This keeps the analyzer from looking bent or artificially zoomed.
+    return spectrumDbAt(frequency);
 }
 
 juce::Colour SpectrumAuraDisplay::heatColourFor(float frequency) const
@@ -1078,8 +1077,7 @@ void DynamicsTransferDisplay::mouseWheelMove(const juce::MouseEvent&,
 PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcessor& p)
     : AudioProcessorEditor(&p),
       processor(p),
-      spectrumDisplay(p),
-      transferDisplay(p)
+      spectrumDisplay(p)
 {
     setSize(1360, 900);
     setResizable(true, true);
@@ -1091,7 +1089,6 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
     lookAndFeel.setColour(juce::Slider::textBoxOutlineColourId, juce::Colour::fromRGB(42, 50, 59));
 
     addAndMakeVisible(spectrumDisplay);
-    addAndMakeVisible(transferDisplay);
 
     spectrumDisplay.onSectionSelected = [this](int section)
     {
@@ -1214,7 +1211,6 @@ void PRISMVSTAudioProcessorEditor::bindSelectedSection(int section)
         sectionButtons[(size_t)i].setToggleState(i == selectedSection, juce::dontSendNotification);
 
     spectrumDisplay.setSelectedSection(selectedSection);
-    transferDisplay.setSelectedSection(selectedSection);
 
     selectedSectionLabel.setText(
         juce::String(PRISMVSTAudioProcessor::sectionName(selectedSection))
@@ -1256,7 +1252,7 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
 
     g.setColour(accentColour());
     g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
-    g.drawText("ALPHA 001  •  v0.3.1", 122, 18, 132, 17, juce::Justification::centredLeft);
+    g.drawText("ALPHA 001  •  v0.3.2", 122, 18, 132, 17, juce::Justification::centredLeft);
 
     g.setColour(textMuted());
     g.setFont(juce::Font(juce::FontOptions(9.4f)));
@@ -1300,16 +1296,12 @@ void PRISMVSTAudioProcessorEditor::resized()
         sectionButtons[(size_t)i].setBounds(left + i * (tabW + gap), tabsY, tabW, 32);
 
     const int engineY = h - 132;
-    const int transferH = 154;
     const int statusH = 24;
     const int analyzerY = 98;
-    const int transferY = engineY - statusH - transferH - 10;
-    const int analyzerH = juce::jmax(250, transferY - analyzerY - 8);
+    const int statusY = engineY - statusH - 8;
+    const int analyzerH = juce::jmax(300, statusY - analyzerY - 8);
 
     spectrumDisplay.setBounds(left, analyzerY, contentW, analyzerH);
-    transferDisplay.setBounds(left, transferY, contentW, transferH);
-
-    const int statusY = transferY + transferH + 1;
     selectedSectionLabel.setBounds(left + 8, statusY, contentW - 170, statusH);
     sectionOn.setBounds(left + contentW - 156, statusY + 1, 72, statusH - 2);
     sectionSolo.setBounds(left + contentW - 78, statusY + 1, 72, statusH - 2);
@@ -1333,7 +1325,6 @@ void PRISMVSTAudioProcessorEditor::timerCallback()
     std::array<float, PRISMVSTAudioProcessor::spectrumBins> spectrum {};
     processor.copySpectrum(spectrum);
     spectrumDisplay.pushSpectrum(spectrum);
-    transferDisplay.repaint();
 
     inputPeakLabel.setText("IN  " + juce::String(processor.getInputPeakDb(), 1) + " dBFS",
                            juce::dontSendNotification);
