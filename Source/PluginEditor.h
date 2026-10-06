@@ -3,59 +3,133 @@
 #include "PluginProcessor.h"
 #include <array>
 #include <functional>
+#include <memory>
 
 class PrecisionSlider final : public juce::Slider
 {
 public:
-    void mouseDown(const juce::MouseEvent& e) override;
-    void mouseDrag(const juce::MouseEvent& e) override;
-    void mouseUp(const juce::MouseEvent& e) override;
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
 
 private:
-    double dragStartValue = 0.0;
+    double dragStartProportion = 0.0;
     int dragStartY = 0;
-    bool precisionDrag = false;
-    static constexpr double precisionPixelsForFullRange = 3000.0;
+    static constexpr double normalPixelsForFullRange = 3000.0;
+    static constexpr double finePixelsForFullRange = 9000.0;
+    static constexpr double microPixelsForFullRange = 24000.0;
 };
 
-class SpectrumEQDisplay final : public juce::Component
+class EtherTechLookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
-    explicit SpectrumEQDisplay(PRISMVSTAudioProcessor&);
+    void drawRotarySlider(juce::Graphics&, int, int, int, int,
+                          float, float, float, juce::Slider&) override;
+    void drawButtonBackground(juce::Graphics&, juce::Button&, const juce::Colour&,
+                              bool, bool) override;
+    void drawButtonText(juce::Graphics&, juce::TextButton&, bool, bool) override;
+    void drawToggleButton(juce::Graphics&, juce::ToggleButton&, bool, bool) override;
+};
+
+class SpectrumAuraDisplay final : public juce::Component
+{
+public:
+    explicit SpectrumAuraDisplay(PRISMVSTAudioProcessor&);
 
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
-    void mouseDoubleClick(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    void mouseMove(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
 
     void pushSpectrum(const std::array<float, PRISMVSTAudioProcessor::spectrumBins>&);
-    void setSelectedBand(int band);
-    int getSelectedBand() const noexcept { return selectedBand; }
-
-    std::function<void(int)> onBandSelected;
+    void setSelectedSection(int section);
+    std::function<void(int)> onSectionSelected;
 
 private:
-    static constexpr int heatColumns = 144;
-    static constexpr int heatRows = 42;
-
     PRISMVSTAudioProcessor& processor;
-    int selectedBand = 0;
+    int selectedSection = 0;
+    int draggingCrossover = -1;
+    float dragStartFrequency = 0.0f;
+    float dragStartX = 0.0f;
+
     std::array<float, PRISMVSTAudioProcessor::spectrumBins> latestSpectrum {};
-    std::array<std::array<float, heatColumns>, heatRows> heatHistory {};
-    int heatWriteRow = 0;
+
+    bool hasHover = false;
+    juce::Point<float> hoverPoint;
 
     juce::Rectangle<float> graphBounds() const;
     float frequencyToX(float frequency) const;
     float xToFrequency(float x) const;
-    float gainToY(float gainDb) const;
-    float yToGain(float y) const;
-    juce::Point<float> nodePosition(int band) const;
-    int findNearestNode(juce::Point<float>) const;
-    float parameter(const juce::String& id) const;
-    void setParameter(const juce::String& id, float value);
-    juce::String id(int band, const juce::String& suffix) const;
+    float levelToY(float db) const;
+    float yToLevel(float y) const;
+    float displayFloorDb() const;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumEQDisplay)
+    float parameter(const juce::String&) const;
+    void setParameter(const juce::String&, float);
+    float crossoverFrequency(int index) const;
+    float clampedCrossoverFrequency(int index, float frequency) const;
+    int findCrossoverAt(juce::Point<float>) const;
+    int sectionForX(float x) const;
+
+    float spectrumDbAt(float frequency) const;
+    float displayedSpectrumDbAt(float frequency) const;
+    void drawLotusGrid(juce::Graphics&, juce::Rectangle<float>) const;
+    void showContextMenu(juce::Point<int> position);
+    void resetCrossovers();
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumAuraDisplay)
+};
+
+class DynamicsTransferDisplay final : public juce::Component
+{
+public:
+    explicit DynamicsTransferDisplay(PRISMVSTAudioProcessor&);
+
+    void paint(juce::Graphics&) override;
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    void mouseDoubleClick(const juce::MouseEvent&) override;
+    void mouseMove(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
+    void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+
+    void setSelectedSection(int section);
+
+private:
+    enum class DragTarget { none, threshold, ratio, curve };
+
+    PRISMVSTAudioProcessor& processor;
+    int selectedSection = 0;
+    DragTarget dragTarget = DragTarget::none;
+    float dragStartValue = 0.0f;
+    float dragStartPixel = 0.0f;
+    float dragAnchorInputDb = -6.0f;
+    bool curveHover = false;
+
+    juce::Rectangle<float> graphBounds() const;
+    juce::String id(const juce::String&) const;
+    float parameter(const juce::String&) const;
+    void setParameter(const juce::String&, float);
+    juce::RangedAudioParameter* rangedParameter(const juce::String&) const;
+
+    float dbToX(float db) const;
+    float dbToY(float db) const;
+    float xToDb(float x) const;
+    float yToDb(float y) const;
+    float outputDbForInput(float inputDb) const;
+    float outputDbForInput(float inputDb, float ratio, float curve) const;
+    juce::Point<float> thresholdPoint() const;
+    juce::Point<float> ratioPoint() const;
+    juce::Point<float> curvePoint() const;
+    bool isCurveNear(juce::Point<float> point) const;
+    float solveCurveForPoint(float inputDb, float targetOutputDb, float ratio) const;
+    float solveRatioForPoint(float inputDb, float targetOutputDb, float curve) const;
+    float dragScale(const juce::ModifierKeys&) const;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DynamicsTransferDisplay)
 };
 
 class PRISMVSTAudioProcessorEditor final : public juce::AudioProcessorEditor,
@@ -63,7 +137,7 @@ class PRISMVSTAudioProcessorEditor final : public juce::AudioProcessorEditor,
 {
 public:
     explicit PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcessor&);
-    ~PRISMVSTAudioProcessorEditor() override = default;
+    ~PRISMVSTAudioProcessorEditor() override;
 
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -72,29 +146,31 @@ private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
+    static constexpr int controlCount = 6;
+
     PRISMVSTAudioProcessor& processor;
-    SpectrumEQDisplay spectrumDisplay;
+    EtherTechLookAndFeel lookAndFeel;
+    SpectrumAuraDisplay spectrumDisplay;
 
-    int selectedBand = 0;
+    int selectedSection = 0;
 
-    juce::Label selectedBandLabel;
-    std::array<juce::Label, 8> controlLabels;
-    PrecisionSlider frequency, gain, q, dynamicRange, threshold, ratio, attack, release;
+    std::array<juce::TextButton, PRISMVSTAudioProcessor::numSections> sectionButtons;
+    juce::Label selectedSectionLabel;
+    juce::ToggleButton sectionOn { "ON" };
+    juce::ToggleButton sectionSolo { "SOLO" };
 
-    PrecisionSlider onyx, onyxDrive, masterTrim, ceiling;
-    juce::ToggleButton solfeggio { "SOLFEGGIO" };
-    juce::ToggleButton masterBypass { "BYPASS" };
+    std::array<juce::Label, controlCount> controlLabels;
+    PrecisionSlider input, output, attack, release, width, onyx;
 
-    juce::Label peakLabel, lufsShortLabel, lufsIntLabel;
-    juce::Label onyxLabel, driveLabel, trimLabel, ceilingLabel;
+    juce::Label inputPeakLabel, grLabel, outputPeakLabel;
 
-    std::unique_ptr<SliderAttachment> frequencyA, gainA, qA, dynamicRangeA;
-    std::unique_ptr<SliderAttachment> thresholdA, ratioA, attackA, releaseA;
-    std::unique_ptr<SliderAttachment> onyxA, onyxDriveA, masterTrimA, ceilingA;
-    std::unique_ptr<ButtonAttachment> solfeggioA, masterBypassA;
+    std::unique_ptr<SliderAttachment> inputA, outputA, attackA, releaseA, widthA, onyxA;
+    std::unique_ptr<ButtonAttachment> sectionOnA, sectionSoloA;
 
-    void configureRotary(juce::Slider&, const juce::String& suffix = {});
-    void bindSelectedBand(int band);
+    void configureRotary(juce::Slider&, const juce::String& suffix, int decimals);
+    void enableDefaultReset(juce::Slider&, const juce::String& parameterId);
+    void bindSelectedSection(int section);
+    void updateSectionButtonText();
     void timerCallback() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PRISMVSTAudioProcessorEditor)

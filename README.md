@@ -1,26 +1,89 @@
-# PRISMVST
+# PRISM Alpha 001
 
-PRISMVST is a Windows-first VST3 frequency-specialized dynamics and shaping processor for FL Studio.
+PRISM is EtherTech's Windows-first VST3 for precision spectral dynamics, sound
+study, and stationary frequency-state visualization in FL Studio.
 
-## Signal model
+## AAA interaction laws
 
-Stereo input -> SUB -> KICK -> LOW -> MID -> HIGH -> MASTER
+PRISM treats interaction quality as part of the audio engine:
 
-The five zones are complementary crossover bands that reconstruct the input at unity when all zone processing is neutral. KICK is a frequency zone, not a drum detector or source separator.
+- Six persistent nodes: **1 / 2 / 3 / 4 / 5 / 6**.
+- Node identity never changes when another node is selected.
+- Analyzer background clicks never silently select or move a node.
+- Node dragging uses explicit hit targets and cannot cross a neighboring node.
+- A one-semitone minimum spacing prevents stacked / ambiguous node handles.
+- Controls use acceleration-free, long-travel movement:
+  - NORMAL: ~3000 px full sweep
+  - FINE: ~9000 px full sweep
+  - MICRO: ~24000 px full sweep
+- Shift temporarily invokes fine movement; Ctrl/Cmd invokes micro movement.
+- Double-click reset and direct numeric entry remain available.
 
-Each zone exposes direct scraper-style controls rather than EQ curves or shelves:
-- Scraper threshold
-- Depth
-- Tone
-- Density
-- Output trim
-- Solo / bypass
+## Per-node engine
 
-MASTER provides output trim, ceiling, bypass, peak monitoring and integrated/short-term loudness telemetry.
+Every node owns independent state for:
+
+- Center frequency
+- Static trim
+- Q / width
+- Maximum dynamic depth (0 to 24 dB)
+- Dynamics slope / ratio
+- Attack
+- Transfer-curve shape
+- Release A
+- Release B
+- Release blend
+- Sustain / RMS integration time
+- Peak-to-RMS detector weighting
+- Per-node active/bypass state (including direct node double-click toggle)
+
+Threshold and slope are also exposed through a Maximus-derived input-to-output
+transfer map. The curve display uses the same depth and curve law as the DSP.
+
+## Heat Aura analyzer
+
+**ANALYZER VIEW != DSP.** Display behavior never feeds back into processing.
+
+- 16384-point FFT.
+- Overlapping FFT snapshots via a circular FIFO.
+- FFT work runs on a dedicated analyzer worker; the audio thread only performs
+  bounded lock-free sample queue writes.
+- Internal analysis floor to -144 dBFS.
+- MIX viewport: 0 to -36 dBFS.
+- DEEP viewport: 0 to -72 dBFS.
+- FORENSIC viewport: 0 to -120 dBFS.
+- Display compensation slope: 0 to 6 dB/oct, default 4.5 dB/oct.
+- Stationary Heat Aura: x is always frequency. There is no time-scrolling
+  waterfall or row-history buffer.
+- Aura memory controls in-place persistence / afterglow.
+- Solfeggio Aura colors use EtherTech's canonical reference palette and octave
+  families across 20 Hz to 20 kHz.
+- Hover inspection reports Hz, dBFS, derived acoustic wavelength, nearest Aura
+  family, and affinity.
+
+The Solfeggio palette is a creative/perceptual visualization language, not a
+medical, healing, or physical-science claim.
+
+## Metering
+
+The Alpha 001 UI now exposes input peak, current maximum node gain reduction,
+output peak, LUFS short-term, and LUFS integrated telemetry.
+
+## Current DSP architecture
+
+The current Alpha uses six dynamic spectral peak nodes plus the master stage.
+Each node has a band-limited detector and independent peak/RMS timing law.
+The master stage includes ONYX nonlinear shaping, output trim, and a
+sample-peak ceiling. True-peak limiting is not claimed in Alpha 001.
+
+The next architectural milestone is complementary crossover reconstruction and
+full per-band PRE/POST, stereo linking, per-band saturation, lookahead, and
+parallel multiband mix. Those controls are intentionally not displayed until
+their DSP paths are real.
 
 ## Build
 
-Requires CMake 3.24+ and a C++20 compiler. JUCE is fetched by CMake.
+Requires CMake 3.24+ and a C++20 compiler. JUCE 8.0.4 is fetched by CMake.
 
 ```bash
 cmake -S . -B build -DPRISMVST_BUILD_TESTS=ON
@@ -28,8 +91,5 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-On Windows, the VST3 bundle is produced under the JUCE artefacts directory in `build`.
-
-## Status
-
-The repository contains the reconstructed production branch after the interrupted Astra session. GitHub Actions is the canonical Windows build/test gate.
+The Windows workflow builds and uploads the distinct **PRISM Alpha 001.vst3**
+artifact so FL Studio cannot confuse it with earlier PRISMVST prototypes.
