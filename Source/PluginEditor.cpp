@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include <cmath>
+#include <limits>
 
 namespace
 {
