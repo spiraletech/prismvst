@@ -106,11 +106,11 @@ private:
     std::array<juce::dsp::IIR::Filter<float>, 2> loudHp;
     std::array<juce::dsp::IIR::Filter<float>, 2> loudShelf;
 
-    static constexpr int fftOrder = 14;
+    static constexpr int fftOrder = 12;
     static constexpr int fftSize = 1 << fftOrder;
     juce::dsp::FFT fft { fftOrder };
     juce::dsp::WindowingFunction<float> fftWindow { fftSize, juce::dsp::WindowingFunction<float>::hann };
-    static constexpr int fftHopSize = 4096;
+    static constexpr int fftHopSize = 768;
     static constexpr int analyzerQueueSize = 65536;
 
     class AnalyzerWorker final : public juce::Thread
