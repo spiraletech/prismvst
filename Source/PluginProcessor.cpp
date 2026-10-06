@@ -291,6 +291,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
 
 void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+    // No lookahead or intentional buffering latency in PRISM.
+    setLatencySamples(0);
+
     analyzerWorker.signalThreadShouldExit();
     analyzerEvent.signal();
     analyzerWorker.stopThread(1000);
