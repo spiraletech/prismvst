@@ -406,11 +406,11 @@ void SpectrumAuraDisplay::paint(juce::Graphics& g)
                    46, 13, juce::Justification::centred);
     }
 
-    for (int i = 0; i <= 6; ++i)
+    for (int i = 0; i <= 8; ++i)
     {
-        const float db = floor + (-floor * (float)i / 6.0f);
+        const float db = -12.0f * (float)i;
         const float y = levelToY(db);
-        g.setColour(lineColour().withAlpha(i == 6 ? 0.72f : 0.28f));
+        g.setColour(lineColour().withAlpha(i == 0 ? 0.72f : 0.26f));
         g.drawHorizontalLine(juce::roundToInt(y), b.getX(), b.getRight());
         g.setColour(textMuted());
         g.drawText(juce::String(db, 0),
