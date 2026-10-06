@@ -182,7 +182,6 @@ SpectrumAuraDisplay::SpectrumAuraDisplay(PRISMVSTAudioProcessor& p)
 {
     setMouseCursor(juce::MouseCursor::CrosshairCursor);
     latestSpectrum.fill(kFloorDb);
-    auraEnergy.fill(0.0f);
 }
 
 juce::Rectangle<float> SpectrumAuraDisplay::graphBounds() const
@@ -219,9 +218,9 @@ float SpectrumAuraDisplay::xToFrequency(float x) const
 float SpectrumAuraDisplay::displayFloorDb() const
 {
     const int mode = juce::roundToInt(parameter("analyzer_depth"));
-    if (mode == 1) return -72.0f;
-    if (mode >= 2) return -120.0f;
-    return -36.0f;
+    if (mode == 1) return -120.0f;
+    if (mode >= 2) return -144.0f;
+    return -96.0f;
 }
 
 float SpectrumAuraDisplay::levelToY(float db) const
@@ -308,20 +307,6 @@ float SpectrumAuraDisplay::displayedSpectrumDbAt(float frequency) const
     return spectrumDbAt(frequency);
 }
 
-juce::Colour SpectrumAuraDisplay::heatColourFor(float frequency) const
-{
-    if (parameter("aura_color") < 0.5f)
-        return juce::Colour::fromRGB(91, 171, 200);
-
-    const float norm = juce::jlimit(
-        0.0f, 1.0f,
-        std::log10(juce::jlimit(20.0f, 20000.0f, frequency) / 20.0f)
-            / std::log10(1000.0f));
-
-    const float hue = juce::jmap(norm, 0.0f, 1.0f, 0.58f, 0.96f);
-    return juce::Colour::fromHSV(hue, 0.62f, 0.92f, 1.0f);
-}
-
 void SpectrumAuraDisplay::drawLotusGrid(juce::Graphics& g, juce::Rectangle<float> b) const
 {
     const auto centre = b.getCentre();
@@ -349,21 +334,26 @@ void SpectrumAuraDisplay::drawLotusGrid(juce::Graphics& g, juce::Rectangle<float
 void SpectrumAuraDisplay::pushSpectrum(
     const std::array<float, PRISMVSTAudioProcessor::spectrumBins>& values)
 {
-    latestSpectrum = values;
-
-    const float memorySeconds = juce::jlimit(0.05f, 10.0f, parameter("aura_memory"));
-    const float decay = std::exp(-1.0f / (60.0f * memorySeconds));
-    const float floor = displayFloorDb();
-
-    for (int i = 0; i < auraColumns; ++i)
+    // Fast attack keeps the analyzer feeling immediate. A gentler release
+    // removes frame-to-frame chatter without delaying new spectral events.
+    for (int i = 0; i < PRISMVSTAudioProcessor::spectrumBins; ++i)
     {
-        const float norm = (float)i / (float)(auraColumns - 1);
-        const float frequency = 20.0f * std::pow(1000.0f, norm);
-        const float db = juce::jlimit(floor, 0.0f, displayedSpectrumDbAt(frequency));
-        const float instant = juce::jlimit(0.0f, 1.0f, (db - floor) / -floor);
-        auraEnergy[(size_t)i] = juce::jmax(instant, auraEnergy[(size_t)i] * decay);
+        const float target = values[(size_t)i];
+        const float current = latestSpectrum[(size_t)i];
+        const float alpha = target > current ? 0.82f : 0.28f;
+        latestSpectrum[(size_t)i] = current + alpha * (target - current);
     }
 
+    // Tiny spatial smoothing makes the crest read as one continuous PRISM
+    // surface without changing its frequency coordinate system.
+    auto smoothed = latestSpectrum;
+    for (int i = 1; i < PRISMVSTAudioProcessor::spectrumBins - 1; ++i)
+        smoothed[(size_t)i] =
+            0.20f * latestSpectrum[(size_t)(i - 1)]
+          + 0.60f * latestSpectrum[(size_t)i]
+          + 0.20f * latestSpectrum[(size_t)(i + 1)];
+
+    latestSpectrum = smoothed;
     repaint();
 }
 
@@ -378,8 +368,14 @@ void SpectrumAuraDisplay::paint(juce::Graphics& g)
     const auto b = graphBounds();
     const float floor = displayFloorDb();
 
-    g.setColour(panelColour());
+    juce::ColourGradient glass(
+        juce::Colour::fromRGB(16, 21, 27), b.getX(), b.getY(),
+        juce::Colour::fromRGB(5, 7, 10), b.getX(), b.getBottom(), false);
+    g.setGradientFill(glass);
     g.fillRoundedRectangle(b, 8.0f);
+
+    g.setColour(accentColour().withAlpha(0.045f));
+    g.fillRoundedRectangle(b.reduced(1.0f), 7.0f);
 
     const float selectedLeft = selectedSection == 0
         ? b.getX() : frequencyToX(crossoverFrequency(selectedSection - 1));
@@ -422,31 +418,6 @@ void SpectrumAuraDisplay::paint(juce::Graphics& g)
                    38, 13, juce::Justification::centredLeft);
     }
 
-    // Heat is literally the field under the measured spectrum wave.
-    const float cellW = b.getWidth() / (float)(auraColumns - 1);
-    for (int i = 0; i < auraColumns; ++i)
-    {
-        const float energy = auraEnergy[(size_t)i];
-        if (energy < 0.002f)
-            continue;
-
-        const float norm = (float)i / (float)(auraColumns - 1);
-        const float frequency = 20.0f * std::pow(1000.0f, norm);
-        const float db = juce::jlimit(floor, 0.0f, displayedSpectrumDbAt(frequency));
-        const float x = frequencyToX(frequency);
-        const float y = levelToY(db);
-        const auto colour = heatColourFor(frequency);
-
-        g.setColour(colour.withAlpha(juce::jlimit(0.0f, 0.34f, energy * 0.30f)));
-        g.fillRect(x - cellW * 0.58f, y,
-                   cellW * 1.18f, juce::jmax(1.0f, b.getBottom() - y));
-
-        g.setColour(colour.withAlpha(juce::jlimit(0.0f, 0.88f, 0.16f + energy * 0.64f)));
-        g.fillRoundedRectangle(x - juce::jmax(1.0f, cellW * 0.42f),
-                               y - 2.0f,
-                               juce::jmax(2.0f, cellW * 0.84f), 4.0f, 2.0f);
-    }
-
     juce::Path spectrumPath;
     bool started = false;
     for (int px = 0; px <= juce::roundToInt(b.getWidth()); px += 2)
@@ -466,8 +437,19 @@ void SpectrumAuraDisplay::paint(juce::Graphics& g)
         }
     }
 
-    g.setColour(juce::Colour::fromRGB(231, 236, 241).withAlpha(0.88f));
-    g.strokePath(spectrumPath, juce::PathStrokeType(1.35f));
+    // PRISM crest: restrained aura around a precise line. This is not a heat field.
+    g.setColour(accentColour().withAlpha(0.10f));
+    g.strokePath(spectrumPath, juce::PathStrokeType(5.0f,
+                                                    juce::PathStrokeType::curved,
+                                                    juce::PathStrokeType::rounded));
+    g.setColour(accentColour().withAlpha(0.34f));
+    g.strokePath(spectrumPath, juce::PathStrokeType(2.6f,
+                                                    juce::PathStrokeType::curved,
+                                                    juce::PathStrokeType::rounded));
+    g.setColour(juce::Colour::fromRGB(232, 240, 244).withAlpha(0.96f));
+    g.strokePath(spectrumPath, juce::PathStrokeType(1.15f,
+                                                    juce::PathStrokeType::curved,
+                                                    juce::PathStrokeType::rounded));
 
     // Six fixed-slope crossover boundaries.
     for (int i = 0; i < PRISMVSTAudioProcessor::numCrossovers; ++i)
@@ -619,7 +601,6 @@ void SpectrumAuraDisplay::showContextMenu(juce::Point<int>)
     juce::PopupMenu menu;
     const bool on = parameter(PRISMVSTAudioProcessor::sectionId(selectedSection, "on")) >= 0.5f;
     const bool solo = parameter(PRISMVSTAudioProcessor::sectionId(selectedSection, "solo")) >= 0.5f;
-    const bool colourHeat = parameter("aura_color") >= 0.5f;
     const int depth = juce::roundToInt(parameter("analyzer_depth"));
 
     menu.addSectionHeader(PRISMVSTAudioProcessor::sectionName(selectedSection));
@@ -629,10 +610,9 @@ void SpectrumAuraDisplay::showContextMenu(juce::Point<int>)
     menu.addItem(1, "Reset crossovers");
     menu.addSeparator();
     menu.addSectionHeader("Analyzer depth");
-    menu.addItem(20, "MIX 0 to -36 dB", true, depth == 0);
-    menu.addItem(21, "DEEP 0 to -72 dB", true, depth == 1);
-    menu.addItem(22, "FORENSIC 0 to -120 dB", true, depth == 2);
-    menu.addItem(30, "Frequency color heat", true, colourHeat);
+    menu.addItem(20, "FULL 0 to -96 dB", true, depth == 0);
+    menu.addItem(21, "DEEP 0 to -120 dB", true, depth == 1);
+    menu.addItem(22, "FORENSIC 0 to -144 dB", true, depth == 2);
 
     juce::Component::SafePointer<SpectrumAuraDisplay> safe(this);
     const int section = selectedSection;
@@ -653,8 +633,6 @@ void SpectrumAuraDisplay::showContextMenu(juce::Point<int>)
                                                   safe->parameter(PRISMVSTAudioProcessor::sectionId(section, "solo")) >= 0.5f ? 0.0f : 1.0f);
                            else if (result >= 20 && result <= 22)
                                safe->setParameter("analyzer_depth", (float)(result - 20));
-                           else if (result == 30)
-                               safe->setParameter("aura_color", safe->parameter("aura_color") >= 0.5f ? 0.0f : 1.0f);
 
                            safe->repaint();
                        });
@@ -1145,7 +1123,7 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
     }
 
     bindSelectedSection(0);
-    startTimerHz(30);
+    startTimerHz(60);
 }
 
 PRISMVSTAudioProcessorEditor::~PRISMVSTAudioProcessorEditor()
@@ -1252,7 +1230,7 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
 
     g.setColour(accentColour());
     g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
-    g.drawText("ALPHA 001  •  v0.3.2", 122, 18, 132, 17, juce::Justification::centredLeft);
+    g.drawText("ALPHA 001  •  v0.3.3", 122, 18, 132, 17, juce::Justification::centredLeft);
 
     g.setColour(textMuted());
     g.setFont(juce::Font(juce::FontOptions(9.4f)));
