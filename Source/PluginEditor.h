@@ -96,18 +96,22 @@ public:
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
     void mouseDoubleClick(const juce::MouseEvent&) override;
+    void mouseMove(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
     void setSelectedSection(int section);
 
 private:
-    enum class DragTarget { none, threshold, ratio };
+    enum class DragTarget { none, threshold, ratio, curve };
 
     PRISMVSTAudioProcessor& processor;
     int selectedSection = 0;
     DragTarget dragTarget = DragTarget::none;
     float dragStartValue = 0.0f;
     float dragStartPixel = 0.0f;
+    float dragAnchorInputDb = -6.0f;
+    bool curveHover = false;
 
     juce::Rectangle<float> graphBounds() const;
     juce::String id(const juce::String&) const;
@@ -118,9 +122,15 @@ private:
     float dbToX(float db) const;
     float dbToY(float db) const;
     float xToDb(float x) const;
+    float yToDb(float y) const;
     float outputDbForInput(float inputDb) const;
+    float outputDbForInput(float inputDb, float ratio, float curve) const;
     juce::Point<float> thresholdPoint() const;
     juce::Point<float> ratioPoint() const;
+    juce::Point<float> curvePoint() const;
+    bool isCurveNear(juce::Point<float> point) const;
+    float solveCurveForPoint(float inputDb, float targetOutputDb, float ratio) const;
+    float solveRatioForPoint(float inputDb, float targetOutputDb, float curve) const;
     float dragScale(const juce::ModifierKeys&) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DynamicsTransferDisplay)
