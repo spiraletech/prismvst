@@ -155,7 +155,6 @@ private:
     PRISMVSTAudioProcessor& processor;
     EtherTechLookAndFeel lookAndFeel;
     SpectrumAuraDisplay spectrumDisplay;
-    DynamicsTransferDisplay transferDisplay;
 
     int selectedSection = 0;
 
