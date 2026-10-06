@@ -32,6 +32,6 @@ jobs:
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
-          name: PRISM-Alpha-001-v0.3.0-Windows-VST3
+          name: PRISM-Alpha-001-v0.3.1-Windows-VST3
           path: "dist/PRISM Alpha 001.vst3"
           if-no-files-found: error
