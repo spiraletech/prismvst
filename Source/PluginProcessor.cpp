@@ -271,11 +271,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
 
     p.push_back(std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID { "analyzer_depth", 2 }, "Analyzer Depth",
-        juce::StringArray { "MIX -36", "DEEP -72", "FORENSIC -120" }, 0));
+        juce::StringArray { "MIX -36", "DEEP -72", "FORENSIC -120" }, 1));
 
     p.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "analyzer_slope", 2 }, "Analyzer Display Slope",
-        juce::NormalisableRange<float>(0.0f, 6.0f, 0.1f), 4.5f));
+        juce::NormalisableRange<float>(0.0f, 6.0f, 0.1f), 0.0f));
 
     juce::NormalisableRange<float> auraMemoryRange(0.05f, 10.0f, 0.01f);
     auraMemoryRange.setSkewForCentre(1.5f);
