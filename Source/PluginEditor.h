@@ -48,8 +48,6 @@ public:
     std::function<void(int)> onSectionSelected;
 
 private:
-    static constexpr int auraColumns = 256;
-
     PRISMVSTAudioProcessor& processor;
     int selectedSection = 0;
     int draggingCrossover = -1;
@@ -57,7 +55,6 @@ private:
     float dragStartX = 0.0f;
 
     std::array<float, PRISMVSTAudioProcessor::spectrumBins> latestSpectrum {};
-    std::array<float, auraColumns> auraEnergy {};
 
     bool hasHover = false;
     juce::Point<float> hoverPoint;
@@ -78,7 +75,6 @@ private:
 
     float spectrumDbAt(float frequency) const;
     float displayedSpectrumDbAt(float frequency) const;
-    juce::Colour heatColourFor(float frequency) const;
     void drawLotusGrid(juce::Graphics&, juce::Rectangle<float>) const;
     void showContextMenu(juce::Point<int> position);
     void resetCrossovers();
