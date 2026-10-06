@@ -74,6 +74,13 @@ int main()
             return 1;
         }
 
+        p->prepareToPlay(48000.0, 512);
+        if (p->getLatencySamples() != 0)
+        {
+            std::cerr << "PRISM must report zero intentional latency\n";
+            return 11;
+        }
+
         for (int s = 0; s < PRISMVSTAudioProcessor::numSections; ++s)
         {
             for (const auto& suffix : {
