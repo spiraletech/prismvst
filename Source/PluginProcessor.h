@@ -3,7 +3,9 @@
 #include <array>
 #include <atomic>
 
-class PRISMVSTAudioProcessor final : public juce::AudioProcessor
+class PRISMVSTAudioProcessor final : public juce::AudioProcessor,
+                                    private juce::AudioProcessorValueTreeState::Listener,
+                                    private juce::AsyncUpdater
 {
 public:
     static constexpr int numSections = 7;
@@ -45,6 +47,11 @@ public:
     float getLufsShort() const noexcept { return lufsShort.load(); }
     float getLufsIntegrated() const noexcept { return lufsIntegrated.load(); }
     void copySpectrum(std::array<float, spectrumBins>& destination) const noexcept;
+    float getStereoActivity(int section) const noexcept
+    {
+        return stereoActivity[(size_t)juce::jlimit(0, numSections - 1, section)].load();
+    }
+    int getActiveSoloSection() const noexcept;
 
     static juce::String sectionId(int section, const juce::String& suffix);
     static juce::String crossoverId(int crossover);
@@ -96,12 +103,16 @@ private:
     {
         float envelope = 0.0f;
         float gainReductionDb = 0.0f;
+        std::array<float, 2> onyxLow {}; // independent audio-channel texture memory
     };
 
     std::array<std::array<LR6Splitter, 2>, numCrossovers> splitters;
     std::array<std::array<std::array<ThirdOrderAllPass, 2>, numSections>, numCrossovers> compensators;
     std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>, numCrossovers> crossoverSmoothers;
     std::array<SectionState, numSections> sectionStates;
+    std::array<std::atomic<float>, numSections> stereoActivity {};
+    std::array<juce::String, numSections> soloParameterIds {};
+    std::atomic<int> latestSoloSection { -1 };
 
     std::array<juce::dsp::IIR::Filter<float>, 2> loudHp;
     std::array<juce::dsp::IIR::Filter<float>, 2> loudShelf;
@@ -145,6 +156,9 @@ private:
     std::atomic<float> lufsShort { -144.0f };
     std::atomic<float> lufsIntegrated { -144.0f };
 
+    void parameterChanged(const juce::String& parameterID, float newValue) override;
+    void handleAsyncUpdate() override;
+    void reconcileExclusiveSolo(); // only invoked on message thread
     void sanitizeCrossovers();
     void updateCrossoverCoefficients(int blockSamples);
     void processSevenSectionEngine(juce::AudioBuffer<float>& buffer);
