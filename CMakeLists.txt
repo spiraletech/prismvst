@@ -15,9 +15,9 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(JUCE)
 
 juce_add_plugin(PRISMVST
-  COMPANY_NAME "EtherTech"
-  BUNDLE_ID "com.ethertech.prismvst"
-  PLUGIN_MANUFACTURER_CODE EThr
+  COMPANY_NAME "SpiralEtech"
+  BUNDLE_ID "com.spiraletech.prismvst"
+  PLUGIN_MANUFACTURER_CODE SpEt
   PLUGIN_CODE Prsm
   FORMATS VST3
   PRODUCT_NAME "PRISMVST"
