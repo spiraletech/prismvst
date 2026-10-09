@@ -202,29 +202,42 @@ int main()
         }
     }
 
-    std::cerr << "TEST 5 width" << std::endl;
+    std::cerr << "TEST 5 50-percent widen cap and real stereo activity" << std::endl;
     // -------------------------------------------------------------------------
-    // WIDTH 0% must collapse side information for the selected section.
+    // The legacy width_pct host parameter remains 0..200 for old sessions;
+    // 100 is neutral, 150 is maximum +50% stereo widening.
     {
-        auto p = std::make_unique<PRISMVSTAudioProcessor>();
-        p->prepareToPlay(48000.0, 512);
-
-        const int mid = 4; // MID: nominally 500 Hz -> 2 kHz.
-        setActual(*p, PRISMVSTAudioProcessor::sectionId(mid, "solo"), 1.0f);
-        setActual(*p, PRISMVSTAudioProcessor::sectionId(mid, "width_pct"), 0.0f);
-
-        juce::AudioBuffer<float> b(2, 512);
-        juce::MidiBuffer midi;
-
-        for (int block = 0; block < 16; ++block)
+        const int mid = 4;
+        const auto measure = [mid](float storedWidth, float* stereoMeter = nullptr)
         {
-            fillTone(b, 1000.0f, 0.4f, 48000.0, (int64_t)block * 512, true);
-            p->processBlock(b, midi);
-        }
+            auto p = std::make_unique<PRISMVSTAudioProcessor>();
+            p->prepareToPlay(48000.0, 512);
+            setActual(*p, PRISMVSTAudioProcessor::sectionId(mid, "solo"), 1.0f);
+            setActual(*p, PRISMVSTAudioProcessor::sectionId(mid, "width_pct"), storedWidth);
+            juce::AudioBuffer<float> b(2, 512);
+            juce::MidiBuffer midi;
+            for (int block = 0; block < 24; ++block)
+            {
+                fillTone(b, 1000.0f, 0.35f, 48000.0, (int64_t)block * 512, true);
+                p->processBlock(b, midi);
+            }
+            if (stereoMeter != nullptr)
+                *stereoMeter = p->getStereoActivity(mid);
+            return rms(b);
+        };
 
-        if (rms(b) > 0.003)
+        float measuredStereo = 0.0f;
+        const double neutral = measure(100.0f);
+        const double minLegacy = measure(0.0f);
+        const double expanded = measure(150.0f, &measuredStereo);
+        const double capped = measure(200.0f);
+
+        if (neutral < 0.005 || std::abs(minLegacy / neutral - 1.0) > 0.04
+            || expanded / neutral < 1.35 || expanded / neutral > 1.65
+            || std::abs(capped / expanded - 1.0) > 0.04
+            || measuredStereo < 0.7f)
         {
-            std::cerr << "WIDTH 0% did not collapse side-only material\n";
+            std::cerr << "WIDTH cap/neutral/real-signal stereo meter failed\n";
             return 9;
         }
     }
@@ -251,6 +264,56 @@ int main()
         }
     }
 
-    std::cout << "PRISM Alpha 001 v0.3.0 seven-section DSP tests passed\n";
+    std::cerr << "TEST 7 exclusive SOLO" << std::endl;
+    {
+        auto p = std::make_unique<PRISMVSTAudioProcessor>();
+        p->prepareToPlay(48000.0, 512);
+        setActual(*p, PRISMVSTAudioProcessor::sectionId(1, "solo"), 1.0f);
+        setActual(*p, PRISMVSTAudioProcessor::sectionId(4, "solo"), 1.0f);
+
+        if (p->getActiveSoloSection() != 4)
+        {
+            std::cerr << "Latest SOLO should take exclusive priority\n";
+            return 12;
+        }
+        setActual(*p, PRISMVSTAudioProcessor::sectionId(4, "solo"), 0.0f);
+        if (p->getActiveSoloSection() != 1)
+        {
+            std::cerr << "SOLO release should restore the remaining active selection\n";
+            return 13;
+        }
+    }
+
+    std::cerr << "TEST 8 ONYX sonic safety and silence" << std::endl;
+    {
+        const auto measure = [](float onyx, bool silence)
+        {
+            auto p = std::make_unique<PRISMVSTAudioProcessor>();
+            p->prepareToPlay(48000.0, 512);
+            setActual(*p, PRISMVSTAudioProcessor::sectionId(4, "solo"), 1.0f);
+            setActual(*p, PRISMVSTAudioProcessor::sectionId(4, "onyx_pct"), onyx);
+            juce::AudioBuffer<float> b(2, 512);
+            juce::MidiBuffer midi;
+            for (int block = 0; block < 24; ++block)
+            {
+                fillTone(b, 1000.0f, silence ? 0.0f : 0.35f,
+                         48000.0, (int64_t)block * 512);
+                p->processBlock(b, midi);
+            }
+            return rms(b);
+        };
+
+        const double dry = measure(0.0f, false);
+        const double onyx = measure(100.0f, false);
+        const double silence = measure(100.0f, true);
+        if (dry < 0.005 || onyx / dry < 0.75 || onyx / dry > 1.15
+            || std::abs(onyx / dry - 1.0) < 0.0005 || silence > 1.0e-7)
+        {
+            std::cerr << "ONYX became excessively loud, ineffective or generated noise\n";
+            return 14;
+        }
+    }
+
+    std::cout << "PRISM Alpha 001 v1.2.0 resonant-wax DSP tests passed\n";
     return 0;
 }
