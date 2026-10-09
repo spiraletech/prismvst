@@ -16,6 +16,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify frozen Alpha hardware source
+        shell: pwsh
+        run: |
+          git diff --exit-code 2b3a832515bfdcf3b72bef4e5c2d41723d077425 -- Source/PluginProcessor.cpp Source/PluginProcessor.h Tests/ProcessorTests.cpp
+          if ($LASTEXITCODE -ne 0) { throw "Frozen Alpha DSP/hardware source changed" }
+
       - name: Configure
         run: cmake -S . -B build -A x64 -DPRISMVST_BUILD_TESTS=ON
       - name: Build
