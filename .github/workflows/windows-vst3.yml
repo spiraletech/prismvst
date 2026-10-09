@@ -25,9 +25,16 @@ jobs:
           if (-not $plugin) { throw "PRISMVST.vst3 was not produced" }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item -Recurse -Force $plugin.FullName dist\PRISMVST.vst3
+      - name: Verify staged VST3 bundle
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist\PRISMVST.vst3\Contents\x86_64-win\PRISMVST.vst3")) {
+            throw "VST3 bundle wrapper is incomplete"
+          }
+
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
           name: PRISMVST-Windows-VST3
-          path: dist/PRISMVST.vst3
+          path: dist
           if-no-files-found: error
