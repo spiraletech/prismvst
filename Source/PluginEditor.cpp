@@ -3,13 +3,13 @@
 
 namespace
 {
-constexpr juce::Colour kBlack { 0xff07090b };
-constexpr juce::Colour kPanel { 0xff11161a };
-constexpr juce::Colour kBorder { 0xff46515a };
-constexpr juce::Colour kText { 0xffe8edf0 };
-constexpr juce::Colour kMuted { 0xff8b979f };
-constexpr juce::Colour kCyan { 0xff4cc9ef };
-constexpr juce::Colour kCyanSoft { 0xff9ee8ff };
+const juce::Colour kBlack { 0xff07090b };
+const juce::Colour kPanel { 0xff11161a };
+const juce::Colour kBorder { 0xff46515a };
+const juce::Colour kText { 0xffe8edf0 };
+const juce::Colour kMuted { 0xff8b979f };
+const juce::Colour kCyan { 0xff4cc9ef };
+const juce::Colour kCyanSoft { 0xff9ee8ff };
 
 constexpr std::array<const char*, PRISMVSTAudioProcessor::numSections> kSectionNames {
     "SUB", "KICK", "LOW", "LOWER MID", "MID", "HIGH", "HIGHER"
@@ -246,7 +246,7 @@ void SpectrumDisplay::pushSpectrum(
         const float frequency = 20.0f * std::pow(1000.0f, norm);
         const int bin = juce::jlimit(0, PRISMVSTAudioProcessor::spectrumBins - 1,
             juce::roundToInt((float)(frequency / nyquist)
-                             * (PRISMVSTAudioProcessor::spectrumBins - 1));
+                             * (PRISMVSTAudioProcessor::spectrumBins - 1)));
 
         const float raw = latestSpectrum[(size_t)bin];
         const float slopeComp = 4.5f * std::log2(juce::jmax(20.0f, frequency) / 1000.0f);
