@@ -16,12 +16,56 @@ float readParameter(const juce::AudioProcessorValueTreeState& state, const juce:
     return 0.0f;
 }
 
-juce::Colour backgroundColour() { return juce::Colour::fromRGB(6, 8, 11); }
-juce::Colour panelColour()      { return juce::Colour::fromRGB(12, 15, 19); }
-juce::Colour raisedColour()     { return juce::Colour::fromRGB(17, 21, 26); }
-juce::Colour lineColour()       { return juce::Colour::fromRGB(52, 61, 71); }
-juce::Colour textMuted()        { return juce::Colour::fromRGB(134, 146, 158); }
-juce::Colour accentColour()     { return juce::Colour::fromRGB(92, 188, 220); }
+juce::Colour backgroundColour() { return juce::Colour::fromRGB(7, 9, 11); }
+juce::Colour panelColour()      { return juce::Colour::fromRGB(13, 16, 19); }
+juce::Colour raisedColour()     { return juce::Colour::fromRGB(20, 23, 26); }
+juce::Colour lineColour()       { return juce::Colour::fromRGB(49, 56, 61); }
+juce::Colour textMuted()        { return juce::Colour::fromRGB(143, 153, 161); }
+juce::Colour accentColour()     { return juce::Colour::fromRGB(78, 201, 236); }
+
+void drawPlasticPanel(juce::Graphics& g, juce::Rectangle<float> bounds,
+                      float cornerRadius, bool raised)
+{
+    const auto top = raised ? juce::Colour::fromRGB(28, 31, 34)
+                            : juce::Colour::fromRGB(20, 23, 26);
+    const auto bottom = raised ? juce::Colour::fromRGB(13, 15, 17)
+                               : juce::Colour::fromRGB(9, 11, 13);
+
+    g.setColour(juce::Colours::black.withAlpha(0.52f));
+    g.fillRoundedRectangle(bounds.translated(0.0f, 2.0f), cornerRadius);
+
+    juce::ColourGradient plastic(top, bounds.getX(), bounds.getY(),
+                                 bottom, bounds.getX(), bounds.getBottom(), false);
+    plastic.addColour(0.20, top.brighter(0.035f));
+    plastic.addColour(0.56, juce::Colour::fromRGB(18, 20, 22));
+    g.setGradientFill(plastic);
+    g.fillRoundedRectangle(bounds, cornerRadius);
+
+    g.setColour(juce::Colours::white.withAlpha(0.045f));
+    g.drawRoundedRectangle(bounds.reduced(1.0f), cornerRadius - 1.0f, 1.0f);
+
+    g.setColour(juce::Colour::fromRGB(2, 3, 4).withAlpha(0.95f));
+    g.drawRoundedRectangle(bounds, cornerRadius, 1.2f);
+}
+
+void drawRecessedScrew(juce::Graphics& g, juce::Point<float> centre)
+{
+    const float r = 7.0f;
+    g.setColour(juce::Colours::black.withAlpha(0.72f));
+    g.fillEllipse(centre.x - r - 1.5f, centre.y - r + 1.5f, (r + 1.5f) * 2.0f, (r + 1.5f) * 2.0f);
+
+    juce::ColourGradient screw(juce::Colour::fromRGB(48, 52, 55), centre.x - r, centre.y - r,
+                               juce::Colour::fromRGB(9, 11, 12), centre.x + r, centre.y + r, false);
+    g.setGradientFill(screw);
+    g.fillEllipse(centre.x - r, centre.y - r, r * 2.0f, r * 2.0f);
+
+    g.setColour(juce::Colour::fromRGB(86, 91, 94).withAlpha(0.72f));
+    g.drawEllipse(centre.x - r, centre.y - r, r * 2.0f, r * 2.0f, 0.8f);
+
+    g.setColour(juce::Colour::fromRGB(3, 4, 5));
+    g.drawLine(centre.x - 3.5f, centre.y, centre.x + 3.5f, centre.y, 1.4f);
+    g.drawLine(centre.x, centre.y - 3.5f, centre.x, centre.y + 3.5f, 1.0f);
+}
 
 juce::Colour sectionColour(int section)
 {
@@ -76,45 +120,56 @@ void EtherTechLookAndFeel::drawRotarySlider(juce::Graphics& g,
                                              juce::Slider&)
 {
     auto bounds = juce::Rectangle<float>((float)x, (float)y, (float)width, (float)height)
-                      .reduced(10.0f, 9.0f);
+                      .reduced(10.0f, 8.0f);
     const float diameter = juce::jmin(bounds.getWidth(), bounds.getHeight());
-    auto knob = juce::Rectangle<float>(diameter, diameter).withCentre(bounds.getCentre()).reduced(5.0f);
+    auto socket = juce::Rectangle<float>(diameter, diameter).withCentre(bounds.getCentre()).reduced(3.0f);
+    auto knob = socket.reduced(socket.getWidth() * 0.13f);
 
     const float angle = juce::jmap(sliderPosProportional, 0.0f, 1.0f,
                                    rotaryStartAngle, rotaryEndAngle);
 
-    g.setColour(juce::Colour::fromRGB(5, 7, 10));
+    // Recessed molded-plastic socket.
+    g.setColour(juce::Colours::black.withAlpha(0.78f));
+    g.fillEllipse(socket.translated(0.0f, 2.0f));
+    g.setColour(juce::Colour::fromRGB(24, 28, 31));
+    g.fillEllipse(socket);
+    g.setColour(juce::Colour::fromRGB(63, 69, 73).withAlpha(0.68f));
+    g.drawEllipse(socket, 1.0f);
+
+    // Plastic cap: satin sheen, no chrome / brushed-metal treatment.
+    juce::ColourGradient cap(juce::Colour::fromRGB(43, 47, 50), knob.getX(), knob.getY(),
+                             juce::Colour::fromRGB(8, 10, 12), knob.getRight(), knob.getBottom(), false);
+    cap.addColour(0.34, juce::Colour::fromRGB(29, 33, 36));
+    cap.addColour(0.70, juce::Colour::fromRGB(15, 18, 20));
+    g.setGradientFill(cap);
     g.fillEllipse(knob);
-    g.setColour(juce::Colour::fromRGB(38, 44, 52));
-    g.drawEllipse(knob, 1.5f);
 
-    auto inner = knob.reduced(knob.getWidth() * 0.13f);
-    juce::ColourGradient body(juce::Colour::fromRGB(35, 41, 48), inner.getX(), inner.getY(),
-                              juce::Colour::fromRGB(10, 13, 17), inner.getRight(), inner.getBottom(), false);
-    g.setGradientFill(body);
-    g.fillEllipse(inner);
+    g.setColour(juce::Colours::white.withAlpha(0.075f));
+    g.drawEllipse(knob.reduced(2.0f), 1.0f);
 
-    auto arcBounds = knob.expanded(4.0f);
+    auto arcBounds = socket.expanded(2.0f);
     juce::Path baseArc;
     baseArc.addCentredArc(arcBounds.getCentreX(), arcBounds.getCentreY(),
                           arcBounds.getWidth() * 0.5f, arcBounds.getHeight() * 0.5f,
                           0.0f, rotaryStartAngle, rotaryEndAngle, true);
-    g.setColour(juce::Colour::fromRGB(54, 63, 73));
-    g.strokePath(baseArc, juce::PathStrokeType(2.0f));
+    g.setColour(juce::Colour::fromRGB(43, 49, 53));
+    g.strokePath(baseArc, juce::PathStrokeType(2.2f, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
 
     juce::Path valueArc;
     valueArc.addCentredArc(arcBounds.getCentreX(), arcBounds.getCentreY(),
                            arcBounds.getWidth() * 0.5f, arcBounds.getHeight() * 0.5f,
                            0.0f, rotaryStartAngle, angle, true);
     g.setColour(accentColour());
-    g.strokePath(valueArc, juce::PathStrokeType(2.4f));
+    g.strokePath(valueArc, juce::PathStrokeType(2.7f, juce::PathStrokeType::curved,
+                                                 juce::PathStrokeType::rounded));
 
     juce::Path pointer;
-    pointer.addRoundedRectangle(-1.1f, -knob.getHeight() * 0.34f,
-                                2.2f, knob.getHeight() * 0.29f, 1.0f);
+    pointer.addRoundedRectangle(-1.2f, -knob.getHeight() * 0.35f,
+                                2.4f, knob.getHeight() * 0.31f, 1.1f);
     pointer.applyTransform(juce::AffineTransform::rotation(angle)
                                .translated(knob.getCentreX(), knob.getCentreY()));
-    g.setColour(juce::Colours::white.withAlpha(0.94f));
+    g.setColour(juce::Colour::fromRGB(239, 243, 245));
     g.fillPath(pointer);
 }
 
@@ -126,16 +181,29 @@ void EtherTechLookAndFeel::drawButtonBackground(juce::Graphics& g,
 {
     auto b = button.getLocalBounds().toFloat().reduced(0.5f);
     const bool selected = button.getToggleState();
-    auto fill = selected ? juce::Colour::fromRGB(31, 49, 59)
-                         : juce::Colour::fromRGB(13, 17, 21);
 
-    if (highlighted) fill = fill.brighter(0.06f);
-    if (down)        fill = fill.darker(0.10f);
+    g.setColour(juce::Colours::black.withAlpha(0.58f));
+    g.fillRoundedRectangle(b.translated(0.0f, 1.5f), 5.0f);
 
-    g.setColour(fill);
+    const auto top = selected ? juce::Colour::fromRGB(29, 47, 55)
+                              : juce::Colour::fromRGB(29, 32, 35);
+    const auto bottom = selected ? juce::Colour::fromRGB(10, 26, 31)
+                                 : juce::Colour::fromRGB(11, 13, 15);
+
+    juce::ColourGradient plastic(top, b.getX(), b.getY(),
+                                 bottom, b.getX(), b.getBottom(), false);
+    if (highlighted)
+        plastic.addColour(0.18, top.brighter(0.08f));
+
+    g.setGradientFill(plastic);
     g.fillRoundedRectangle(b, 5.0f);
-    g.setColour(selected ? accentColour() : juce::Colour::fromRGB(54, 62, 72));
-    g.drawRoundedRectangle(b, 5.0f, selected ? 1.5f : 1.0f);
+
+    g.setColour(juce::Colours::white.withAlpha(down ? 0.025f : 0.055f));
+    g.drawRoundedRectangle(b.reduced(1.0f), 4.0f, 1.0f);
+
+    g.setColour(selected ? accentColour()
+                         : juce::Colour::fromRGB(58, 64, 68));
+    g.drawRoundedRectangle(b, 5.0f, selected ? 1.4f : 1.0f);
 }
 
 void EtherTechLookAndFeel::drawButtonText(juce::Graphics& g,
@@ -157,21 +225,37 @@ void EtherTechLookAndFeel::drawToggleButton(juce::Graphics& g,
 {
     auto b = button.getLocalBounds().toFloat().reduced(0.5f);
     const bool on = button.getToggleState();
-    auto fill = on ? juce::Colour::fromRGB(25, 58, 68)
-                   : juce::Colour::fromRGB(13, 17, 21);
 
-    if (highlighted) fill = fill.brighter(0.06f);
-    if (down)        fill = fill.darker(0.10f);
+    g.setColour(juce::Colours::black.withAlpha(0.60f));
+    g.fillRoundedRectangle(b.translated(0.0f, 1.5f), 5.0f);
 
-    g.setColour(fill);
+    const auto top = on ? juce::Colour::fromRGB(28, 52, 61)
+                        : juce::Colour::fromRGB(27, 30, 33);
+    const auto bottom = on ? juce::Colour::fromRGB(9, 27, 33)
+                           : juce::Colour::fromRGB(10, 12, 14);
+
+    juce::ColourGradient plastic(top, b.getX(), b.getY(),
+                                 bottom, b.getX(), b.getBottom(), false);
+    if (highlighted)
+        plastic.addColour(0.18, top.brighter(0.08f));
+
+    g.setGradientFill(plastic);
     g.fillRoundedRectangle(b, 5.0f);
-    g.setColour(on ? accentColour() : juce::Colour::fromRGB(55, 64, 74));
-    g.drawRoundedRectangle(b, 5.0f, on ? 1.5f : 1.0f);
+
+    g.setColour(on ? accentColour()
+                   : juce::Colour::fromRGB(58, 65, 69));
+    g.drawRoundedRectangle(b, 5.0f, on ? 1.4f : 1.0f);
 
     g.setColour(on ? juce::Colours::white.withAlpha(0.96f) : textMuted());
     g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
     g.drawFittedText(button.getButtonText(), button.getLocalBounds().reduced(6, 2),
                      juce::Justification::centred, 1);
+
+    if (down)
+    {
+        g.setColour(juce::Colours::black.withAlpha(0.18f));
+        g.fillRoundedRectangle(b.reduced(2.0f), 4.0f);
+    }
 }
 
 //==============================================================================
@@ -1222,7 +1306,27 @@ void PRISMVSTAudioProcessorEditor::updateSectionButtonText()
 
 void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
 {
-    g.fillAll(backgroundColour());
+    const auto full = getLocalBounds().toFloat();
+
+    // Entire enclosure is molded graphite plastic: soft satin highlights,
+    // no brushed grain, no metallic faceplate.
+    juce::ColourGradient chassis(
+        juce::Colour::fromRGB(25, 28, 30), full.getX(), full.getY(),
+        juce::Colour::fromRGB(6, 8, 10), full.getX(), full.getBottom(), false);
+    chassis.addColour(0.13, juce::Colour::fromRGB(30, 33, 35));
+    chassis.addColour(0.52, juce::Colour::fromRGB(12, 15, 17));
+    g.setGradientFill(chassis);
+    g.fillAll();
+
+    // Outer molded lip.
+    g.setColour(juce::Colour::fromRGB(2, 3, 4));
+    g.drawRoundedRectangle(full.reduced(2.0f), 14.0f, 2.0f);
+    g.setColour(juce::Colours::white.withAlpha(0.045f));
+    g.drawRoundedRectangle(full.reduced(4.0f), 12.0f, 1.0f);
+
+    // Header and tab rails are separate plastic pieces.
+    drawPlasticPanel(g, { 10.0f, 7.0f, full.getWidth() - 20.0f, 42.0f }, 8.0f, true);
+    drawPlasticPanel(g, { 10.0f, 54.0f, full.getWidth() - 20.0f, 42.0f }, 7.0f, false);
 
     g.setColour(juce::Colour::fromRGB(242, 246, 249));
     g.setFont(juce::Font(juce::FontOptions(25.0f, juce::Font::bold)));
@@ -1230,28 +1334,44 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
 
     g.setColour(accentColour());
     g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
-    g.drawText("ALPHA 001  •  v0.3.3", 122, 18, 132, 17, juce::Justification::centredLeft);
+    g.drawText("ALPHA 001  •  v1.1.1", 122, 18, 142, 17, juce::Justification::centredLeft);
 
     g.setColour(textMuted());
     g.setFont(juce::Font(juce::FontOptions(9.4f)));
     g.drawText("ETHERTECH  /  7-SECTION SPECTRAL DYNAMICS  /  FIXED 36 dB/OCT",
-               263, 17, 500, 18, juce::Justification::centredLeft);
-
-    g.setColour(lineColour());
-    g.drawLine(18.0f, 50.0f, (float)getWidth() - 18.0f, 50.0f, 1.0f);
+               274, 17, 500, 18, juce::Justification::centredLeft);
 
     const int engineY = getHeight() - 132;
-    g.setColour(raisedColour());
-    g.fillRoundedRectangle(18.0f, (float)engineY,
-                           (float)getWidth() - 36.0f, 116.0f, 8.0f);
-    g.setColour(juce::Colour::fromRGB(42, 50, 59));
-    g.drawRoundedRectangle(18.0f, (float)engineY,
-                           (float)getWidth() - 36.0f, 116.0f, 8.0f, 1.0f);
+
+    // Analyzer housing: thick molded bezel around the existing analyzer component.
+    const int analyzerTop = 94;
+    const int statusY = engineY - 32;
+    auto analyzerHousing = juce::Rectangle<float>(
+        10.0f, (float)analyzerTop,
+        full.getWidth() - 20.0f,
+        (float)statusY - analyzerTop + 2.0f);
+    drawPlasticPanel(g, analyzerHousing, 9.0f, false);
+
+    // Bottom control shelf is one continuous molded-plastic tray.
+    auto enginePanel = juce::Rectangle<float>(
+        10.0f, (float)engineY - 2.0f,
+        full.getWidth() - 20.0f, 120.0f);
+    drawPlasticPanel(g, enginePanel, 9.0f, true);
+
+    g.setColour(juce::Colour::fromRGB(46, 52, 56).withAlpha(0.55f));
+    g.drawLine(24.0f, (float)engineY + 19.0f,
+               full.getWidth() - 24.0f, (float)engineY + 19.0f, 1.0f);
 
     g.setColour(textMuted());
     g.setFont(juce::Font(juce::FontOptions(8.8f, juce::Font::bold)));
     g.drawText("SELECTED SECTION",
                28, engineY + 5, 160, 14, juce::Justification::centredLeft);
+
+    // Realistic recessed black screws: decorative only, never controls.
+    drawRecessedScrew(g, { 20.0f, 22.0f });
+    drawRecessedScrew(g, { full.getRight() - 20.0f, 22.0f });
+    drawRecessedScrew(g, { 20.0f, (float)engineY + 102.0f });
+    drawRecessedScrew(g, { full.getRight() - 20.0f, (float)engineY + 102.0f });
 }
 
 void PRISMVSTAudioProcessorEditor::resized()
