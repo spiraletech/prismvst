@@ -23,7 +23,7 @@ public:
 
     void drawLinearSlider(juce::Graphics&, int x, int y, int width, int height,
                           float sliderPos, float minSliderPos, float maxSliderPos,
-                          const juce::Slider::SliderStyle, juce::Slider&) override;
+                          juce::Slider::SliderStyle, juce::Slider&) override;
 };
 
 class SpectrumDisplay final : public juce::Component
@@ -34,17 +34,16 @@ public:
     void paint(juce::Graphics&) override;
     void mouseMove(const juce::MouseEvent&) override;
     void mouseExit(const juce::MouseEvent&) override;
-    void mouseDown(const juce::MouseEvent&) override;
 
     void pushSpectrum(const std::array<float, PRISMVSTAudioProcessor::spectrumBins>&);
-    void setSelectedSection(int section);
-    std::function<void(int)> onSectionSelected;
+    void setSelectedBand(int band);
 
 private:
     PRISMVSTAudioProcessor& processor;
-    int selectedSection = 0;
+    int selectedBand = 0;
+
     std::array<float, PRISMVSTAudioProcessor::spectrumBins> latestSpectrum {};
-    std::array<float, 256> auraEnvelope {};
+    std::array<float, 192> auraPersistence {};
     juce::Point<float> hoverPoint {};
     bool hovering = false;
 
@@ -53,7 +52,8 @@ private:
     float xToFrequency(float x) const;
     float displayDbToY(float db) const;
     float rawDbAtFrequency(float frequency) const;
-    int sectionForFrequency(float frequency) const;
+    float parameter(const juce::String& id) const;
+    juce::String bandId(int band, const juce::String& suffix) const;
     juce::String noteForFrequency(float frequency) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumDisplay)
@@ -77,43 +77,46 @@ private:
     PrismLookAndFeel lookAndFeel;
     SpectrumDisplay spectrumDisplay;
 
-    int selectedSection = 0;
+    int selectedBand = 0;
 
-    std::array<std::unique_ptr<juce::TextButton>, PRISMVSTAudioProcessor::numSections> sectionButtons;
+    std::array<std::unique_ptr<juce::TextButton>, PRISMVSTAudioProcessor::numEqBands> bandButtons;
     juce::TextButton enabledButton { "ON" };
-    juce::TextButton soloButton { "SOLO" };
+    juce::TextButton bypassButton { "BYPASS" };
 
-    juce::Slider inputSlider;
-    juce::Slider outputSlider;
+    juce::Slider frequencySlider;
+    juce::Slider gainSlider;
+    juce::Slider dynamicSlider;
     juce::Slider attackSlider;
     juce::Slider releaseSlider;
-    juce::Slider widthSlider;
     juce::Slider onyxSlider;
     juce::Slider precisionLever;
 
-    juce::Label selectedSectionLabel;
+    juce::Label selectedBandLabel;
     juce::Label statusLabel;
-    juce::Label inputMeterLabel;
-    juce::Label grMeterLabel;
-    juce::Label outputMeterLabel;
+    juce::Label peakLabel;
+    juce::Label lufsShortLabel;
+    juce::Label lufsIntegratedLabel;
 
-    std::unique_ptr<SliderAttachment> inputA;
-    std::unique_ptr<SliderAttachment> outputA;
+    std::unique_ptr<SliderAttachment> frequencyA;
+    std::unique_ptr<SliderAttachment> gainA;
+    std::unique_ptr<SliderAttachment> dynamicA;
     std::unique_ptr<SliderAttachment> attackA;
     std::unique_ptr<SliderAttachment> releaseA;
-    std::unique_ptr<SliderAttachment> widthA;
     std::unique_ptr<SliderAttachment> onyxA;
     std::unique_ptr<ButtonAttachment> enabledA;
-    std::unique_ptr<ButtonAttachment> soloA;
+    std::unique_ptr<ButtonAttachment> bypassA;
 
     void configureKnob(juce::Slider&, const juce::String& suffix,
-                       double defaultValue, double interval = 0.01);
+                       double defaultValue, int decimals = 2);
     void configureLever();
-    void bindSelectedSection(int section);
+    void bindSelectedBand(int band);
     void updatePrecisionSensitivity();
     void timerCallback() override;
+
     void paintMetalPanel(juce::Graphics&, juce::Rectangle<float>, bool lighter) const;
-    void paintOutputMeter(juce::Graphics&, juce::Rectangle<float>) const;
+    void paintMeter(juce::Graphics&, juce::Rectangle<float>, float db) const;
+
+    juce::String bandId(int band, const juce::String& suffix) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PRISMVSTAudioProcessorEditor)
 };

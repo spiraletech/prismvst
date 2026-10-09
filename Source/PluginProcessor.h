@@ -1,5 +1,4 @@
 #pragma once
-
 #include <JuceHeader.h>
 #include <array>
 #include <atomic>
@@ -7,13 +6,8 @@
 class PRISMVSTAudioProcessor final : public juce::AudioProcessor
 {
 public:
-    static constexpr int numSections = 7;
-    static constexpr int numSplits = 6;
-    static constexpr int spectrumBins = 1024;
-
-    inline static constexpr std::array<float, numSplits> splitFrequencies {
-        60.0f, 120.0f, 250.0f, 500.0f, 2000.0f, 6000.0f
-    };
+    static constexpr int numEqBands = 6;
+    static constexpr int spectrumBins = 512;
 
     PRISMVSTAudioProcessor();
     ~PRISMVSTAudioProcessor() override = default;
@@ -44,54 +38,49 @@ public:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     juce::AudioProcessorValueTreeState apvts;
 
-    float getInputPeakDb() const noexcept { return inputPeakDb.load(); }
-    float getOutputPeakDb() const noexcept { return outputPeakDb.load(); }
-    float getGainReductionDb() const noexcept { return gainReductionDb.load(); }
+    float getPeakDb() const noexcept { return peakDb.load(); }
+    float getLufsShort() const noexcept { return lufsShort.load(); }
+    float getLufsIntegrated() const noexcept { return lufsIntegrated.load(); }
     void copySpectrum(std::array<float, spectrumBins>& destination) const noexcept;
 
-    static juce::String sectionId(int section, const juce::String& suffix);
-
 private:
-    static constexpr int filterStages = 3;
-
-    struct SectionState
+    struct DynamicBand
     {
-        std::array<std::array<juce::dsp::IIR::Filter<float>, filterStages>, 2> highPass;
-        std::array<std::array<juce::dsp::IIR::Filter<float>, filterStages>, 2> lowPass;
+        std::array<juce::dsp::IIR::Filter<float>, 2> eq;
+        std::array<juce::dsp::IIR::Filter<float>, 2> detector;
         float envelope = 0.0f;
-        float dynamicGainDb = 0.0f;
+        float smoothedGainDb = 0.0f;
     };
 
-    std::array<SectionState, numSections> sections;
-    juce::AudioBuffer<float> dryScratch;
-    juce::AudioBuffer<float> bandScratch;
+    std::array<DynamicBand, numEqBands> bands;
+    std::array<juce::dsp::IIR::Filter<float>, 2> loudHp;
+    std::array<juce::dsp::IIR::Filter<float>, 2> loudShelf;
 
-    static constexpr int fftOrder = 14;
+    static constexpr int fftOrder = 11;
     static constexpr int fftSize = 1 << fftOrder;
     juce::dsp::FFT fft { fftOrder };
-    juce::dsp::WindowingFunction<float> fftWindow {
-        fftSize, juce::dsp::WindowingFunction<float>::hann, true
-    };
+    juce::dsp::WindowingFunction<float> fftWindow { fftSize, juce::dsp::WindowingFunction<float>::hann };
     std::array<float, fftSize * 2> fftData {};
     int fftWritePos = 0;
     std::array<std::atomic<float>, spectrumBins> spectrum {};
 
     double currentSampleRate = 44100.0;
-    int currentMaxBlockSize = 512;
+    double integratedEnergy = 0.0;
+    uint64_t integratedSamples = 0;
 
-    std::atomic<float> inputPeakDb { -144.0f };
-    std::atomic<float> outputPeakDb { -144.0f };
-    std::atomic<float> gainReductionDb { 0.0f };
+    std::atomic<float> peakDb { -100.0f };
+    std::atomic<float> lufsShort { -100.0f };
+    std::atomic<float> lufsIntegrated { -100.0f };
 
-    void configureSectionFilters();
-    void resetSectionFilters();
-    void processTerritory(int sectionIndex, const juce::AudioBuffer<float>& dry,
-                          juce::AudioBuffer<float>& output, bool soloMode);
+    void updateBandCoefficients(int bandIndex);
+    void processDynamicEq(juce::AudioBuffer<float>& buffer);
+    void processOnyx(juce::AudioBuffer<float>& buffer);
+    void updateMeters(const juce::AudioBuffer<float>& buffer);
     void pushAnalyzerSamples(const juce::AudioBuffer<float>& buffer);
     void renderSpectrumFrame();
 
+    static juce::String bandId(int band, const juce::String& suffix);
     static float read(const juce::AudioProcessorValueTreeState& state, const juce::String& id);
-    static float peakDb(const juce::AudioBuffer<float>& buffer);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PRISMVSTAudioProcessor)
 };
