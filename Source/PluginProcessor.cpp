@@ -166,13 +166,74 @@ PRISMVSTAudioProcessor::PRISMVSTAudioProcessor()
 {
     for (auto& v : spectrum)
         v.store(kFloorDb);
+
+    for (int s = 0; s < numSections; ++s)
+    {
+        stereoActivity[(size_t)s].store(0.0f);
+        soloParameterIds[(size_t)s] = sectionId(s, "solo");
+        apvts.addParameterListener(soloParameterIds[(size_t)s], this);
+    }
 }
 
 PRISMVSTAudioProcessor::~PRISMVSTAudioProcessor()
 {
+    cancelPendingUpdate();
+    for (const auto& id : soloParameterIds)
+        apvts.removeParameterListener(id, this);
+
     analyzerWorker.signalThreadShouldExit();
     analyzerEvent.signal();
     analyzerWorker.stopThread(1000);
+}
+
+int PRISMVSTAudioProcessor::getActiveSoloSection() const noexcept
+{
+    const int recent = latestSoloSection.load();
+    if (recent >= 0 && recent < numSections
+        && read(apvts, soloParameterIds[(size_t)recent]) >= 0.5f)
+        return recent;
+
+    for (int s = 0; s < numSections; ++s)
+        if (read(apvts, soloParameterIds[(size_t)s]) >= 0.5f)
+            return s;
+
+    return -1;
+}
+
+void PRISMVSTAudioProcessor::parameterChanged(const juce::String& parameterID, float newValue)
+{
+    for (int s = 0; s < numSections; ++s)
+    {
+        if (parameterID != soloParameterIds[(size_t)s])
+            continue;
+
+        if (newValue >= 0.5f)
+            latestSoloSection.store(s);
+        else if (latestSoloSection.load() == s)
+            latestSoloSection.store(-1);
+
+        // The parameter callback can arrive on the audio thread. Never
+        // notify the host or mutate other parameters from here.
+        triggerAsyncUpdate();
+        return;
+    }
+}
+
+void PRISMVSTAudioProcessor::handleAsyncUpdate()
+{
+    reconcileExclusiveSolo();
+}
+
+void PRISMVSTAudioProcessor::reconcileExclusiveSolo()
+{
+    const int active = getActiveSoloSection();
+    if (active < 0)
+        return;
+
+    for (int s = 0; s < numSections; ++s)
+        if (s != active && read(apvts, soloParameterIds[(size_t)s]) >= 0.5f)
+            if (auto* p = apvts.getParameter(soloParameterIds[(size_t)s]))
+                p->setValueNotifyingHost(p->convertTo0to1(0.0f));
 }
 
 void PRISMVSTAudioProcessor::releaseResources()
@@ -305,7 +366,10 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     {
         section.envelope = 0.0f;
         section.gainReductionDb = 0.0f;
+        section.onyxLow.fill(0.0f);
     }
+    for (auto& v : stereoActivity)
+        v.store(0.0f);
 
     for (int i = 0; i < numCrossovers; ++i)
     {
@@ -383,8 +447,10 @@ void PRISMVSTAudioProcessor::processSevenSectionEngine(juce::AudioBuffer<float>&
     updateCrossoverCoefficients(n);
 
     std::array<bool, numSections> on {};
-    std::array<bool, numSections> solo {};
-    bool anySolo = false;
+    // SOLO is exclusive: the most recently activated section wins.
+    // Any stale overlapping host automation is audibly resolved immediately,
+    // then reconciled to one true SOLO parameter on the message thread.
+    const int activeSolo = getActiveSoloSection();
 
     std::array<float, numSections> inputGain {}, outputGain {}, attackCoeff {}, releaseCoeff {};
     std::array<float, numSections> width {}, onyx {}, threshold {}, ratio {}, curve {};
@@ -394,9 +460,6 @@ void PRISMVSTAudioProcessor::processSevenSectionEngine(juce::AudioBuffer<float>&
     for (int s = 0; s < numSections; ++s)
     {
         on[(size_t)s] = read(apvts, sectionId(s, "on")) >= 0.5f;
-        solo[(size_t)s] = read(apvts, sectionId(s, "solo")) >= 0.5f;
-        anySolo = anySolo || solo[(size_t)s];
-
         inputGain[(size_t)s] = toGain(read(apvts, sectionId(s, "input_db")));
         outputGain[(size_t)s] = toGain(read(apvts, sectionId(s, "output_db")));
 
@@ -405,7 +468,11 @@ void PRISMVSTAudioProcessor::processSevenSectionEngine(juce::AudioBuffer<float>&
         attackCoeff[(size_t)s] = std::exp(-1.0f / (0.001f * attackMs * sr));
         releaseCoeff[(size_t)s] = std::exp(-1.0f / (0.001f * releaseMs * sr));
 
-        width[(size_t)s] = juce::jlimit(0.0f, 2.0f, read(apvts, sectionId(s, "width_pct")) * 0.01f);
+        // Preserve the v1.1.1 parameter ID/range for project recall.
+        // 100% stored = neutral; 150% stored = maximum +50% widening.
+        // Old values outside that territory never narrow or over-expand.
+        width[(size_t)s] = juce::jlimit(1.0f, 1.5f,
+            read(apvts, sectionId(s, "width_pct")) * 0.01f);
         onyx[(size_t)s] = juce::jlimit(0.0f, 1.0f, read(apvts, sectionId(s, "onyx_pct")) * 0.01f);
         threshold[(size_t)s] = read(apvts, sectionId(s, "threshold_db"));
         ratio[(size_t)s] = juce::jlimit(1.0f, 20.0f, read(apvts, sectionId(s, "ratio")));
@@ -413,6 +480,11 @@ void PRISMVSTAudioProcessor::processSevenSectionEngine(juce::AudioBuffer<float>&
     }
 
     float maxReduction = 0.0f;
+    std::array<double, numSections> midEnergy {};
+    std::array<double, numSections> sideEnergy {};
+    // One-pole split for a very small input-derived high-frequency sheen.
+    const float onyxToneCoeff = 1.0f - std::exp(
+        -2.0f * juce::MathConstants<float>::pi * 1800.0f / sr);
     float* left = buffer.getWritePointer(0);
     float* right = buffer.getWritePointer(1);
 
@@ -452,7 +524,7 @@ void PRISMVSTAudioProcessor::processSevenSectionEngine(juce::AudioBuffer<float>&
 
         for (int s = 0; s < numSections; ++s)
         {
-            const bool audible = on[(size_t)s] && (!anySolo || solo[(size_t)s]);
+            const bool audible = on[(size_t)s] && (activeSolo < 0 || s == activeSolo);
             if (!audible)
                 continue;
 
@@ -479,20 +551,38 @@ void PRISMVSTAudioProcessor::processSevenSectionEngine(juce::AudioBuffer<float>&
             xR *= dynamicGain;
 
             const float a = onyx[(size_t)s];
-            if (a > 0.0001f)
+            // Resonant Wax: gentle differential soft clipping gives fine,
+            // input-dependent harmonics without a loud saturation jump.
+            // The high-passed component adds restrained musical sparkle
+            // from signal content, never noise or an oscillator.
+            const float drive = 1.0f + 0.9f * a;
+            const float bias = 0.065f * a;
+            const float zero = std::tanh(bias * drive);
+            auto wax = [&](float sample, float& low)
             {
-                const float drive = 1.0f + 4.0f * a;
-                const float norm = juce::jmax(0.001f, std::tanh(drive));
-                const float shapedL = std::tanh(xL * drive) / norm;
-                const float shapedR = std::tanh(xR * drive) / norm;
-                xL += a * (shapedL - xL);
-                xR += a * (shapedR - xR);
-            }
+                low += onyxToneCoeff * (sample - low);
+                if (a <= 0.0001f)
+                    return sample; // bit-exact ONYX bypass
+
+                const float coloured = (std::tanh((sample + bias) * drive) - zero) / drive;
+                const float sheen = (sample - low) * (0.045f * a);
+                const float mix = 0.40f * a;
+                return (sample + mix * (coloured - sample) + sheen) * (1.0f - 0.015f * a);
+            };
+            xL = wax(xL, state.onyxLow[0]);
+            xR = wax(xR, state.onyxLow[1]);
 
             const float mid = 0.5f * (xL + xR);
             const float side = 0.5f * (xL - xR) * width[(size_t)s];
             xL = (mid + side) * outputGain[(size_t)s];
             xR = (mid - side) * outputGain[(size_t)s];
+
+            // Meter actual processed stereo activity, not knob position.
+            // This feeds only the screen; never feeds any DSP decision.
+            const double outMid = 0.5 * ((double)xL + (double)xR);
+            const double outSide = 0.5 * ((double)xL - (double)xR);
+            midEnergy[(size_t)s] += outMid * outMid;
+            sideEnergy[(size_t)s] += outSide * outSide;
 
             outL += xL;
             outR += xR;
@@ -503,6 +593,14 @@ void PRISMVSTAudioProcessor::processSevenSectionEngine(juce::AudioBuffer<float>&
     }
 
     gainReductionDb.store(maxReduction);
+    for (int s = 0; s < numSections; ++s)
+    {
+        const double m = midEnergy[(size_t)s];
+        const double side = sideEnergy[(size_t)s];
+        const float measured = (float)std::sqrt(side / (side + m + 1.0e-15));
+        const float previous = stereoActivity[(size_t)s].load();
+        stereoActivity[(size_t)s].store(0.72f * previous + 0.28f * measured);
+    }
 }
 
 void PRISMVSTAudioProcessor::pushAnalyzerSamples(const juce::AudioBuffer<float>& buffer)
@@ -682,6 +780,8 @@ void PRISMVSTAudioProcessor::setStateInformation(const void* data, int size)
         {
             apvts.replaceState(juce::ValueTree::fromXml(*xml));
             sanitizeCrossovers();
+            // Resolve old sessions that persisted more than one SOLO flag.
+            triggerAsyncUpdate();
         }
 }
 
