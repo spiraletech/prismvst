@@ -470,6 +470,31 @@ void SpectrumAuraDisplay::paint(juce::Graphics& g)
     g.fillRect(juce::Rectangle<float>(selectedLeft, b.getY(),
                                       juce::jmax(1.0f, selectedRight - selectedLeft), b.getHeight()));
 
+    // Genuine stereo side-energy activity in the selected territory.
+    // This is measured from the processed L/R signal, not inferred from
+    // the WIDTH knob. The analyzer's -96 dB scale and spectrum are untouched.
+    const float stereoActivity = juce::jlimit(0.0f, 1.0f,
+                                              processor.getStereoActivity(selectedSection));
+    if (stereoActivity > 0.012f)
+    {
+        const juce::Graphics::ScopedSaveState savedState(g);
+        g.reduceClipRegion(juce::Rectangle<int>(
+            juce::roundToInt(selectedLeft), juce::roundToInt(b.getY()),
+            juce::jmax(1, juce::roundToInt(selectedRight - selectedLeft)),
+            juce::roundToInt(b.getHeight())));
+
+        const float cx = 0.5f * (selectedLeft + selectedRight);
+        const float cy = b.getCentreY();
+        const float spread = juce::jmin(selectedRight - selectedLeft, b.getHeight());
+        const float radiusX = 12.0f + spread * (0.16f + 0.36f * stereoActivity);
+        const float radiusY = 14.0f + b.getHeight() * (0.12f + 0.36f * stereoActivity);
+        juce::ColourGradient field(
+            accentColour().withAlpha(0.035f + 0.13f * stereoActivity), cx, cy,
+            accentColour().withAlpha(0.0f), cx + radiusX, cy, true);
+        g.setGradientFill(field);
+        g.fillEllipse(cx - radiusX, cy - radiusY, radiusX * 2.0f, radiusY * 2.0f);
+    }
+
     drawLotusGrid(g, b);
 
     const std::array<float, 10> gridFreq {
@@ -1198,6 +1223,31 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
         addAndMakeVisible(controlLabels[(size_t)i]);
     }
 
+    // The existing WIDTH knob shows only additional widening (0..50%).
+    // Underlying width_pct remains 100..150 for compatibility with v1.1.1.
+    width.setRange(0.0, 50.0, 0.1);
+    width.setDoubleClickReturnValue(true, 0.0);
+    width.onDragStart = [this]
+    {
+        widthDragging = true;
+        if (widthParameter != nullptr)
+            widthParameter->beginChangeGesture();
+    };
+    width.onDragEnd = [this]
+    {
+        if (widthParameter != nullptr)
+            widthParameter->endChangeGesture();
+        widthDragging = false;
+    };
+    width.onValueChange = [this]
+    {
+        if (widthParameter != nullptr)
+        {
+            const float stored = (float)(100.0 + width.getValue());
+            widthParameter->setValueNotifyingHost(widthParameter->convertTo0to1(stored));
+        }
+    };
+
     for (auto* label : { &inputPeakLabel, &grLabel, &outputPeakLabel })
     {
         label->setFont(juce::Font(juce::FontOptions(9.7f, juce::Font::bold)));
@@ -1243,7 +1293,7 @@ void PRISMVSTAudioProcessorEditor::bindSelectedSection(int section)
     outputA.reset();
     attackA.reset();
     releaseA.reset();
-    widthA.reset();
+    widthParameter = nullptr;
     onyxA.reset();
     sectionOnA.reset();
     sectionSoloA.reset();
@@ -1257,7 +1307,10 @@ void PRISMVSTAudioProcessorEditor::bindSelectedSection(int section)
     outputA = std::make_unique<SliderAttachment>(processor.apvts, id("output_db"), output);
     attackA = std::make_unique<SliderAttachment>(processor.apvts, id("attack_ms"), attack);
     releaseA = std::make_unique<SliderAttachment>(processor.apvts, id("release_ms"), release);
-    widthA = std::make_unique<SliderAttachment>(processor.apvts, id("width_pct"), width);
+    widthParameter = processor.apvts.getParameter(id("width_pct"));
+    width.setValue(juce::jlimit(0.0, 50.0,
+        (double)readParameter(processor.apvts, id("width_pct")) - 100.0),
+        juce::dontSendNotification);
     onyxA = std::make_unique<SliderAttachment>(processor.apvts, id("onyx_pct"), onyx);
     sectionOnA = std::make_unique<ButtonAttachment>(processor.apvts, id("on"), sectionOn);
     sectionSoloA = std::make_unique<ButtonAttachment>(processor.apvts, id("solo"), sectionSolo);
@@ -1266,7 +1319,7 @@ void PRISMVSTAudioProcessorEditor::bindSelectedSection(int section)
     enableDefaultReset(output, id("output_db"));
     enableDefaultReset(attack, id("attack_ms"));
     enableDefaultReset(release, id("release_ms"));
-    enableDefaultReset(width, id("width_pct"));
+    // WIDTH reset is 0% additional widening (host value 100%).
     enableDefaultReset(onyx, id("onyx_pct"));
 
     for (int i = 0; i < PRISMVSTAudioProcessor::numSections; ++i)
@@ -1287,7 +1340,7 @@ void PRISMVSTAudioProcessorEditor::updateSectionButtonText()
     for (int i = 0; i < PRISMVSTAudioProcessor::numSections; ++i)
     {
         const bool on = readParameter(processor.apvts, PRISMVSTAudioProcessor::sectionId(i, "on")) >= 0.5f;
-        const bool solo = readParameter(processor.apvts, PRISMVSTAudioProcessor::sectionId(i, "solo")) >= 0.5f;
+        const bool solo = processor.getActiveSoloSection() == i;
 
         juce::String text(PRISMVSTAudioProcessor::sectionName(i));
         if (!on)
@@ -1330,16 +1383,16 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
 
     g.setColour(juce::Colour::fromRGB(242, 246, 249));
     g.setFont(juce::Font(juce::FontOptions(25.0f, juce::Font::bold)));
-    g.drawText("PRISM", 18, 10, 118, 32, juce::Justification::centredLeft);
+    g.drawText("PRISM", 43, 10, 112, 32, juce::Justification::centredLeft);
 
     g.setColour(accentColour());
     g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
-    g.drawText("ALPHA 001  •  v1.1.1", 122, 18, 142, 17, juce::Justification::centredLeft);
+    g.drawText("ALPHA 001  •  v1.2.0", 158, 18, 142, 17, juce::Justification::centredLeft);
 
     g.setColour(textMuted());
     g.setFont(juce::Font(juce::FontOptions(9.4f)));
     g.drawText("ETHERTECH  /  7-SECTION SPECTRAL DYNAMICS  /  FIXED 36 dB/OCT",
-               274, 17, 500, 18, juce::Justification::centredLeft);
+               309, 17, 490, 18, juce::Justification::centredLeft);
 
     const int engineY = getHeight() - 132;
 
@@ -1430,6 +1483,15 @@ void PRISMVSTAudioProcessorEditor::timerCallback()
                     juce::dontSendNotification);
     outputPeakLabel.setText("OUT  " + juce::String(processor.getPeakDb(), 1) + " dBFS",
                             juce::dontSendNotification);
+
+    // Mirror host automation without writing values back during UI refresh.
+    if (!widthDragging && widthParameter != nullptr)
+    {
+        const float stored = readParameter(processor.apvts,
+            PRISMVSTAudioProcessor::sectionId(selectedSection, "width_pct"));
+        width.setValue(juce::jlimit(0.0, 50.0, (double)stored - 100.0),
+                       juce::dontSendNotification);
+    }
 
     updateSectionButtonText();
     repaint();
