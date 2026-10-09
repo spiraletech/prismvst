@@ -164,7 +164,9 @@ private:
 
     juce::Label inputPeakLabel, grLabel, outputPeakLabel;
 
-    std::unique_ptr<SliderAttachment> inputA, outputA, attackA, releaseA, widthA, onyxA;
+    std::unique_ptr<SliderAttachment> inputA, outputA, attackA, releaseA, onyxA;
+    juce::RangedAudioParameter* widthParameter = nullptr;
+    bool widthDragging = false;
     std::unique_ptr<ButtonAttachment> sectionOnA, sectionSoloA;
 
     void configureRotary(juce::Slider&, const juce::String& suffix, int decimals);
