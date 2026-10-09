@@ -1,46 +1,51 @@
 # PRISMVST
 
-PRISMVST is EtherTech's Windows-first VST3 spectral dynamics processor for FL Studio.
+PRISMVST is EtherTech / SpiralEtech's Windows-first VST3 frequency-specialized dynamic EQ and spectral shaping processor for FL Studio.
 
-## v0.3.3 UI / architecture lock
+## v0.3.4 recovery build
 
-The front panel intentionally stays sparse. There are seven fixed frequency territories:
+This build restores the last known-good processor/parameter architecture from commit \`40527b0\` and keeps the VST3 identity stable. The hardware-shelf redesign is isolated to the editor layer.
 
-\`SUB | KICK | LOW | LOWER MID | MID | HIGH | HIGHER\`
+### Stable DSP
 
-Fixed territory boundaries:
+Six dynamic EQ bands preserve the original parameter IDs:
 
-\`60 Hz | 120 Hz | 250 Hz | 500 Hz | 2.00 kHz | 6.00 kHz\`
+- \`bandN_enabled\`
+- \`bandN_freq\`
+- \`bandN_gain\`
+- \`bandN_q\`
+- \`bandN_dyn_range\`
+- \`bandN_threshold\`
+- \`bandN_ratio\`
+- \`bandN_attack\`
+- \`bandN_release\`
 
-The selected section exposes only:
+The original global parameters are also preserved:
 
-\`INPUT | OUTPUT | ATTACK | RELEASE | WIDTH | ONYX\`
+- \`onyx\`, \`onyx_drive\`, \`onyx_bias\`, \`onyx_density\`
+- \`solfeggio_grid\`
+- \`master_trim\`, \`ceiling\`, \`master_bypass\`
 
-plus \`ON\`, \`SOLO\`, and the universal \`PRECISION\` lever. The lever changes drag sensitivity for every rotary control instead of adding separate fine/coarse versions of parameters.
+No new audio-processing topology is introduced by the UI overhaul.
 
-## Analyzer
+### Front panel
 
-PRISM separates measurement from display:
+The visible hardware shelf intentionally stays compact:
 
-- FFT engine: 16384 points
-- Internal measurement floor: -144 dBFS
-- Default visible viewport: 0 to -36 dBFS
-- Display slope: 4.5 dB/oct, visualization only
-- Persistent aura field: no scrolling spectrogram history
-- Hover readout: frequency, true measured dBFS, musical note
+\`FREQ | GAIN | DYN | ATTACK | RELEASE | ONYX | PRECISION\`
 
-Analyzer display compensation does not alter DSP measurements or audio processing.
+The selected band also exposes \`ON\`. Global \`BYPASS\` remains available. Q, threshold, ratio and the deeper ONYX/master parameters remain valid host parameters and are not deleted from presets or automation.
 
-## DSP
+### Analyzer
 
-Each territory uses fixed sixth-order (36 dB/oct) Butterworth boundary filters for section analysis/processing. Neutral settings are constructed as a dry-plus-delta topology so the default state remains bit-stable dry while per-territory shaping is inactive.
+The editor uses a stationary aura display rather than scrolling spectrogram history:
 
-- INPUT drives the section detector.
-- OUTPUT applies section trim.
-- ATTACK / RELEASE control detector timing.
-- WIDTH changes stereo width inside the selected territory.
-- ONYX controls the section's dynamic restraint amount.
-- SOLO auditions the selected filtered territory.
+- visible working range: 0 to -36 dBFS
+- 4.5 dB/oct display compensation
+- display compensation affects visualization only
+- frequency / measured dBFS / musical-note hover readout
+- persistent radial aura field
+- no conveyor-belt history
 
 ## Build
 
@@ -52,4 +57,4 @@ cmake --build build --config Release --parallel 2
 ctest --test-dir build -C Release --output-on-failure
 \`\`\`
 
-The Windows workflow builds, tests, and uploads \`PRISMVST.vst3\` as the \`PRISMVST-Windows-VST3\` artifact.
+The Windows workflow verifies the VST3 bundle structure before uploading the build artifact.
