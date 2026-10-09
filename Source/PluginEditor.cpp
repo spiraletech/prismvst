@@ -1316,7 +1316,7 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
     chassis.addColour(0.13, juce::Colour::fromRGB(30, 33, 35));
     chassis.addColour(0.52, juce::Colour::fromRGB(12, 15, 17));
     g.setGradientFill(chassis);
-    g.fillAll();
+    g.fillRect(full);
 
     // Outer molded lip.
     g.setColour(juce::Colour::fromRGB(2, 3, 4));
