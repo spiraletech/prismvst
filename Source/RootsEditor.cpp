@@ -199,9 +199,11 @@ void RootsGraph::paint(juce::Graphics& g){
         g.setColour(juce::Colours::white.withAlpha(0.26f));
         g.drawVerticalLine(juce::roundToInt(mouse_.x),r.getY(),r.getBottom());
         g.drawHorizontalLine(juce::roundToInt(mouse_.y),r.getX(),r.getRight());
-        const juce::String text=hzText(freq)+" Hz  /  BAR "
-                   +juce::String(bands_[(size_t)bar],1)+" dBFS  /  PEAK "
-                   +juce::String(peaks_[(size_t)bar],1)+" dBFS";
+        const juce::String text=freq<20.0f
+            ?hzText(freq)+" Hz  /  SUB-20 Hz: NO CALIBRATED FFT DATA"
+            :hzText(freq)+" Hz  /  BAR "
+                +juce::String(bands_[(size_t)bar],1)+" dBFS  /  PEAK "
+                +juce::String(peaks_[(size_t)bar],1)+" dBFS";
         const float left=juce::jlimit(r.getX(),r.getRight()-274.0f,mouse_.x+12);
         const float top=juce::jlimit(r.getY(),r.getBottom()-29.0f,mouse_.y-39.0f);
         g.setColour(juce::Colour::fromRGB(6,11,18).withAlpha(0.97f));
