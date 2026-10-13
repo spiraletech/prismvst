@@ -67,6 +67,7 @@ public:
         sideAlpha_=std::exp(-1.0/(0.008*sr_));
         globalMidPower_=globalSidePower_=0.0;appliedSpace_=1.0;
         grMax_=0.0;meter_={};
+        currentSolo_=-1;previousSolo_=-1;soloFadeLeft_=0;soloFadeSamples_=0;
         for(int i=0;i<kNodes;++i) {
             auto& node=nodes_[(size_t)i];
             if(!haveConfig_) {node.config.hz=defaults[(size_t)i];}
@@ -96,13 +97,25 @@ public:
     Meter meter() const noexcept {return meter_;}
     void process(float* l,float* r,std::size_t count) noexcept {
         if(!l||!r||count==0)return;
-        bool solo=false, active=false;
-        for(const auto& n:nodes_) {
+        bool active=false;
+        int requestedSolo=-1;
+        for(int index=0;index<kNodes;++index) {
+            const auto& n=nodes_[(size_t)index];
             if(!n.config.enabled)continue;
-            solo=solo||n.config.solo;
+            if(n.config.solo)requestedSolo=index;
             active=active||n.config.solo||std::abs(n.config.gainDb)>0.00001||
                    n.config.comp!=Compressor::off||n.config.space!=50.0;
         }
+        if(requestedSolo!=currentSolo_) {
+            // Two soloed roots crossfade over 8 ms to prevent hard
+            // discontinuities during rapid A/B auditioning.
+            previousSolo_=(requestedSolo>=0&&currentSolo_>=0)?currentSolo_:-1;
+            currentSolo_=requestedSolo;
+            soloFadeSamples_=previousSolo_>=0
+                ?std::max(1,(int)std::lround(sr_*0.008)):0;
+            soloFadeLeft_=soloFadeSamples_;
+        }
+        const bool solo=requestedSolo>=0;
         // Truly transparent neutral bypass for pristine A/B.
         if(!solo&&!active&&!mono_&&space_==50.0) {
             measureUnchanged(l,r,count);return;
@@ -115,11 +128,15 @@ public:
             const double dryS=((double)l[i]-(double)r[i])*0.5;
             double m=dryM,s=dryS;
             if(solo){m=0.0;s=0.0;}
-            for(auto& node:nodes_) {
+            const double newMix=soloFadeLeft_>0
+                ?1.0-(double)soloFadeLeft_/(double)soloFadeSamples_:1.0;
+            for(int nodeIndex=0;nodeIndex<kNodes;++nodeIndex) {
+                auto& node=nodes_[(size_t)nodeIndex];
                 const Config& c=node.config;
                 if(!c.enabled)continue;
-                // In solo mode, multiple active nodes can be combined.
-                if(solo && !c.solo)continue;
+                // Exclusive solo, except the outgoing root while it fades.
+                const bool outgoing=soloFadeLeft_>0&&nodeIndex==previousSolo_;
+                if(solo&&nodeIndex!=currentSolo_&&!outgoing)continue;
                 const bool listen=solo;
                 const bool usesTap=listen||c.comp!=Compressor::off||c.space!=50.0;
                 double tapM=0.0,tapS=0.0;
@@ -172,7 +189,14 @@ public:
                     if(listen){tapM*=mGain;tapS*=sGain;}
                     else{m+=tapM*(mGain-1.0);s+=tapS*(sGain-1.0);}
                 }
-                if(listen){m+=tapM;s+=tapS;}
+                if(listen){
+                    const double weight=outgoing?1.0-newMix:newMix;
+                    m+=tapM*weight;s+=tapS*weight;
+                }
+            }
+            if(soloFadeLeft_>0){
+                --soloFadeLeft_;
+                if(soloFadeLeft_==0)previousSolo_=-1;
             }
             globalMidPower_=correlationAlpha_*globalMidPower_+
                             (1.0-correlationAlpha_)*m*m;
@@ -244,6 +268,7 @@ private:
     double globalMidPower_=0.0,globalSidePower_=0.0,appliedSpace_=1.0,grMax_=0.0;
     double space_=50.0;
     bool mono_=false,haveConfig_=false;
+    int currentSolo_=-1,previousSolo_=-1,soloFadeLeft_=0,soloFadeSamples_=0;
     Meter meter_{};
 };
 } // namespace prism::roots::v2
