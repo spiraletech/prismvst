@@ -30,8 +30,6 @@ private:
     juce::Rectangle<float> area() const;
     float freqToX(float f) const;
     float xToFreq(float x) const;
-    float gainToY(float gain) const;
-    float yToGain(float y) const;
     float param(int i,const char* suffix) const;
     void write(int i,const char* suffix,float value);
     int hitNode(juce::Point<float>) const;
@@ -50,11 +48,11 @@ private:
     using ButtonA=juce::AudioProcessorValueTreeState::ButtonAttachment;
     PRISMVSTAudioProcessor& processor_;
     RootsGraph graph_;
-    juce::Slider gain_,q_,bandSpace_,space_,threshold_;
+    juce::Slider gain_,bandSpace_,space_,threshold_;
     juce::ToggleButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};
-    juce::Label title_,selection_,status_,gainLabel_,qLabel_,bandSpaceLabel_,
+    juce::Label title_,selection_,status_,gainLabel_,bandSpaceLabel_,
         spaceLabel_,thresholdLabel_;
-    std::unique_ptr<SliderA> gainA_,qA_,bandSpaceA_,spaceA_,thresholdA_;
+    std::unique_ptr<SliderA> gainA_,bandSpaceA_,spaceA_,thresholdA_;
     std::unique_ptr<ButtonA> monoA_,onA_,soloA_;
     int node_=0;
     void bindNode(int n);
