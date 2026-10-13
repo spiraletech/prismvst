@@ -95,6 +95,7 @@ public:
     void setSpace(double value) noexcept {space_=std::clamp(value,0.0,100.0);}
     void setMono(bool mono) noexcept {mono_=mono;}
     Meter meter() const noexcept {return meter_;}
+    int soloTransitionSamplesRemaining() const noexcept {return soloFadeLeft_;}
     void process(float* l,float* r,std::size_t count) noexcept {
         if(!l||!r||count==0)return;
         bool active=false;
