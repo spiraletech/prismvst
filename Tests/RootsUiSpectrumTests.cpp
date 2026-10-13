@@ -51,6 +51,8 @@ int main(){
   float left[256]{},right[256]{};
   left[0]=0.1f;right[0]=0.1f;
   for(int i=0;i<200;++i){
+    // Test the filter's impulse tail, not 200 repeated gain stages.
+    if(i>0){for(int k=0;k<256;++k){left[k]=0.0f;right[k]=0.0f;}}
     core.process(left,right,256);
     for(int k=0;k<256;++k)if(!std::isfinite(left[k])||!std::isfinite(right[k]))
       return 4;
