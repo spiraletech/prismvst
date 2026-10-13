@@ -205,10 +205,6 @@ public:
                     if(listen){tapM*=mGain;tapS*=sGain;}
                     else{m+=tapM*(mGain-1.0);s+=tapS*(sGain-1.0);}
                 }
-                if(listen){
-                    const double weight=outgoing?1.0-newMix:newMix;
-                    m+=tapM*weight;s+=tapS*weight;
-                }
             }
             if(solo) {
                 auto audition=[&](int root)->std::array<double,2> {
