@@ -57,6 +57,9 @@ public:
         return stereoActivity[(size_t)juce::jlimit(0, numSections - 1, section)].load();
     }
     int getActiveSoloSection() const noexcept;
+    int getActiveRootsSolo() const noexcept;
+    // Message-thread selection transfer while SOLO is engaged.
+    void transferRootsSoloTo(int node);
 
     static juce::String sectionId(int section, const juce::String& suffix);
     static juce::String crossoverId(int crossover);
@@ -120,6 +123,8 @@ private:
     prism::roots::v2::Engine rootsEngine;
     std::array<std::atomic<float>, numSections> stereoActivity {};
     std::array<juce::String, numSections> soloParameterIds {};
+    std::array<juce::String, prism::roots::v2::kNodes> rootsSoloParameterIds {};
+    std::atomic<int> latestRootsSolo { -1 };
     std::atomic<int> latestSoloSection { -1 };
 
     std::array<juce::dsp::IIR::Filter<float>, 2> loudHp;
@@ -171,6 +176,7 @@ private:
     void parameterChanged(const juce::String& parameterID, float newValue) override;
     void handleAsyncUpdate() override;
     void reconcileExclusiveSolo(); // only invoked on message thread
+    void reconcileExclusiveRootsSolo(); // message thread only
     void sanitizeCrossovers();
     void updateCrossoverCoefficients(int blockSamples);
     void processSevenSectionEngine(juce::AudioBuffer<float>& buffer);

@@ -25,7 +25,7 @@ struct Meter { double correlation=1.0,midRms=0.0,sideRms=0.0,spaceApplied=1.0,la
 class Filter {
 public:
     void peak(double sr,const Config& c) noexcept {
-        const double f=std::clamp(c.hz,20.0,std::min(20000.0,sr*0.45));
+        const double f=std::clamp(c.hz,1.0,std::min(20000.0,sr*0.45));
         const double w=2.0*std::numbers::pi*f/sr;
         const double a=std::sin(w)/(2.0*std::clamp(c.q,0.15,24.0));
         const double g=std::pow(10.0,std::clamp(c.gainDb,-60.0,60.0)/40.0);
@@ -38,7 +38,7 @@ public:
     // NOT blind instrument/source separation.
     void tap(double sr,const Config& c) noexcept {
         const double w=2.0*std::numbers::pi*std::clamp(
-                         c.hz,20.0,std::min(20000.0,sr*0.45))/sr;
+                         c.hz,1.0,std::min(20000.0,sr*0.45))/sr;
         const double a=std::sin(w)/(2.0*std::clamp(c.q,0.15,24.0));
         const double norm=1.0/(1.0+a);
         b0_=a*norm;b1_=0.0;b2_=-a*norm;
@@ -59,7 +59,7 @@ class Engine {
 public:
     explicit Engine(double sampleRate=48000.0) noexcept { prepare(sampleRate); }
     static constexpr std::array<double,kNodes> defaults{
-        35.,60.,85.,120.,175.,245.,370.,525.,790.,1450.,2600.,4450.,8300.,13500.
+        1.,60.,85.,120.,175.,245.,370.,525.,790.,1450.,2600.,4450.,8300.,13500.
     };
     void prepare(double sampleRate) noexcept {
         sr_=std::max(8000.0,sampleRate);
@@ -67,6 +67,7 @@ public:
         sideAlpha_=std::exp(-1.0/(0.008*sr_));
         globalMidPower_=globalSidePower_=0.0;appliedSpace_=1.0;
         grMax_=0.0;meter_={};
+        currentSolo_=-1;previousSolo_=-1;soloFadeLeft_=0;soloFadeSamples_=0;
         for(int i=0;i<kNodes;++i) {
             auto& node=nodes_[(size_t)i];
             if(!haveConfig_) {node.config.hz=defaults[(size_t)i];}
@@ -79,7 +80,7 @@ public:
     }
     void config(int index, Config c) noexcept {
         if(index<0||index>=kNodes)return;
-        c.hz=std::clamp(c.hz,20.0,std::min(20000.0,sr_*0.45));
+        c.hz=std::clamp(c.hz,index==0?1.0:20.0,std::min(20000.0,sr_*0.45));
         c.q=std::clamp(c.q,0.15,24.0);
         c.gainDb=std::clamp(c.gainDb,-60.0,60.0);
         c.space=std::clamp(c.space,0.0,100.0);
@@ -94,15 +95,28 @@ public:
     void setSpace(double value) noexcept {space_=std::clamp(value,0.0,100.0);}
     void setMono(bool mono) noexcept {mono_=mono;}
     Meter meter() const noexcept {return meter_;}
+    int soloTransitionSamplesRemaining() const noexcept {return soloFadeLeft_;}
     void process(float* l,float* r,std::size_t count) noexcept {
         if(!l||!r||count==0)return;
-        bool solo=false, active=false;
-        for(const auto& n:nodes_) {
+        bool active=false;
+        int requestedSolo=-1;
+        for(int index=0;index<kNodes;++index) {
+            const auto& n=nodes_[(size_t)index];
             if(!n.config.enabled)continue;
-            solo=solo||n.config.solo;
+            if(n.config.solo)requestedSolo=index;
             active=active||n.config.solo||std::abs(n.config.gainDb)>0.00001||
                    n.config.comp!=Compressor::off||n.config.space!=50.0;
         }
+        if(requestedSolo!=currentSolo_) {
+            // Two soloed roots crossfade over 8 ms to prevent hard
+            // discontinuities during rapid A/B auditioning.
+            previousSolo_=(requestedSolo>=0&&currentSolo_>=0)?currentSolo_:-1;
+            currentSolo_=requestedSolo;
+            soloFadeSamples_=previousSolo_>=0
+                ?std::max(1,(int)std::lround(sr_*0.008)):0;
+            soloFadeLeft_=soloFadeSamples_;
+        }
+        const bool solo=requestedSolo>=0;
         // Truly transparent neutral bypass for pristine A/B.
         if(!solo&&!active&&!mono_&&space_==50.0) {
             measureUnchanged(l,r,count);return;
@@ -115,11 +129,15 @@ public:
             const double dryS=((double)l[i]-(double)r[i])*0.5;
             double m=dryM,s=dryS;
             if(solo){m=0.0;s=0.0;}
-            for(auto& node:nodes_) {
+            const double newMix=soloFadeLeft_>0
+                ?1.0-(double)soloFadeLeft_/(double)soloFadeSamples_:1.0;
+            for(int nodeIndex=0;nodeIndex<kNodes;++nodeIndex) {
+                auto& node=nodes_[(size_t)nodeIndex];
                 const Config& c=node.config;
                 if(!c.enabled)continue;
-                // In solo mode, multiple active nodes can be combined.
-                if(solo && !c.solo)continue;
+                // Exclusive solo, except the outgoing root while it fades.
+                const bool outgoing=soloFadeLeft_>0&&nodeIndex==previousSolo_;
+                if(solo&&nodeIndex!=currentSolo_&&!outgoing)continue;
                 const bool listen=solo;
                 const bool usesTap=listen||c.comp!=Compressor::off||c.space!=50.0;
                 double tapM=0.0,tapS=0.0;
@@ -172,7 +190,14 @@ public:
                     if(listen){tapM*=mGain;tapS*=sGain;}
                     else{m+=tapM*(mGain-1.0);s+=tapS*(sGain-1.0);}
                 }
-                if(listen){m+=tapM;s+=tapS;}
+                if(listen){
+                    const double weight=outgoing?1.0-newMix:newMix;
+                    m+=tapM*weight;s+=tapS*weight;
+                }
+            }
+            if(soloFadeLeft_>0){
+                --soloFadeLeft_;
+                if(soloFadeLeft_==0)previousSolo_=-1;
             }
             globalMidPower_=correlationAlpha_*globalMidPower_+
                             (1.0-correlationAlpha_)*m*m;
@@ -244,6 +269,7 @@ private:
     double globalMidPower_=0.0,globalSidePower_=0.0,appliedSpace_=1.0,grMax_=0.0;
     double space_=50.0;
     bool mono_=false,haveConfig_=false;
+    int currentSolo_=-1,previousSolo_=-1,soloFadeLeft_=0,soloFadeSamples_=0;
     Meter meter_{};
 };
 } // namespace prism::roots::v2

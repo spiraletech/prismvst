@@ -179,12 +179,19 @@ PRISMVSTAudioProcessor::PRISMVSTAudioProcessor()
         soloParameterIds[(size_t)s] = sectionId(s, "solo");
         apvts.addParameterListener(soloParameterIds[(size_t)s], this);
     }
+    for (int i = 0; i < prism::roots::v2::kNodes; ++i)
+    {
+        rootsSoloParameterIds[(size_t)i] = rootsNodeId(i, "solo");
+        apvts.addParameterListener(rootsSoloParameterIds[(size_t)i], this);
+    }
 }
 
 PRISMVSTAudioProcessor::~PRISMVSTAudioProcessor()
 {
     cancelPendingUpdate();
     for (const auto& id : soloParameterIds)
+        apvts.removeParameterListener(id, this);
+    for (const auto& id : rootsSoloParameterIds)
         apvts.removeParameterListener(id, this);
 
     analyzerWorker.signalThreadShouldExit();
@@ -206,6 +213,31 @@ int PRISMVSTAudioProcessor::getActiveSoloSection() const noexcept
     return -1;
 }
 
+int PRISMVSTAudioProcessor::getActiveRootsSolo() const noexcept
+{
+    const int recent = latestRootsSolo.load();
+    if (recent >= 0 && recent < prism::roots::v2::kNodes &&
+        read(apvts, rootsSoloParameterIds[(size_t)recent]) >= 0.5f)
+        return recent;
+    for (int i = 0; i < prism::roots::v2::kNodes; ++i)
+        if (read(apvts, rootsSoloParameterIds[(size_t)i]) >= 0.5f)
+            return i;
+    return -1;
+}
+
+void PRISMVSTAudioProcessor::transferRootsSoloTo(int node)
+{
+    const int previous = getActiveRootsSolo();
+    if (previous < 0 || node < 0 || node >= prism::roots::v2::kNodes || previous == node)
+        return;
+    // Turn on new solo first. Audio always honours only the latest solo,
+    // so the transition cannot produce multiple audible roots.
+    if (auto* p = apvts.getParameter(rootsSoloParameterIds[(size_t)node]))
+        p->setValueNotifyingHost(p->convertTo0to1(1.0f));
+    latestRootsSolo.store(node);
+    reconcileExclusiveRootsSolo();
+}
+
 void PRISMVSTAudioProcessor::parameterChanged(const juce::String& parameterID, float newValue)
 {
     for (int s = 0; s < numSections; ++s)
@@ -223,11 +255,23 @@ void PRISMVSTAudioProcessor::parameterChanged(const juce::String& parameterID, f
         triggerAsyncUpdate();
         return;
     }
+    for (int i = 0; i < prism::roots::v2::kNodes; ++i)
+    {
+        if (parameterID != rootsSoloParameterIds[(size_t)i])
+            continue;
+        if (newValue >= 0.5f)
+            latestRootsSolo.store(i);
+        else if (latestRootsSolo.load() == i)
+            latestRootsSolo.store(-1);
+        triggerAsyncUpdate();
+        return;
+    }
 }
 
 void PRISMVSTAudioProcessor::handleAsyncUpdate()
 {
     reconcileExclusiveSolo();
+    reconcileExclusiveRootsSolo();
 }
 
 void PRISMVSTAudioProcessor::reconcileExclusiveSolo()
@@ -240,6 +284,20 @@ void PRISMVSTAudioProcessor::reconcileExclusiveSolo()
         if (s != active && read(apvts, soloParameterIds[(size_t)s]) >= 0.5f)
             if (auto* p = apvts.getParameter(soloParameterIds[(size_t)s]))
                 p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+}
+
+void PRISMVSTAudioProcessor::reconcileExclusiveRootsSolo()
+{
+    const int active = getActiveRootsSolo();
+    if (active < 0)
+        return;
+    for (int i = 0; i < prism::roots::v2::kNodes; ++i)
+    {
+        if (i == active) continue;
+        if (read(apvts, rootsSoloParameterIds[(size_t)i]) >= 0.5f)
+            if (auto* p = apvts.getParameter(rootsSoloParameterIds[(size_t)i]))
+                p->setValueNotifyingHost(p->convertTo0to1(0.0f));
+    }
 }
 
 void PRISMVSTAudioProcessor::releaseResources()
@@ -351,8 +409,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
         using namespace prism::roots::v2;
         const auto id=[i](const char* suffix){return rootsNodeId(i,suffix);};
         const juce::String name="ROOTS " + juce::String(i+1) + " ";
-        juce::NormalisableRange<float> hzRange(20.0f,20000.0f,0.01f);
-        hzRange.setSkewForCentre(1000.0f);
+        juce::NormalisableRange<float> hzRange(i==0?1.0f:20.0f,20000.0f,0.01f);
+        hzRange.setSkewForCentre(i==0?100.0f:1000.0f);
         p.push_back(std::make_unique<juce::AudioParameterFloat>(
             juce::ParameterID{id("hz"),1}, name + "Hz",hzRange,(float)Engine::defaults[(size_t)i]));
         p.push_back(std::make_unique<juce::AudioParameterFloat>(
@@ -834,6 +892,7 @@ void PRISMVSTAudioProcessor::processRootsEngine(juce::AudioBuffer<float>& buffer
     using namespace prism::roots::v2;
     rootsEngine.setSpace(read(apvts,"roots_space"));
     rootsEngine.setMono(read(apvts,"roots_mono")>=0.5f);
+    const int activeRootsSolo = getActiveRootsSolo();
     for(int i=0;i<kNodes;++i)
     {
         const auto id=[i](const char* s){return rootsNodeId(i,s);};
@@ -842,7 +901,7 @@ void PRISMVSTAudioProcessor::processRootsEngine(juce::AudioBuffer<float>& buffer
         c.gainDb=read(apvts,id("gain_db"));
         c.q=read(apvts,id("q"));
         c.enabled=read(apvts,id("on"))>=0.5f;
-        c.solo=read(apvts,id("solo"))>=0.5f;
+        c.solo=(activeRootsSolo==i);
         c.domain=(Domain)juce::roundToInt(read(apvts,id("domain")));
         c.space=read(apvts,id("space"));
         c.comp=(Compressor)juce::roundToInt(read(apvts,id("comp")));

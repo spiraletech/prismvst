@@ -1,4 +1,5 @@
 #include "RootsEditor.h"
+#include "RootsSpectrumColours.h"
 #include <cmath>
 #include <numbers>
 
@@ -13,6 +14,7 @@ void change(PRISMVSTAudioProcessor& p,const juce::String& id,float val) {
 }
 juce::String hzText(float f) {
     if(f>=1000.0f)return juce::String(f/1000.0f,f>=10000?1:2)+"k";
+    if(f<10.0f)return juce::String(f,2);
     return juce::String(juce::roundToInt(f));
 }
 juce::Colour territory(int i){
@@ -37,14 +39,13 @@ juce::Rectangle<float> RootsGraph::area() const {
     return getLocalBounds().toFloat().reduced(46.0f,34.0f);
 }
 float RootsGraph::freqToX(float f) const {
-    auto r=area();
-    f=juce::jlimit(20.0f,20000.0f,f);
-    return r.getX()+r.getWidth()*std::log10(f/20.0f)/3.0f;
+    const auto r=area();
+    return r.getX()+r.getWidth()*(float)prism::roots::visual::graphUnit(f);
 }
 float RootsGraph::xToFreq(float x)const {
-    auto r=area();
-    return 20.0f*std::pow(1000.0f,juce::jlimit(0.0f,1.0f,
-                      (x-r.getX())/juce::jmax(1.0f,r.getWidth())));
+    const auto r=area();
+    return (float)prism::roots::visual::graphFrequency(
+        juce::jlimit(0.0f,1.0f,(x-r.getX())/juce::jmax(1.0f,r.getWidth())));
 }
 float RootsGraph::gainToY(float db)const {
     auto r=area();
@@ -78,7 +79,11 @@ void RootsGraph::updateAnalyzer(
     bands_=values;peaks_=pk;repaint();
 }
 void RootsGraph::selectNode(int i){
-    selected_=juce::jlimit(0,prism::roots::v2::kNodes-1,i);
+    const int target=juce::jlimit(0,prism::roots::v2::kNodes-1,i);
+    if(target==selected_)return;
+    selected_=target;
+    // Once solo audition is engaged it travels with the selected root.
+    processor_.transferRootsSoloTo(selected_);
     if(onSelectNode)onSelectNode(selected_);
     repaint();
 }
@@ -95,8 +100,8 @@ void RootsGraph::paint(juce::Graphics& g){
     g.drawText("CUBE GRID   /   14 INTERSECTING ROOTS",r.getX(),
                7.0f,r.getWidth(),15.0f,juce::Justification::centredLeft);
     // Frequency and calibrated dBFS dimensions.
-    static constexpr std::array<float,11> freqs{
-        20,40,80,160,315,630,1250,2500,5000,10000,20000
+    static constexpr std::array<float,14> freqs{
+        1,2,5,10,20,50,100,250,500,1000,2500,5000,10000,20000
     };
     for(const float f:freqs){
         const float x=freqToX(f);
@@ -122,18 +127,39 @@ void RootsGraph::paint(juce::Graphics& g){
     g.setColour(juce::Colour::fromRGB(184,197,209));
     g.drawText("EQ dB",4,16,52,16,juce::Justification::centredLeft);
     g.drawText("dBFS",juce::roundToInt(r.getRight()),16,44,16,juce::Justification::centredRight);
+    std::array<prism::roots::visual::Node,prism::roots::visual::kNodes> zones{};
+    for(int node=0;node<prism::roots::visual::kNodes;++node)
+    {
+        zones[(size_t)node].hz=param(node,"hz");
+        zones[(size_t)node].q=param(node,"q");
+        zones[(size_t)node].enabled=param(node,"on")>=0.5f;
+    }
     for(int i=0;i<PRISMVSTAudioProcessor::labBars;++i){
-        const float x=r.getX()+((float)i+0.5f)*r.getWidth()/PRISMVSTAudioProcessor::labBars;
+        // The analyzer resolves 20–20k. Its x coordinate is aligned with
+        // the full 1Hz–20k ROOTS graph, leaving 1–20Hz deliberately blank.
+        const float frequency=prism::analysis::LabBands::centreFrequency(i);
+        const float x=freqToX(frequency);
+        const auto weights=prism::roots::visual::at(frequency,zones);
+        float red=0.0f,green=0.0f,blue=0.0f;
+        for(int root=0;root<prism::roots::visual::kRoots;++root)
+        {
+            const auto c=territory(root);
+            const float w=(float)weights.weight[(size_t)root];
+            red+=w*c.getFloatRed();green+=w*c.getFloatGreen();blue+=w*c.getFloatBlue();
+        }
+        const auto barColour=weights.strongest>=0
+            ? juce::Colour::fromFloatRGBA(red,green,blue,1.0f)
+            : juce::Colour::fromRGB(96,112,121);
         const float db=juce::jlimit(-96.0f,0.0f,bands_[(size_t)i]);
         const float peak=juce::jlimit(-96.0f,0.0f,peaks_[(size_t)i]);
         const float y=r.getY()+(0.0f-db)*r.getHeight()/96.0f;
         const float peakY=r.getY()+(0.0f-peak)*r.getHeight()/96.0f;
         if(y<r.getBottom()-1.0f){
-            g.setColour(territory(juce::jlimit(0,6,i/37)).withAlpha(0.30f));
+            g.setColour(barColour.withAlpha(0.38f));
             g.drawVerticalLine(juce::roundToInt(x),y,r.getBottom());
         }
         if(peakY<r.getBottom()-1.0f){
-            g.setColour(juce::Colours::white.withAlpha(0.33f));
+            g.setColour(barColour.brighter(0.55f).withAlpha(0.62f));
             g.drawHorizontalLine(juce::roundToInt(peakY),x-1.0f,x+1.0f);
         }
     }
@@ -173,9 +199,11 @@ void RootsGraph::paint(juce::Graphics& g){
         g.setColour(juce::Colours::white.withAlpha(0.26f));
         g.drawVerticalLine(juce::roundToInt(mouse_.x),r.getY(),r.getBottom());
         g.drawHorizontalLine(juce::roundToInt(mouse_.y),r.getX(),r.getRight());
-        const juce::String text=hzText(freq)+" Hz  /  BAR "
-                   +juce::String(bands_[(size_t)bar],1)+" dBFS  /  PEAK "
-                   +juce::String(peaks_[(size_t)bar],1)+" dBFS";
+        const juce::String text=freq<20.0f
+            ?hzText(freq)+" Hz  /  SUB-20 Hz: NO CALIBRATED FFT DATA"
+            :hzText(freq)+" Hz  /  BAR "
+                +juce::String(bands_[(size_t)bar],1)+" dBFS  /  PEAK "
+                +juce::String(peaks_[(size_t)bar],1)+" dBFS";
         const float left=juce::jlimit(r.getX(),r.getRight()-274.0f,mouse_.x+12);
         const float top=juce::jlimit(r.getY(),r.getBottom()-29.0f,mouse_.y-39.0f);
         g.setColour(juce::Colour::fromRGB(6,11,18).withAlpha(0.97f));
@@ -229,7 +257,7 @@ void RootsGraph::popup(){
     juce::PopupMenu menu;
     menu.addSectionHeader("ROOT "+juce::String(selected_+1)+"  /  "+PRISMVSTAudioProcessor::sectionName(selected_/2));
     menu.addItem(1,"ENABLED",true,param(selected_,"on")>=0.5f);
-    menu.addItem(2,"SOLO — ADD / REMOVE",true,param(selected_,"solo")>=0.5f);
+    menu.addItem(2,"SOLO — EXCLUSIVE / OFF",true,param(selected_,"solo")>=0.5f);
     menu.addSeparator();
     menu.addSectionHeader("EQ CHANNEL");
     menu.addItem(10,"STEREO",true,param(selected_,"domain")<0.5f);

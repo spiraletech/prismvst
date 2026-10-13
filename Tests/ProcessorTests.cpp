@@ -70,6 +70,40 @@ int main()
             return 1;
         }
     }
+    // ROOTS exclusive solo: clicking another node transfers the audition;
+    // host writes to a new solo always supersede the previous root.
+    {
+        PRISMVSTAudioProcessor p;
+        const auto soloId=[](int i){return PRISMVSTAudioProcessor::rootsNodeId(i,"solo");};
+        if (!setActual(p,soloId(0),1.0f) || p.getActiveRootsSolo()!=0)
+        {
+            std::cerr<<"ROOTS SOLO proof failed: initial activation\n";return 1;
+        }
+        p.transferRootsSoloTo(5);
+        auto value=[&](int i){
+            auto* raw=p.apvts.getRawParameterValue(soloId(i));
+            return raw!=nullptr?raw->load():-1.0f;
+        };
+        if(p.getActiveRootsSolo()!=5 || value(0)>=0.5f || value(5)<0.5f)
+        {
+            std::cerr<<"ROOTS SOLO proof failed: selection transfer\n";return 1;
+        }
+        if(!setActual(p,soloId(9),1.0f) || p.getActiveRootsSolo()!=9)
+        {
+            std::cerr<<"ROOTS SOLO proof failed: newest host automation\n";return 1;
+        }
+        p.transferRootsSoloTo(11);
+        for(int i=0;i<prism::roots::v2::kNodes;++i)
+            if((i==11)!=(value(i)>=0.5f))
+            {
+                std::cerr<<"ROOTS SOLO proof failed: stale competing flags\n";return 1;
+            }
+        if(!setActual(p,soloId(11),0.0f)||p.getActiveRootsSolo()!=-1)
+        {
+            std::cerr<<"ROOTS SOLO proof failed: off switch\n";return 1;
+        }
+        std::cerr<<"ROOTS SOLO proof passed: exclusive activation/switch/off\n";
+    }
     std::cerr << "TEST 1 schema" << std::endl;
     // -------------------------------------------------------------------------
     // Contract: seven named sections, six crossovers, no legacy master bypass.
