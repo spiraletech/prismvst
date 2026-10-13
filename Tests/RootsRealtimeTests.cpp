@@ -54,39 +54,39 @@ int main(){
         }
         std::cout<<"B PASS overlapping surgical EQ and gain clamps\n";
     }
-    // PROOF C: exclusive frequency audition and an 8-ms crossfade on
-    // switching to a different root; not source separation.
+    // PROOF C: SOLO listens to the interval defined by TWO nodes of ROOT 1.
+    // Selecting/switching ROOT 2 changes the audition over an 8ms crossfade.
     {
         Engine engine(sr);std::vector<float> l(n),r(n);
         for(int i=0;i<n;++i){
             const float x=(float)(0.15*std::sin(2*std::numbers::pi*100*i/sr)
-                      +0.15*std::sin(2*std::numbers::pi*1000*i/sr));
-            l[i]=r[i]=x;
+                       +0.15*std::sin(2*std::numbers::pi*1000*i/sr));
+            l[(size_t)i]=r[(size_t)i]=x;
         }
-        Config c=engine.get(0);c.hz=1000;c.q=8;c.solo=true;
-        engine.config(0,c);engine.process(l.data(),r.data(),n);
+        auto a=engine.get(0);a.hz=550;engine.config(0,a);
+        auto b=engine.get(1);b.hz=1800;engine.config(1,b);
+        engine.setSoloRoot(0);
+        engine.process(l.data(),r.data(),n);
         const auto high=amplitude(l,1000.0);
         const auto low=amplitude(l,100.0);
-        if(!(high>0.08&&high>8.0*low)){
-            std::cerr<<"C FAIL solo specificity "<<high<<","<<low<<"\n";return 3;
+        if(!(high>0.075&&high>8.0*low)){
+            std::cerr<<"C FAIL root-band specificity "<<high<<","<<low<<"\n";return 3;
         }
-        Config old=engine.get(0);old.solo=false;engine.config(0,old);
-        Config next=engine.get(3);next.solo=true;next.hz=100.0;next.q=8.0;
-        engine.config(3,next);
-        std::vector<float> smallL(128),smallR(128);
-        for(int i=0;i<128;++i)smallL[(size_t)i]=smallR[(size_t)i]=(float)
-            (0.15*std::sin(2*std::numbers::pi*100.0*(i+n)/sr)
+        engine.setSoloRoot(1);
+        std::vector<float> shortL(128),shortR(128);
+        for(int i=0;i<128;++i)shortL[(size_t)i]=shortR[(size_t)i]=(float)
+             (0.15*std::sin(2*std::numbers::pi*100.0*(i+n)/sr)
              +0.15*std::sin(2*std::numbers::pi*1000.0*(i+n)/sr));
-        engine.process(smallL.data(),smallR.data(),smallL.size());
-        if(!(engine.soloTransitionSamplesRemaining()>0)){
-            std::cerr<<"C FAIL: no root-to-root crossfade\n";return 3;
+        engine.process(shortL.data(),shortR.data(),128);
+        if(engine.soloTransitionSamplesRemaining()<=0){
+            std::cerr<<"C FAIL absent root-level crossfade\n";return 3;
         }
-        std::vector<float> restL(512),restR(512);
-        engine.process(restL.data(),restR.data(),restL.size());
-        if(engine.soloTransitionSamplesRemaining()!=0){
-            std::cerr<<"C FAIL: crossfade did not finish\n";return 3;
+        std::vector<float> remainingL(512),remainingR(512);
+        engine.process(remainingL.data(),remainingR.data(),512);
+        if(engine.soloTransitionSamplesRemaining()!=0||engine.soloRoot()!=1){
+            std::cerr<<"C FAIL unfinished root-level crossfade\n";return 3;
         }
-        std::cout<<"C PASS exclusive audible root solo with 8ms crossfade\n";
+        std::cout<<"C PASS whole-root bandpass audition and 8ms A/B crossfade\n";
     }
     // PROOF D: selected FET-inspired compressor attenuates a strong
     // sustained band, mono L/R exact; phase guard preserves default anti-phase.
