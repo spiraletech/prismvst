@@ -64,13 +64,24 @@ void RootsGraph::write(int i,const char* suffix,float value) {
     change(processor_,PRISMVSTAudioProcessor::rootsNodeId(i,suffix),value);
 }
 int RootsGraph::hitNode(juce::Point<float> p)const{
-    int hit=-1;float best=18.0f;
+    // Adjacent ROOT boundary handles may occupy the identical x/y point.
+    // Cycle among geometrically coincident handles instead of making the
+    // later ROOT permanently impossible to select.
+    float nearest=18.0f;
+    std::array<float,prism::roots::v2::kNodes> distances{};
     for(int i=0;i<prism::roots::v2::kNodes;++i){
-        auto x=freqToX(param(i,"hz")),y=gainToY(param(i,"gain_db"));
-        const float distance=p.getDistanceFrom({x,y});
-        if(distance<best){best=distance;hit=i;}
+        const auto x=freqToX(param(i,"hz")),y=gainToY(param(i,"gain_db"));
+        distances[(size_t)i]=p.getDistanceFrom({x,y});
+        nearest=juce::jmin(nearest,distances[(size_t)i]);
     }
-    return hit;
+    if(nearest>=18.0f)return -1;
+    int first=-1,next=-1;
+    for(int i=0;i<prism::roots::v2::kNodes;++i){
+        if(distances[(size_t)i]>nearest+1.25f)continue;
+        if(first<0)first=i;
+        if(i>selected_&&next<0)next=i;
+    }
+    return next>=0?next:first;
 }
 juce::Colour RootsGraph::colour(int territory) {return ::territory(territory);}
 void RootsGraph::updateAnalyzer(
@@ -97,11 +108,11 @@ void RootsGraph::paint(juce::Graphics& g){
     g.drawRoundedRectangle(full.reduced(1.0f),10.0f,1.0f);
     g.setFont(juce::Font(juce::FontOptions(10.0f,juce::Font::bold)));
     g.setColour(juce::Colour::fromRGB(145,172,182));
-    g.drawText("CUBE GRID   /   14 INTERSECTING ROOTS",r.getX(),
+    g.drawText("CUBE GRID   /   7 ROOT TERRITORIES  /  2 BOUNDARY HANDLES EACH",r.getX(),
                7.0f,r.getWidth(),15.0f,juce::Justification::centredLeft);
     // Frequency and calibrated dBFS dimensions.
-    static constexpr std::array<float,14> freqs{
-        1,2,5,10,20,50,100,250,500,1000,2500,5000,10000,20000
+    static constexpr std::array<float,11> freqs{
+        20,40,80,160,315,630,1250,2500,5000,10000,20000
     };
     for(const float f:freqs){
         const float x=freqToX(f);
@@ -134,9 +145,18 @@ void RootsGraph::paint(juce::Graphics& g){
         zones[(size_t)node].q=param(node,"q");
         zones[(size_t)node].enabled=param(node,"on")>=0.5f;
     }
+    // The visible coverage is defined by each ROOT's two boundary handles,
+    // not Q distance or a fixed index/37 palette. Regions can intersect.
+    for(int root=0;root<prism::roots::visual::kRoots;++root) {
+        const auto interval=prism::roots::visual::region(root,zones);
+        if(!interval.enabled)continue;
+        const float x1=freqToX((float)interval.lowHz);
+        const float x2=freqToX((float)interval.highHz);
+        g.setColour(territory(root).withAlpha(root==selected_/2?0.075f:0.025f));
+        g.fillRect(x1,r.getY(),juce::jmax(0.0f,x2-x1),r.getHeight());
+    }
     for(int i=0;i<PRISMVSTAudioProcessor::labBars;++i){
-        // The analyzer resolves 20–20k. Its x coordinate is aligned with
-        // the full 1Hz–20k ROOTS graph, leaving 1–20Hz deliberately blank.
+        // Every FFT bar and each EQ handle share the same 20–20k log axis.
         const float frequency=prism::analysis::LabBands::centreFrequency(i);
         const float x=freqToX(frequency);
         const auto weights=prism::roots::visual::at(frequency,zones);
@@ -199,9 +219,7 @@ void RootsGraph::paint(juce::Graphics& g){
         g.setColour(juce::Colours::white.withAlpha(0.26f));
         g.drawVerticalLine(juce::roundToInt(mouse_.x),r.getY(),r.getBottom());
         g.drawHorizontalLine(juce::roundToInt(mouse_.y),r.getX(),r.getRight());
-        const juce::String text=freq<20.0f
-            ?hzText(freq)+" Hz  /  SUB-20 Hz: NO CALIBRATED FFT DATA"
-            :hzText(freq)+" Hz  /  BAR "
+        const juce::String text=hzText(freq)+" Hz  /  BAR "
                 +juce::String(bands_[(size_t)bar],1)+" dBFS  /  PEAK "
                 +juce::String(peaks_[(size_t)bar],1)+" dBFS";
         const float left=juce::jlimit(r.getX(),r.getRight()-274.0f,mouse_.x+12);
@@ -255,9 +273,11 @@ void RootsGraph::mouseWheelMove(const juce::MouseEvent& e,const juce::MouseWheel
 }
 void RootsGraph::popup(){
     juce::PopupMenu menu;
-    menu.addSectionHeader("ROOT "+juce::String(selected_+1)+"  /  "+PRISMVSTAudioProcessor::sectionName(selected_/2));
+    menu.addSectionHeader("ROOT "+juce::String(selected_/2+1)+"  /  "+PRISMVSTAudioProcessor::sectionName(selected_/2));
     menu.addItem(1,"ENABLED",true,param(selected_,"on")>=0.5f);
-    menu.addItem(2,"SOLO — EXCLUSIVE / OFF",true,param(selected_,"solo")>=0.5f);
+    const auto rootSoloId=PRISMVSTAudioProcessor::rootsRootSoloId(selected_/2);
+    const bool rootSolo=pval(processor_.apvts,rootSoloId)>=0.5f;
+    menu.addItem(2,"SOLO ENTIRE ROOT / OFF",true,rootSolo);
     menu.addSeparator();
     menu.addSectionHeader("EQ CHANNEL");
     menu.addItem(10,"STEREO",true,param(selected_,"domain")<0.5f);
@@ -284,7 +304,11 @@ void RootsGraph::popup(){
             auto& graph=*safe;
             const int n=graph.selected_;
             if(id==1)graph.write(n,"on",graph.param(n,"on")>=0.5f?0.0f:1.0f);
-            if(id==2)graph.write(n,"solo",graph.param(n,"solo")>=0.5f?0.0f:1.0f);
+            if(id==2) {
+                const auto id=PRISMVSTAudioProcessor::rootsRootSoloId(n/2);
+                const bool engaged=pval(graph.processor_.apvts,id)>=0.5f;
+                change(graph.processor_,id,engaged?0.0f:1.0f);
+            }
             if(id>=10&&id<=12)graph.write(n,"domain",(float)(id-10));
             if(id>=20&&id<=24)graph.write(n,"comp",(float)(id-20));
             if(id>=30&&id<=33)graph.write(n,"detector",(float)(id-30));
@@ -338,9 +362,11 @@ void RootsEditor::bindNode(int n){
     bandSpaceA_=std::make_unique<SliderA>(processor_.apvts,id("space"),bandSpace_);
     thresholdA_=std::make_unique<SliderA>(processor_.apvts,id("threshold"),threshold_);
     onA_=std::make_unique<ButtonA>(processor_.apvts,id("on"),on_);
-    soloA_=std::make_unique<ButtonA>(processor_.apvts,id("solo"),solo_);
-    selection_.setText("ROOT "+juce::String(node_+1)+" / "+
-        PRISMVSTAudioProcessor::sectionName(node_/2),juce::dontSendNotification);
+    soloA_=std::make_unique<ButtonA>(processor_.apvts,
+        PRISMVSTAudioProcessor::rootsRootSoloId(node_/2),solo_);
+    selection_.setText("ROOT "+juce::String(node_/2+1)+" / "+
+        PRISMVSTAudioProcessor::sectionName(node_/2)+
+        "  HANDLE "+juce::String(node_%2+1),juce::dontSendNotification);
 }
 void RootsEditor::timerCallback(){
     std::array<float,PRISMVSTAudioProcessor::labBars> bars{},peaks{};

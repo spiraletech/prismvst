@@ -2,7 +2,7 @@ name: Windows VST3
 
 on:
   push:
-    branches: [ main, roots-v2-graph-dsp-rebuild, roots-v2-1hz-spectral-solo-fix ]
+    branches: [ main, roots-v2-graph-dsp-rebuild, roots-v2-1hz-spectral-solo-fix, roots-v2-boundary-pair-solo ]
   pull_request:
     branches: [ main, alpha-1.2.0-resonant-wax, roots-v2-experimental, roots-v2-graph-dsp-rebuild ]
   workflow_dispatch:

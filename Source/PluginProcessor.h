@@ -64,6 +64,7 @@ public:
     static juce::String sectionId(int section, const juce::String& suffix);
     static juce::String crossoverId(int crossover);
     static juce::String rootsNodeId(int node, const juce::String& suffix);
+    static juce::String rootsRootSoloId(int root);
     prism::roots::v2::Meter getRootsMeter() const noexcept { return rootsEngine.meter(); }
     static const char* sectionName(int section) noexcept;
 
@@ -123,7 +124,7 @@ private:
     prism::roots::v2::Engine rootsEngine;
     std::array<std::atomic<float>, numSections> stereoActivity {};
     std::array<juce::String, numSections> soloParameterIds {};
-    std::array<juce::String, prism::roots::v2::kNodes> rootsSoloParameterIds {};
+    std::array<juce::String, numSections> rootsSoloParameterIds {};
     std::atomic<int> latestRootsSolo { -1 };
     std::atomic<int> latestSoloSection { -1 };
 
