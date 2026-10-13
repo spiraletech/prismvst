@@ -32,6 +32,11 @@ juce::String PRISMVSTAudioProcessor::sectionId(int section, const juce::String& 
     return "section" + juce::String(section + 1) + "_" + suffix;
 }
 
+juce::String PRISMVSTAudioProcessor::rootsRootGainId(int root)
+{
+    return "roots_root" + juce::String(root + 1) + "_gain_db";
+}
+
 juce::String PRISMVSTAudioProcessor::rootsRootSoloId(int root)
 {
     return "roots_root" + juce::String(root + 1) + "_solo";
@@ -411,9 +416,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
         juce::NormalisableRange<float>(0.0f,100.0f,0.1f),50.0f));
 
     for(int root=0;root<numSections;++root)
+    {
         p.push_back(std::make_unique<juce::AudioParameterBool>(
             juce::ParameterID { rootsRootSoloId(root), 1 },
             juce::String(sectionName(root)) + " ROOT Solo",false));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { rootsRootGainId(root), 1 },
+            juce::String(sectionName(root)) + " ROOT Gain",
+            juce::NormalisableRange<float>(-60.0f,60.0f,0.01f),0.0f));
+    }
 
     for (int i=0;i<prism::roots::v2::kNodes;++i)
     {
@@ -904,12 +915,14 @@ void PRISMVSTAudioProcessor::processRootsEngine(juce::AudioBuffer<float>& buffer
     rootsEngine.setSpace(read(apvts,"roots_space"));
     rootsEngine.setMono(read(apvts,"roots_mono")>=0.5f);
     rootsEngine.setSoloRoot(getActiveRootsSolo());
+    for(int root=0;root<numSections;++root)
+        rootsEngine.setRootGain(root,read(apvts,rootsRootGainId(root)));
     for(int i=0;i<kNodes;++i)
     {
         const auto id=[i](const char* s){return rootsNodeId(i,s);};
         Config c;
         c.hz=read(apvts,id("hz"));
-        c.gainDb=read(apvts,id("gain_db"));
+        c.gainDb=0.0; // retained obsolete host parameter is ignored
         c.q=read(apvts,id("q"));
         c.enabled=read(apvts,id("on"))>=0.5f;
         c.solo=false; // retired per-handle flags do not influence ROOT SOLO
