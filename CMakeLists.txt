@@ -82,4 +82,8 @@ if(PRISMVST_BUILD_TESTS)
     juce::juce_dsp
   )
   add_test(NAME prismvst_tests COMMAND prismvst_tests)
+  # Independent native C++20 ROOTS core; deliberately not linked into v1.2 DSP.
+  add_executable(prism_roots_tests Tests/RootsCoreTests.cpp Source/PrismRootsCore.h)
+  target_compile_features(prism_roots_tests PRIVATE cxx_std_20)
+  add_test(NAME prism_roots_four_proofs COMMAND prism_roots_tests)
 endif()
