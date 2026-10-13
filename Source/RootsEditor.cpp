@@ -47,16 +47,6 @@ float RootsGraph::xToFreq(float x)const {
     return (float)prism::roots::visual::graphFrequency(
         juce::jlimit(0.0f,1.0f,(x-r.getX())/juce::jmax(1.0f,r.getWidth())));
 }
-float RootsGraph::gainToY(float db)const {
-    auto r=area();
-    return r.getCentreY()-juce::jlimit(-60.0f,60.0f,db)
-                              *r.getHeight()/120.0f;
-}
-float RootsGraph::yToGain(float y)const {
-    auto r=area();
-    return juce::jlimit(-60.0f,60.0f,
-              (r.getCentreY()-y)*120.0f/r.getHeight());
-}
 float RootsGraph::param(int i,const char* suffix)const {
     return pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(i,suffix));
 }
@@ -70,7 +60,7 @@ int RootsGraph::hitNode(juce::Point<float> p)const{
     float nearest=18.0f;
     std::array<float,prism::roots::v2::kNodes> distances{};
     for(int i=0;i<prism::roots::v2::kNodes;++i){
-        const auto x=freqToX(param(i,"hz")),y=gainToY(param(i,"gain_db"));
+        const auto x=freqToX(param(i,"hz")),y=area().getCentreY();
         distances[(size_t)i]=p.getDistanceFrom({x,y});
         nearest=juce::jmin(nearest,distances[(size_t)i]);
     }
@@ -127,16 +117,14 @@ void RootsGraph::paint(juce::Graphics& g){
         g.setColour(juce::Colour::fromRGB(53,67,84).withAlpha(i==4?0.74f:0.34f));
         g.drawHorizontalLine(juce::roundToInt(y),r.getX(),r.getRight());
         g.setColour(juce::Colour::fromRGB(131,155,169));
-        g.drawText(juce::String(60-15*i),5,juce::roundToInt(y-8),
-                   37,16,juce::Justification::centredRight);
         g.drawText(juce::String(-12*i),juce::roundToInt(r.getRight()+5),
                    juce::roundToInt(y-8),34,16,juce::Justification::centredLeft);
     }
-    // Display dBFS always uses the established 0..-96 view; EQ gain uses
-    // independent -60..60 vertical mapping, explicitly labeled.
+    // ROOT handle height is constant; vertical axis is exclusively dBFS.
+    // ROOT gain is a separate, single control in the bottom panel.
     g.setFont(juce::Font(juce::FontOptions(10.0f)));
     g.setColour(juce::Colour::fromRGB(184,197,209));
-    g.drawText("EQ dB",4,16,52,16,juce::Justification::centredLeft);
+    g.drawText("ROOT Hz",4,16,52,16,juce::Justification::centredLeft);
     g.drawText("dBFS",juce::roundToInt(r.getRight()),16,44,16,juce::Justification::centredRight);
     std::array<prism::roots::visual::Node,prism::roots::visual::kNodes> zones{};
     for(int node=0;node<prism::roots::visual::kNodes;++node)
@@ -183,18 +171,19 @@ void RootsGraph::paint(juce::Graphics& g){
             g.drawHorizontalLine(juce::roundToInt(peakY),x-1.0f,x+1.0f);
         }
     }
-    // One gain-stage spectral graph, no separate transfer maps.
+    // Both boundary handles always live on one horizontal rail.
+    g.setColour(juce::Colour::fromRGB(159,182,191).withAlpha(0.14f));
+    g.drawHorizontalLine(juce::roundToInt(r.getCentreY()),r.getX(),r.getRight());
     for(int i=0;i<prism::roots::v2::kNodes;++i){
-        const float hz=param(i,"hz"),gain=param(i,"gain_db");
-        const float x=freqToX(hz),y=gainToY(gain);
+        const float hz=param(i,"hz");
+        const float x=freqToX(hz),y=r.getCentreY();
         const bool enabled=param(i,"on")>=0.5f;
-        const bool solo=param(i,"solo")>=0.5f;
+        const bool solo=pval(processor_.apvts,
+             PRISMVSTAudioProcessor::rootsRootSoloId(i/2))>=0.5f;
         const auto col=territory(i/2);
-        // Tree roots: paired nodes connect back to each frequency territory.
-        const float groupX=freqToX((prism::roots::v2::Engine::defaults[(size_t)((i/2)*2)]
-                                  +prism::roots::v2::Engine::defaults[(size_t)((i/2)*2+1)])/2.0f);
+        // Vertical guides represent frequency boundaries, not gain movements.
         g.setColour(col.withAlpha(enabled?0.23f:0.06f));
-        g.drawLine(groupX,r.getBottom(),x,y,0.65f);
+        g.drawVerticalLine(juce::roundToInt(x),r.getY(),r.getBottom());
         g.setColour(col.withAlpha(enabled?0.10f:0.025f));
         g.fillEllipse(x-10,y-10,20,20);
         g.setColour(enabled?col:juce::Colour::fromRGB(79,90,97));
@@ -206,8 +195,8 @@ void RootsGraph::paint(juce::Graphics& g){
         if(i==selected_){
             g.setColour(juce::Colours::white);
             g.setFont(juce::Font(juce::FontOptions(10.0f,juce::Font::bold)));
-            const juce::String detail=juce::String(i+1)+"  "+hzText(hz)+" Hz  "
-                                    +juce::String(gain,1)+" dB";
+            const juce::String detail="ROOT "+juce::String(i/2+1)+"  "
+                  +(i%2==0?"A ":"B ")+hzText(hz)+" Hz";
             g.drawText(detail,juce::roundToInt(juce::jlimit(r.getX(),r.getRight()-120,x-48)),
                        juce::roundToInt(juce::jlimit(r.getY(),r.getBottom()-20,y-30)),
                        125,19,juce::Justification::centredLeft);
@@ -239,24 +228,23 @@ void RootsGraph::mouseDown(const juce::MouseEvent& e){
     if(e.mods.isPopupMenu()){popup();return;}
     dragging_=hit;
     if(dragging_>=0){
-        for(auto suffix:{"hz","gain_db"})
-            if(auto* p=processor_.apvts.getParameter(PRISMVSTAudioProcessor::rootsNodeId(dragging_,suffix)))
-                p->beginChangeGesture();
+        if(auto* p=processor_.apvts.getParameter(
+             PRISMVSTAudioProcessor::rootsNodeId(dragging_,"hz")))
+            p->beginChangeGesture();
     }
 }
 void RootsGraph::mouseDrag(const juce::MouseEvent& e){
     if(dragging_<0)return;
     const float newHz=xToFreq(e.position.x);
-    const float newGain=yToGain(e.position.y);
+    // Deliberately ignore e.position.y: frequency handles have no gain axis.
     write(dragging_,"hz",newHz);
-    write(dragging_,"gain_db",newGain);
     repaint();
 }
 void RootsGraph::mouseUp(const juce::MouseEvent&){
     if(dragging_>=0){
-        for(auto suffix:{"hz","gain_db"})
-            if(auto* p=processor_.apvts.getParameter(PRISMVSTAudioProcessor::rootsNodeId(dragging_,suffix)))
-                p->endChangeGesture();
+        if(auto* p=processor_.apvts.getParameter(
+             PRISMVSTAudioProcessor::rootsNodeId(dragging_,"hz")))
+            p->endChangeGesture();
     }
     dragging_=-1;
 }
@@ -264,12 +252,10 @@ void RootsGraph::mouseMove(const juce::MouseEvent& e){mouse_=e.position;hover_=t
 void RootsGraph::mouseExit(const juce::MouseEvent&){hover_=false;repaint();}
 void RootsGraph::mouseDoubleClick(const juce::MouseEvent& e){
     const int hit=hitNode(e.position);
-    if(hit>=0){selectNode(hit);write(hit,"gain_db",0.0f);repaint();}
+    if(hit>=0){selectNode(hit);repaint();} // no per-handle gain reset
 }
-void RootsGraph::mouseWheelMove(const juce::MouseEvent& e,const juce::MouseWheelDetails& w){
-    if(!area().contains(e.position))return;
-    const float q=param(selected_,"q");
-    write(selected_,"q",juce::jlimit(0.15f,24.0f,q*(1.0f+w.deltaY*0.15f)));
+void RootsGraph::mouseWheelMove(const juce::MouseEvent&,const juce::MouseWheelDetails&){
+    // Frequency boundaries cannot secretly change Q or gain via the wheel.
 }
 void RootsGraph::popup(){
     juce::PopupMenu menu;
@@ -323,14 +309,14 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     setResizeLimits(840,610,1800,1100);
     addAndMakeVisible(graph_);
     graph_.onSelectNode=[this](int n){bindNode(n);};
-    for(auto* label:{&title_,&selection_,&status_,&gainLabel_,&qLabel_,&bandSpaceLabel_,
+    for(auto* label:{&title_,&selection_,&status_,&gainLabel_,&bandSpaceLabel_,
                      &spaceLabel_,&thresholdLabel_}){
         addAndMakeVisible(*label);
         label->setColour(juce::Label::textColourId,juce::Colour::fromRGB(195,216,223));
     }
     title_.setText("PRISM  /  ROOTS PROTO 001",juce::dontSendNotification);
     title_.setFont(juce::Font(juce::FontOptions(25.0f,juce::Font::bold)));
-    for(auto* s:{&gain_,&q_,&bandSpace_,&space_,&threshold_}){
+    for(auto* s:{&gain_,&bandSpace_,&space_,&threshold_}){
         addAndMakeVisible(*s);rotary(*s,"");
         s->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour::fromRGB(143,192,204));
         s->setColour(juce::Slider::rotarySliderOutlineColourId,juce::Colour::fromRGB(38,55,65));
@@ -338,8 +324,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         s->setColour(juce::Slider::textBoxBackgroundColourId,juce::Colour::fromRGB(13,19,25));
         s->setColour(juce::Slider::textBoxOutlineColourId,juce::Colour::fromRGB(38,55,65));
     }
-    gainLabel_.setText("GAIN  ±60 dB",juce::dontSendNotification);
-    qLabel_.setText("SURGICAL Q",juce::dontSendNotification);
+    gainLabel_.setText("ROOT GAIN  ±60 dB",juce::dontSendNotification);
     bandSpaceLabel_.setText("BAND SPACE",juce::dontSendNotification);
     spaceLabel_.setText("MASTER SPACE",juce::dontSendNotification);
     thresholdLabel_.setText("COMP THRESHOLD",juce::dontSendNotification);
@@ -352,13 +337,13 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
 RootsEditor::~RootsEditor(){stopTimer();}
 void RootsEditor::bindNode(int n){
     node_=juce::jlimit(0,prism::roots::v2::kNodes-1,n);
-    gainA_.reset();qA_.reset();bandSpaceA_.reset();thresholdA_.reset();
+    gainA_.reset();bandSpaceA_.reset();thresholdA_.reset();
     onA_.reset();soloA_.reset();
     const auto id=[this](const char* suffix){
         return PRISMVSTAudioProcessor::rootsNodeId(node_,suffix);
     };
-    gainA_=std::make_unique<SliderA>(processor_.apvts,id("gain_db"),gain_);
-    qA_=std::make_unique<SliderA>(processor_.apvts,id("q"),q_);
+    gainA_=std::make_unique<SliderA>(processor_.apvts,
+       PRISMVSTAudioProcessor::rootsRootGainId(node_/2),gain_);
     bandSpaceA_=std::make_unique<SliderA>(processor_.apvts,id("space"),bandSpace_);
     thresholdA_=std::make_unique<SliderA>(processor_.apvts,id("threshold"),threshold_);
     onA_=std::make_unique<ButtonA>(processor_.apvts,id("on"),on_);
@@ -398,7 +383,7 @@ void RootsEditor::paint(juce::Graphics& g){
     g.drawRoundedRectangle(15.0f,(float)bottomY,(float)getWidth()-30.0f,123.0f,9.0f,1.0f);
     g.setColour(juce::Colour::fromRGB(142,162,172));
     g.setFont(juce::Font(juce::FontOptions(10.0f)));
-    g.drawText("L-DRAG NODE: Hz + GAIN   /   WHEEL: Q   /   RIGHT-CLICK: COMP + M/S + SOLO   /   DOUBLE-CLICK: RESET GAIN",
+    g.drawText("L-DRAG HANDLE: HORIZONTAL FREQUENCY ONLY   /   ROOT GAIN BELOW   /   RIGHT-CLICK: COMP + M/S + ROOT SOLO",
                24,getHeight()-28,getWidth()-48,18,juce::Justification::centredLeft);
 }
 void RootsEditor::resized(){
@@ -410,11 +395,11 @@ void RootsEditor::resized(){
     status_.setBounds(w-450,panelY+2,425,27);
     const int left=24, usable=w-48, cw=usable/7;
     struct Entry{juce::Slider* slider;juce::Label* label;};
-    const std::array<Entry,5> controls{{
-        {&gain_,&gainLabel_},{&q_,&qLabel_},{&bandSpace_,&bandSpaceLabel_},
+    const std::array<Entry,4> controls{{
+        {&gain_,&gainLabel_},{&bandSpace_,&bandSpaceLabel_},
         {&threshold_,&thresholdLabel_},{&space_,&spaceLabel_}
     }};
-    for(int i=0;i<5;++i){
+    for(int i=0;i<4;++i){
         const int x=left+(i+1)*cw;
         controls[(size_t)i].label->setBounds(x,panelY+24,cw,18);
         controls[(size_t)i].slider->setBounds(x,panelY+40,cw,74);

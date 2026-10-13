@@ -36,23 +36,42 @@ int main(){
         if(l!=beforeL||r!=beforeR){std::cerr<<"A FAIL bypass\n";return 1;}
         std::cout<<"A PASS bit-exact neutral bypass\n";
     }
-    // PROOF B: overlapping two +6 dB peaking nodes yield approximately
-    // +12 dB at center on both channels, with -60..+60 bounds.
+    // PROOF B: Exactly one gain per parent ROOT, with ±60 dB limits.
+    // Changing either boundary alters the gain territory without assigning
+    // any gain or vertical movement to the handle.
     {
         Engine engine(sr);std::vector<float> l(n),r(n);
+        auto left=engine.get(0);left.hz=150.0;engine.config(0,left);
+        auto right=engine.get(1);right.hz=2400.0;engine.config(1,right);
         sine(l,r,1000.0,0.01);
         const auto dry=l;
-        for(int i=0;i<2;++i){
-            Config c=engine.get(i);c.hz=1000.0;c.q=3.0;c.gainDb=6.0;
-            engine.config(i,c);
-        }
+        // A legacy node gain must NEVER affect samples anymore.
+        left.gainDb=38.0;engine.config(0,left);
+        if(engine.get(0).gainDb!=0.0)return 2;
         engine.process(l.data(),r.data(),n);
-        const double db=20.0*std::log10(amplitude(l,1000.0)/amplitude(dry,1000.0));
-        Config c=engine.get(0);c.gainDb=10000.0;engine.config(0,c);
-        if(!approx(db,12.0,0.6)||engine.get(0).gainDb!=60.0){
-            std::cerr<<"B FAIL gain "<<db<<"\n";return 2;
+        if(l!=dry||r!=dry){
+            std::cerr<<"B FAIL obsolete handle gain still audible\n";return 2;
         }
-        std::cout<<"B PASS overlapping surgical EQ and gain clamps\n";
+        engine.setRootGain(0,6.0);
+        if(engine.rootGain(0)!=6.0 || engine.rootGain(1)!=0.0)return 2;
+        sine(l,r,1000.0,0.01);
+        engine.process(l.data(),r.data(),n);
+        const double boost=20.0*std::log10(amplitude(l,1000.0)/amplitude(dry,1000.0));
+        if(!(boost>2.5&&boost<8.0)){
+            std::cerr<<"B FAIL root gain boost "<<boost<<"\n";return 2;
+        }
+        engine.setRootGain(0,-6.0);
+        sine(l,r,1000.0,0.01);
+        engine.process(l.data(),r.data(),n);
+        const double cut=20.0*std::log10(amplitude(l,1000.0)/amplitude(dry,1000.0));
+        if(!(cut<1.0)){
+            std::cerr<<"B FAIL root gain attenuation "<<cut<<"\n";return 2;
+        }
+        engine.setRootGain(0,10000.0);
+        if(engine.rootGain(0)!=60.0)return 2;
+        engine.setRootGain(0,-10000.0);
+        if(engine.rootGain(0)!=-60.0)return 2;
+        std::cout<<"B PASS per-root-only gain, retired node gain, and ±60 clamp\n";
     }
     // PROOF C: SOLO listens to the interval defined by TWO nodes of ROOT 1.
     // Selecting/switching ROOT 2 changes the audition over an 8ms crossfade.
@@ -71,6 +90,13 @@ int main(){
         const auto low=amplitude(l,100.0);
         if(!(high>0.075&&high>8.0*low)){
             std::cerr<<"C FAIL root-band specificity "<<high<<","<<low<<"\n";return 3;
+        }
+        // The same parent ROOT gain must work while that ROOT is soloed.
+        engine.setRootGain(0,6.0);
+        sine(l,r,1000.0,0.15);
+        engine.process(l.data(),r.data(),n);
+        if(!(amplitude(l,1000.0)>high*1.65)){
+            std::cerr<<"C FAIL parent gain not audible in ROOT SOLO\n";return 3;
         }
         engine.setSoloRoot(1);
         std::vector<float> shortL(128),shortR(128);

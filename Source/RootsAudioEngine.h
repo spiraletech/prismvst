@@ -75,9 +75,11 @@ public:
         sr_=std::max(8000.0,sampleRate);
         correlationAlpha_=std::exp(-1.0/(0.025*sr_));
         sideAlpha_=std::exp(-1.0/(0.008*sr_));
+        gainSmoothingAlpha_=std::exp(-1.0/(0.010*sr_));
         globalMidPower_=globalSidePower_=0.0;appliedSpace_=1.0;
         grMax_=0.0;meter_={};
         currentSolo_=-1;previousSolo_=-1;soloFadeLeft_=0;soloFadeSamples_=0;
+        smoothedRootDelta_.fill(0.0);
         for(int i=0;i<kNodes;++i) {
             auto& node=nodes_[(size_t)i];
             if(!haveConfig_) {node.config.hz=defaults[(size_t)i];}
@@ -90,6 +92,7 @@ public:
         for(int root=0;root<kTerritories;++root){
             auto& taps=soloBands_[(size_t)root];
             for(auto& f:taps.filters)f.reset();
+            for(auto& f:rootGainBands_[(size_t)root].filters)f.reset();
             updateSoloBand(root);
         }
     }
@@ -97,17 +100,24 @@ public:
         if(index<0||index>=kNodes)return;
         c.hz=std::clamp(c.hz,20.0,std::min(20000.0,sr_*0.45));
         c.q=std::clamp(c.q,0.15,24.0);
-        c.gainDb=std::clamp(c.gainDb,-60.0,60.0);
+        c.gainDb=0.0; // historical node gain retired: handles are Hz only
         c.space=std::clamp(c.space,0.0,100.0);
         c.thresholdDb=std::clamp(c.thresholdDb,-60.0,0.0);
         auto& n=nodes_[(size_t)index];
-        const bool changed= n.config.hz!=c.hz || n.config.q!=c.q ||
-                            n.config.gainDb!=c.gainDb;
+        const bool changed=n.config.hz!=c.hz || n.config.q!=c.q;
         n.config=c;
         if(changed){updateFilters(index);updateSoloBand(index/2);}
     }
     Config get(int index) const noexcept {return nodes_[(size_t)std::clamp(index,0,kNodes-1)].config;}
     void setSpace(double value) noexcept {space_=std::clamp(value,0.0,100.0);}
+    // Exactly seven parent-root gains. Frequency handles never own gain.
+    void setRootGain(int root,double gainDb) noexcept {
+        if(root>=0&&root<kTerritories)
+            rootGainDb_[(size_t)root]=std::clamp(gainDb,-60.0,60.0);
+    }
+    double rootGain(int root) const noexcept {
+        return root>=0&&root<kTerritories?rootGainDb_[(size_t)root]:0.0;
+    }
     void setMono(bool mono) noexcept {mono_=mono;}
     // SOLO authority belongs to one ROOT, never to an individual handle.
     void setSoloRoot(int root) noexcept {
@@ -120,10 +130,12 @@ public:
         if(!l||!r||count==0)return;
         bool active=false;
         const int requestedSolo=soloRoot_;
+        for(int root=0;root<kTerritories;++root)
+            active=active||std::abs(rootGainDb_[(size_t)root])>0.00001||
+                   std::abs(smoothedRootDelta_[(size_t)root])>1.0e-8;
         for(const auto& n:nodes_) {
             if(!n.config.enabled)continue;
-            active=active||std::abs(n.config.gainDb)>0.00001||
-                   n.config.comp!=Compressor::off||n.config.space!=50.0;
+            active=active||n.config.comp!=Compressor::off||n.config.space!=50.0;
         }
         active=active||requestedSolo>=0;
         if(requestedSolo!=currentSolo_) {
@@ -143,7 +155,19 @@ public:
         double sumL=0.0,sumR=0.0,sumCross=0.0,sumM=0.0,sumS=0.0;
         double greatestGr=0.0;
         const double globalWidth=mono_?0.0:spaceToWidth(space_);
+        std::array<double,kTerritories> gainTargets{};
+        for(int root=0;root<kTerritories;++root)
+            gainTargets[(size_t)root]=std::pow(10.0,rootGainDb_[(size_t)root]/20.0)-1.0;
         for(std::size_t i=0;i<count;++i) {
+            // Sample-rate smoothing applies even during SOLO, so the ROOT
+            // gain knob always affects the selected frequency territory.
+            for(int root=0;root<kTerritories;++root){
+                auto& smooth=smoothedRootDelta_[(size_t)root];
+                const double target=gainTargets[(size_t)root];
+                smooth=gainSmoothingAlpha_*smooth+(1.0-gainSmoothingAlpha_)*target;
+                if(std::abs(target)<1.0e-12 && std::abs(smooth)<1.0e-8)
+                    smooth=0.0;
+            }
             const double dryM=((double)l[i]+(double)r[i])*0.5;
             const double dryS=((double)l[i]-(double)r[i])*0.5;
             double m=dryM,s=dryS;
@@ -160,15 +184,8 @@ public:
                     if(c.domain!=Domain::side)tapM=node.midTap.sample(dryM);
                     if(c.domain!=Domain::mid)tapS=node.sideTap.sample(dryS);
                 }
-                // In normal mode, each peaking EQ intersects all other EQ
-                // curves by cascading its full signal contribution.
-                if(!listen&&std::abs(c.gainDb)>0.00001){
-                    if(c.domain!=Domain::side)m=node.midEq.sample(m);
-                    if(c.domain!=Domain::mid)s=node.sideEq.sample(s);
-                }
-                // In audition mode gain applies to the isolated tap.
-                const double auditionGain=std::pow(10.0,c.gainDb/20.0);
-                if(listen){tapM*=auditionGain;tapS*=auditionGain;}
+                // Boundaries are solely frequency controls: no per-handle
+                // peaking EQ or hidden per-handle gain is applied.
                 if(usesTap){
                     const double ae=1.0-correlationAlpha_;
                     node.midEnergy+=ae*(tapM*tapM-node.midEnergy);
@@ -206,11 +223,28 @@ public:
                     else{m+=tapM*(mGain-1.0);s+=tapS*(sGain-1.0);}
                 }
             }
+            if(!solo) {
+                // One gain per ROOT, applied to the *whole* interval.
+                // Shared HP/LP coefficients with the SOLO path guarantee the
+                // coloured territory and affected signal agree in frequency.
+                // This is parallel band gain with natural filter skirts,
+                // not mathematically flat brick-wall frequency selection.
+                for(int root=0;root<kTerritories;++root) {
+                    const double db=rootGainDb_[(size_t)root];
+                    if(std::abs(db)<0.00001&&std::abs(smoothedRootDelta_[(size_t)root])<1.0e-8)continue;
+                    const double delta=smoothedRootDelta_[(size_t)root];
+                    if(delta==0.0)continue;
+                    auto& tap=rootGainBands_[(size_t)root].filters;
+                    m+=delta*tap[1].sample(tap[0].sample(dryM));
+                    s+=delta*tap[3].sample(tap[2].sample(dryS));
+                }
+            }
             if(solo) {
                 auto audition=[&](int root)->std::array<double,2> {
                     auto& filters=soloBands_[(size_t)root].filters;
-                    return {filters[1].sample(filters[0].sample(dryM)),
-                            filters[3].sample(filters[2].sample(dryS))};
+                    const double gain=1.0+smoothedRootDelta_[(size_t)root];
+                    return {gain*filters[1].sample(filters[0].sample(dryM)),
+                            gain*filters[3].sample(filters[2].sample(dryS))};
                 };
                 const auto next=audition(currentSolo_);
                 if(soloFadeLeft_>0&&previousSolo_>=0){
@@ -262,6 +296,9 @@ private:
         auto& tap=soloBands_[(size_t)root].filters;
         tap[0].setEdge(sr_,low,true); tap[1].setEdge(sr_,high,false);
         tap[2].setEdge(sr_,low,true); tap[3].setEdge(sr_,high,false);
+        auto& gainTap=rootGainBands_[(size_t)root].filters;
+        gainTap[0].setEdge(sr_,low,true);gainTap[1].setEdge(sr_,high,false);
+        gainTap[2].setEdge(sr_,low,true);gainTap[3].setEdge(sr_,high,false);
     }
     void updateFilters(int i) noexcept {
         auto& n=nodes_[(size_t)i];
@@ -302,6 +339,10 @@ private:
     std::array<Node,kNodes> nodes_{};
     struct RootBand { std::array<Filter,4> filters; };
     std::array<RootBand,kTerritories> soloBands_{};
+    std::array<RootBand,kTerritories> rootGainBands_{};
+    std::array<double,kTerritories> rootGainDb_{};
+    std::array<double,kTerritories> smoothedRootDelta_{};
+    double gainSmoothingAlpha_=0.99;
     int soloRoot_=-1;
     double sr_=48000.0,correlationAlpha_=0.999,sideAlpha_=0.99;
     double globalMidPower_=0.0,globalSidePower_=0.0,appliedSpace_=1.0,grMax_=0.0;
