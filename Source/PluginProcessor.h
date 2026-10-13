@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include "PrismLabAnalyzer.h"
+#include "RootsAudioEngine.h"
 
 class PRISMVSTAudioProcessor final : public juce::AudioProcessor,
                                     private juce::AudioProcessorValueTreeState::Listener,
@@ -59,6 +60,8 @@ public:
 
     static juce::String sectionId(int section, const juce::String& suffix);
     static juce::String crossoverId(int crossover);
+    static juce::String rootsNodeId(int node, const juce::String& suffix);
+    prism::roots::v2::Meter getRootsMeter() const noexcept { return rootsEngine.meter(); }
     static const char* sectionName(int section) noexcept;
 
 private:
@@ -114,6 +117,7 @@ private:
     std::array<std::array<std::array<ThirdOrderAllPass, 2>, numSections>, numCrossovers> compensators;
     std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>, numCrossovers> crossoverSmoothers;
     std::array<SectionState, numSections> sectionStates;
+    prism::roots::v2::Engine rootsEngine;
     std::array<std::atomic<float>, numSections> stereoActivity {};
     std::array<juce::String, numSections> soloParameterIds {};
     std::atomic<int> latestSoloSection { -1 };
@@ -170,6 +174,7 @@ private:
     void sanitizeCrossovers();
     void updateCrossoverCoefficients(int blockSamples);
     void processSevenSectionEngine(juce::AudioBuffer<float>& buffer);
+    void processRootsEngine(juce::AudioBuffer<float>& buffer);
     void updateMeters(const juce::AudioBuffer<float>& buffer);
     void pushAnalyzerSamples(const juce::AudioBuffer<float>& buffer);
     void runAnalyzerThread();

@@ -43,6 +43,9 @@ target_sources(PRISMVST PRIVATE
   Source/PluginProcessor.h
   Source/PluginEditor.cpp
   Source/PluginEditor.h
+  Source/RootsEditor.cpp
+  Source/RootsEditor.h
+  Source/RootsAudioEngine.h
 )
 
 target_compile_definitions(PRISMVST PUBLIC
@@ -70,6 +73,9 @@ if(PRISMVST_BUILD_TESTS)
     Source/PluginProcessor.h
     Source/PluginEditor.cpp
     Source/PluginEditor.h
+    Source/RootsEditor.cpp
+    Source/RootsEditor.h
+    Source/RootsAudioEngine.h
   )
   juce_generate_juce_header(prismvst_tests)
   target_compile_definitions(prismvst_tests PRIVATE
@@ -89,4 +95,7 @@ if(PRISMVST_BUILD_TESTS)
   add_executable(prism_lab_analyzer_tests Tests/PrismLabAnalyzerTests.cpp Source/PrismLabAnalyzer.h)
   target_compile_features(prism_lab_analyzer_tests PRIVATE cxx_std_20)
   add_test(NAME prism_lab_analyzer_four_proofs COMMAND prism_lab_analyzer_tests)
+  add_executable(prism_roots_realtime_tests Tests/RootsRealtimeTests.cpp Source/RootsAudioEngine.h)
+  target_compile_features(prism_roots_realtime_tests PRIVATE cxx_std_20)
+  add_test(NAME prism_roots_realtime_four_proofs COMMAND prism_roots_realtime_tests)
 endif()
