@@ -266,6 +266,8 @@ SpectrumAuraDisplay::SpectrumAuraDisplay(PRISMVSTAudioProcessor& p)
 {
     setMouseCursor(juce::MouseCursor::CrosshairCursor);
     latestSpectrum.fill(kFloorDb);
+    latestLabDb.fill(prism::analysis::LabBands::floorDb);
+    latestLabPeakDb.fill(prism::analysis::LabBands::floorDb);
 }
 
 juce::Rectangle<float> SpectrumAuraDisplay::graphBounds() const
@@ -441,6 +443,17 @@ void SpectrumAuraDisplay::pushSpectrum(
     repaint();
 }
 
+void SpectrumAuraDisplay::pushPrismLabBars(
+    const std::array<float, PRISMVSTAudioProcessor::labBars>& db,
+    const std::array<float, PRISMVSTAudioProcessor::labBars>& peakDb)
+{
+    // These values were smoothed by the analyzer worker, never guessed
+    // from painted pixels or re-smoothed with a different time base.
+    latestLabDb = db;
+    latestLabPeakDb = peakDb;
+    repaint();
+}
+
 void SpectrumAuraDisplay::setSelectedSection(int section)
 {
     selectedSection = juce::jlimit(0, PRISMVSTAudioProcessor::numSections - 1, section);
@@ -496,6 +509,26 @@ void SpectrumAuraDisplay::paint(juce::Graphics& g)
     }
 
     drawLotusGrid(g, b);
+
+    // Original PRISM Analysis 256-bar visual language, now driven by
+    // coherent-gain calibrated FFT magnitudes. Audio processor is unaffected.
+    for (int i = 0; i < PRISMVSTAudioProcessor::labBars; ++i)
+    {
+        const float x = b.getX() + (i + 0.5f) * b.getWidth()
+                        / (float)PRISMVSTAudioProcessor::labBars;
+        const float topY = levelToY(latestLabDb[(size_t)i]);
+        const float peakY = levelToY(latestLabPeakDb[(size_t)i]);
+        if (topY < b.getBottom() - 1.0f)
+        {
+            g.setColour(accentColour().withAlpha(0.19f));
+            g.drawVerticalLine(juce::roundToInt(x), topY, b.getBottom());
+        }
+        if (peakY < b.getBottom() - 1.0f)
+        {
+            g.setColour(juce::Colours::white.withAlpha(0.37f));
+            g.drawHorizontalLine(juce::roundToInt(peakY), x - 1.0f, x + 1.0f);
+        }
+    }
 
     const std::array<float, 10> gridFreq {
         20.0f, 50.0f, 100.0f, 200.0f, 500.0f,
@@ -607,14 +640,16 @@ void SpectrumAuraDisplay::paint(juce::Graphics& g)
         g.drawHorizontalLine(juce::roundToInt(hoverPoint.y), b.getX(), b.getRight());
 
         const float frequency = xToFrequency(hoverPoint.x);
-        const float cursorDb = yToLevel(hoverPoint.y);
-        const float signalDb = spectrumDbAt(frequency);
-
+        const int bar = prism::analysis::LabBands::indexForFrequency(frequency);
+        const float db = latestLabDb[(size_t)bar];
+        const float held = latestLabPeakDb[(size_t)bar];
+        // Labels are measured peak FFT-bin dBFS, not vertical cursor pixels.
+        // Cursor Hz denotes the nominal spectral position.
         const juce::String info =
-            formatFrequency(frequency) + " Hz   CURSOR " + juce::String(cursorDb, 1)
-            + " dB   SIGNAL " + juce::String(signalDb, 1) + " dBFS";
+            formatFrequency(frequency) + " Hz  BAR " + juce::String(db, 1)
+            + " dBFS  PEAK " + juce::String(held, 1) + " dBFS";
 
-        const float boxW = 260.0f;
+        const float boxW = 286.0f;
         const float bx = juce::jlimit(b.getX(), b.getRight() - boxW, hoverPoint.x + 12.0f);
         const float by = juce::jlimit(b.getY(), b.getBottom() - 28.0f, hoverPoint.y - 34.0f);
 
@@ -1387,7 +1422,7 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
 
     g.setColour(accentColour());
     g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
-    g.drawText("ALPHA 001  •  v1.2.0", 158, 18, 142, 17, juce::Justification::centredLeft);
+    g.drawText("ROOTS PROTO 001", 158, 18, 148, 17, juce::Justification::centredLeft);
 
     g.setColour(textMuted());
     g.setFont(juce::Font(juce::FontOptions(9.4f)));
@@ -1476,6 +1511,10 @@ void PRISMVSTAudioProcessorEditor::timerCallback()
     std::array<float, PRISMVSTAudioProcessor::spectrumBins> spectrum {};
     processor.copySpectrum(spectrum);
     spectrumDisplay.pushSpectrum(spectrum);
+    std::array<float, PRISMVSTAudioProcessor::labBars> labDb {};
+    std::array<float, PRISMVSTAudioProcessor::labBars> labPeak {};
+    processor.copyPrismLabBars(labDb, labPeak);
+    spectrumDisplay.pushPrismLabBars(labDb, labPeak);
 
     inputPeakLabel.setText("IN  " + juce::String(processor.getInputPeakDb(), 1) + " dBFS",
                            juce::dontSendNotification);

@@ -27,11 +27,11 @@ endif()
 
 juce_add_plugin(PRISMVST
   COMPANY_NAME "SpiralEtech"
-  BUNDLE_ID "com.spiraletech.prism.alpha001"
+  BUNDLE_ID "com.spiraletech.prism.roots.proto001"
   PLUGIN_MANUFACTURER_CODE SpEt
-  PLUGIN_CODE Pa01
+  PLUGIN_CODE PrR1
   FORMATS ${PRISMVST_FORMATS}
-  PRODUCT_NAME "PRISM Alpha 001"
+  PRODUCT_NAME "PRISM ROOTS PROTO 001"
   VST3_CATEGORIES Fx Mastering
   COPY_PLUGIN_AFTER_BUILD FALSE
 )
@@ -82,4 +82,11 @@ if(PRISMVST_BUILD_TESTS)
     juce::juce_dsp
   )
   add_test(NAME prismvst_tests COMMAND prismvst_tests)
+  # Independent native C++20 ROOTS core; deliberately not linked into v1.2 DSP.
+  add_executable(prism_roots_tests Tests/RootsCoreTests.cpp Source/PrismRootsCore.h)
+  target_compile_features(prism_roots_tests PRIVATE cxx_std_20)
+  add_test(NAME prism_roots_four_proofs COMMAND prism_roots_tests)
+  add_executable(prism_lab_analyzer_tests Tests/PrismLabAnalyzerTests.cpp Source/PrismLabAnalyzer.h)
+  target_compile_features(prism_lab_analyzer_tests PRIVATE cxx_std_20)
+  add_test(NAME prism_lab_analyzer_four_proofs COMMAND prism_lab_analyzer_tests)
 endif()

@@ -418,6 +418,9 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     fftData.fill(0.0f);
     for (auto& v : spectrum)
         v.store(kFloorDb);
+    labAnalyzer.reset();
+    for (auto& v : labDb) v.store(prism::analysis::LabBands::floorDb);
+    for (auto& v : labPeakDb) v.store(prism::analysis::LabBands::floorDb);
 
     integratedEnergy = 0.0;
     integratedSamples = 0;
@@ -680,6 +683,17 @@ void PRISMVSTAudioProcessor::renderSpectrumFrame()
     fftWindow.multiplyWithWindowingTable(fftData.data(), fftSize);
     fft.performFrequencyOnlyForwardTransform(fftData.data());
 
+    // PRISM Analysis 256-bar field, Hann-coherent-gain calibrated.
+    // Kept exclusively on the analyzer worker; no audio DSP interaction.
+    labAnalyzer.processMagnitudes(fftData.data(), fftSize / 2 + 1,
+                                  fftSize, currentSampleRate);
+    const auto& labFrame = labAnalyzer.frame();
+    for (int i = 0; i < labBars; ++i)
+    {
+        labDb[(size_t)i].store(labFrame[(size_t)i].db);
+        labPeakDb[(size_t)i].store(labFrame[(size_t)i].peakDb);
+    }
+
     const int maxBin = fftSize / 2;
     const double sr = juce::jmax(1.0, currentSampleRate);
 
@@ -715,6 +729,17 @@ void PRISMVSTAudioProcessor::copySpectrum(std::array<float, spectrumBins>& desti
 {
     for (int i = 0; i < spectrumBins; ++i)
         destination[(size_t)i] = spectrum[(size_t)i].load();
+}
+
+void PRISMVSTAudioProcessor::copyPrismLabBars(
+    std::array<float, labBars>& db,
+    std::array<float, labBars>& peakDb) const noexcept
+{
+    for (int i = 0; i < labBars; ++i)
+    {
+        db[(size_t)i] = labDb[(size_t)i].load();
+        peakDb[(size_t)i] = labPeakDb[(size_t)i].load();
+    }
 }
 
 void PRISMVSTAudioProcessor::updateMeters(const juce::AudioBuffer<float>& buffer)
