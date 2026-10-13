@@ -75,9 +75,11 @@ public:
         sr_=std::max(8000.0,sampleRate);
         correlationAlpha_=std::exp(-1.0/(0.025*sr_));
         sideAlpha_=std::exp(-1.0/(0.008*sr_));
+        gainSmoothingAlpha_=std::exp(-1.0/(0.010*sr_));
         globalMidPower_=globalSidePower_=0.0;appliedSpace_=1.0;
         grMax_=0.0;meter_={};
         currentSolo_=-1;previousSolo_=-1;soloFadeLeft_=0;soloFadeSamples_=0;
+        smoothedRootDelta_.fill(0.0);
         for(int i=0;i<kNodes;++i) {
             auto& node=nodes_[(size_t)i];
             if(!haveConfig_) {node.config.hz=defaults[(size_t)i];}
@@ -128,8 +130,9 @@ public:
         if(!l||!r||count==0)return;
         bool active=false;
         const int requestedSolo=soloRoot_;
-        for(double gain:rootGainDb_)
-            active=active||std::abs(gain)>0.00001;
+        for(int root=0;root<kTerritories;++root)
+            active=active||std::abs(rootGainDb_[(size_t)root])>0.00001||
+                   std::abs(smoothedRootDelta_[(size_t)root])>1.0e-8;
         for(const auto& n:nodes_) {
             if(!n.config.enabled)continue;
             active=active||n.config.comp!=Compressor::off||n.config.space!=50.0;
@@ -216,8 +219,14 @@ public:
                 // not mathematically flat brick-wall frequency selection.
                 for(int root=0;root<kTerritories;++root) {
                     const double db=rootGainDb_[(size_t)root];
-                    if(std::abs(db)<0.00001)continue;
-                    const double delta=std::pow(10.0,db/20.0)-1.0;
+                    if(std::abs(db)<0.00001&&std::abs(smoothedRootDelta_[(size_t)root])<1.0e-8)continue;
+                    const double target=std::pow(10.0,db/20.0)-1.0;
+                    auto& smooth=smoothedRootDelta_[(size_t)root];
+                    smooth=gainSmoothingAlpha_*smooth+(1.0-gainSmoothingAlpha_)*target;
+                    if(std::abs(target)<1.0e-12 && std::abs(smooth)<1.0e-8)
+                        smooth=0.0;
+                    const double delta=smooth;
+                    if(delta==0.0)continue;
                     auto& tap=rootGainBands_[(size_t)root].filters;
                     m+=delta*tap[1].sample(tap[0].sample(dryM));
                     s+=delta*tap[3].sample(tap[2].sample(dryS));
@@ -324,6 +333,8 @@ private:
     std::array<RootBand,kTerritories> soloBands_{};
     std::array<RootBand,kTerritories> rootGainBands_{};
     std::array<double,kTerritories> rootGainDb_{};
+    std::array<double,kTerritories> smoothedRootDelta_{};
+    double gainSmoothingAlpha_=0.99;
     int soloRoot_=-1;
     double sr_=48000.0,correlationAlpha_=0.999,sideAlpha_=0.99;
     double globalMidPower_=0.0,globalSidePower_=0.0,appliedSpace_=1.0,grMax_=0.0;
