@@ -61,6 +61,15 @@ bool finiteBuffer(const juce::AudioBuffer<float>& buffer)
 
 int main()
 {
+    // Keep ROOTS distinct in FL Studio's plugin database / VST3 identity.
+    {
+        PRISMVSTAudioProcessor p;
+        if (p.getName() != "PRISM ROOTS PROTO 001")
+        {
+            std::cerr << "ROOTS plugin host-visible name mismatch\n";
+            return 1;
+        }
+    }
     std::cerr << "TEST 1 schema" << std::endl;
     // -------------------------------------------------------------------------
     // Contract: seven named sections, six crossovers, no legacy master bypass.
@@ -314,6 +323,6 @@ int main()
         }
     }
 
-    std::cout << "PRISM Alpha 001 v1.2.0 resonant-wax DSP tests passed\n";
+    std::cout << "PRISM ROOTS PROTO 001 legacy DSP compatibility tests passed\n";
     return 0;
 }
