@@ -25,7 +25,7 @@ struct Meter { double correlation=1.0,midRms=0.0,sideRms=0.0,spaceApplied=1.0,la
 class Filter {
 public:
     void peak(double sr,const Config& c) noexcept {
-        const double f=std::clamp(c.hz,20.0,std::min(20000.0,sr*0.45));
+        const double f=std::clamp(c.hz,1.0,std::min(20000.0,sr*0.45));
         const double w=2.0*std::numbers::pi*f/sr;
         const double a=std::sin(w)/(2.0*std::clamp(c.q,0.15,24.0));
         const double g=std::pow(10.0,std::clamp(c.gainDb,-60.0,60.0)/40.0);
@@ -38,7 +38,7 @@ public:
     // NOT blind instrument/source separation.
     void tap(double sr,const Config& c) noexcept {
         const double w=2.0*std::numbers::pi*std::clamp(
-                         c.hz,20.0,std::min(20000.0,sr*0.45))/sr;
+                         c.hz,1.0,std::min(20000.0,sr*0.45))/sr;
         const double a=std::sin(w)/(2.0*std::clamp(c.q,0.15,24.0));
         const double norm=1.0/(1.0+a);
         b0_=a*norm;b1_=0.0;b2_=-a*norm;
@@ -59,7 +59,7 @@ class Engine {
 public:
     explicit Engine(double sampleRate=48000.0) noexcept { prepare(sampleRate); }
     static constexpr std::array<double,kNodes> defaults{
-        35.,60.,85.,120.,175.,245.,370.,525.,790.,1450.,2600.,4450.,8300.,13500.
+        1.,60.,85.,120.,175.,245.,370.,525.,790.,1450.,2600.,4450.,8300.,13500.
     };
     void prepare(double sampleRate) noexcept {
         sr_=std::max(8000.0,sampleRate);
@@ -79,7 +79,7 @@ public:
     }
     void config(int index, Config c) noexcept {
         if(index<0||index>=kNodes)return;
-        c.hz=std::clamp(c.hz,20.0,std::min(20000.0,sr_*0.45));
+        c.hz=std::clamp(c.hz,index==0?1.0:20.0,std::min(20000.0,sr_*0.45));
         c.q=std::clamp(c.q,0.15,24.0);
         c.gainDb=std::clamp(c.gainDb,-60.0,60.0);
         c.space=std::clamp(c.space,0.0,100.0);
