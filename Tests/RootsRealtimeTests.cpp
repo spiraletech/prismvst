@@ -91,6 +91,13 @@ int main(){
         if(!(high>0.075&&high>8.0*low)){
             std::cerr<<"C FAIL root-band specificity "<<high<<","<<low<<"\n";return 3;
         }
+        // The same parent ROOT gain must work while that ROOT is soloed.
+        engine.setRootGain(0,6.0);
+        sine(l,r,1000.0,0.15);
+        engine.process(l.data(),r.data(),n);
+        if(!(amplitude(l,1000.0)>high*1.65)){
+            std::cerr<<"C FAIL parent gain not audible in ROOT SOLO\n";return 3;
+        }
         engine.setSoloRoot(1);
         std::vector<float> shortL(128),shortR(128);
         for(int i=0;i<128;++i)shortL[(size_t)i]=shortR[(size_t)i]=(float)
