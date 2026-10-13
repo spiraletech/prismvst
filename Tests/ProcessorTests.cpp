@@ -70,39 +70,29 @@ int main()
             return 1;
         }
     }
-    // ROOTS exclusive solo: clicking another node transfers the audition;
-    // host writes to a new solo always supersede the previous root.
+    // ROOTS parent/child test: node selection is not SOLO activation.
     {
         PRISMVSTAudioProcessor p;
-        const auto soloId=[](int i){return PRISMVSTAudioProcessor::rootsNodeId(i,"solo");};
-        if (!setActual(p,soloId(0),1.0f) || p.getActiveRootsSolo()!=0)
-        {
-            std::cerr<<"ROOTS SOLO proof failed: initial activation\n";return 1;
-        }
-        p.transferRootsSoloTo(5);
-        auto value=[&](int i){
-            auto* raw=p.apvts.getRawParameterValue(soloId(i));
-            return raw!=nullptr?raw->load():-1.0f;
+        const auto soloId=[](int root){return PRISMVSTAudioProcessor::rootsRootSoloId(root);};
+        auto value=[&](int root){
+            auto* v=p.apvts.getRawParameterValue(soloId(root));
+            return v?v->load():-1.0f;
         };
-        if(p.getActiveRootsSolo()!=5 || value(0)>=0.5f || value(5)<0.5f)
-        {
-            std::cerr<<"ROOTS SOLO proof failed: selection transfer\n";return 1;
-        }
-        if(!setActual(p,soloId(9),1.0f) || p.getActiveRootsSolo()!=9)
-        {
-            std::cerr<<"ROOTS SOLO proof failed: newest host automation\n";return 1;
-        }
-        p.transferRootsSoloTo(11);
-        for(int i=0;i<prism::roots::v2::kNodes;++i)
-            if((i==11)!=(value(i)>=0.5f))
-            {
-                std::cerr<<"ROOTS SOLO proof failed: stale competing flags\n";return 1;
-            }
-        if(!setActual(p,soloId(11),0.0f)||p.getActiveRootsSolo()!=-1)
-        {
-            std::cerr<<"ROOTS SOLO proof failed: off switch\n";return 1;
-        }
-        std::cerr<<"ROOTS SOLO proof passed: exclusive activation/switch/off\n";
+        p.transferRootsSoloTo(5);
+        if(p.getActiveRootsSolo()!=-1)return 1; // selection alone is inert
+        if(!setActual(p,soloId(0),1.0f)||p.getActiveRootsSolo()!=0)return 1;
+        p.transferRootsSoloTo(1);               // second node of same ROOT
+        if(p.getActiveRootsSolo()!=0||value(0)<0.5f)return 1;
+        p.transferRootsSoloTo(5);               // node index 5 is ROOT #3
+        if(p.getActiveRootsSolo()!=2||value(0)>=0.5f||value(2)<0.5f)return 1;
+        p.transferRootsSoloTo(4);               // sibling of same ROOT
+        if(p.getActiveRootsSolo()!=2)return 1;
+        if(!setActual(p,soloId(4),1.0f)||p.getActiveRootsSolo()!=4)return 1;
+        p.transferRootsSoloTo(11);              // selects ROOT #6
+        for(int root=0;root<PRISMVSTAudioProcessor::numSections;++root)
+            if((root==5)!=(value(root)>=0.5f))return 1;
+        if(!setActual(p,soloId(5),0.0f)||p.getActiveRootsSolo()!=-1)return 1;
+        std::cerr<<"ROOTS parent SOLO proof passed: sibling stable, root transfer, exclusive OFF\n";
     }
     std::cerr << "TEST 1 schema" << std::endl;
     // -------------------------------------------------------------------------
