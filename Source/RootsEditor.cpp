@@ -64,13 +64,24 @@ void RootsGraph::write(int i,const char* suffix,float value) {
     change(processor_,PRISMVSTAudioProcessor::rootsNodeId(i,suffix),value);
 }
 int RootsGraph::hitNode(juce::Point<float> p)const{
-    int hit=-1;float best=18.0f;
+    // Adjacent ROOT boundary handles may occupy the identical x/y point.
+    // Cycle among geometrically coincident handles instead of making the
+    // later ROOT permanently impossible to select.
+    float nearest=18.0f;
+    std::array<float,prism::roots::v2::kNodes> distances{};
     for(int i=0;i<prism::roots::v2::kNodes;++i){
-        auto x=freqToX(param(i,"hz")),y=gainToY(param(i,"gain_db"));
-        const float distance=p.getDistanceFrom({x,y});
-        if(distance<best){best=distance;hit=i;}
+        const auto x=freqToX(param(i,"hz")),y=gainToY(param(i,"gain_db"));
+        distances[(size_t)i]=p.getDistanceFrom({x,y});
+        nearest=juce::jmin(nearest,distances[(size_t)i]);
     }
-    return hit;
+    if(nearest>=18.0f)return -1;
+    int first=-1,next=-1;
+    for(int i=0;i<prism::roots::v2::kNodes;++i){
+        if(distances[(size_t)i]>nearest+1.25f)continue;
+        if(first<0)first=i;
+        if(i>selected_&&next<0)next=i;
+    }
+    return next>=0?next:first;
 }
 juce::Colour RootsGraph::colour(int territory) {return ::territory(territory);}
 void RootsGraph::updateAnalyzer(
