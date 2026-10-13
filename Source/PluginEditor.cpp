@@ -1422,7 +1422,7 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
 
     g.setColour(accentColour());
     g.setFont(juce::Font(juce::FontOptions(9.5f, juce::Font::bold)));
-    g.drawText("ALPHA 001  •  v1.2.0", 158, 18, 142, 17, juce::Justification::centredLeft);
+    g.drawText("ROOTS PROTO 001", 158, 18, 148, 17, juce::Justification::centredLeft);
 
     g.setColour(textMuted());
     g.setFont(juce::Font(juce::FontOptions(9.4f)));
