@@ -155,7 +155,19 @@ public:
         double sumL=0.0,sumR=0.0,sumCross=0.0,sumM=0.0,sumS=0.0;
         double greatestGr=0.0;
         const double globalWidth=mono_?0.0:spaceToWidth(space_);
+        std::array<double,kTerritories> gainTargets{};
+        for(int root=0;root<kTerritories;++root)
+            gainTargets[(size_t)root]=std::pow(10.0,rootGainDb_[(size_t)root]/20.0)-1.0;
         for(std::size_t i=0;i<count;++i) {
+            // Sample-rate smoothing applies even during SOLO, so the ROOT
+            // gain knob always affects the selected frequency territory.
+            for(int root=0;root<kTerritories;++root){
+                auto& smooth=smoothedRootDelta_[(size_t)root];
+                const double target=gainTargets[(size_t)root];
+                smooth=gainSmoothingAlpha_*smooth+(1.0-gainSmoothingAlpha_)*target;
+                if(std::abs(target)<1.0e-12 && std::abs(smooth)<1.0e-8)
+                    smooth=0.0;
+            }
             const double dryM=((double)l[i]+(double)r[i])*0.5;
             const double dryS=((double)l[i]-(double)r[i])*0.5;
             double m=dryM,s=dryS;
@@ -220,12 +232,7 @@ public:
                 for(int root=0;root<kTerritories;++root) {
                     const double db=rootGainDb_[(size_t)root];
                     if(std::abs(db)<0.00001&&std::abs(smoothedRootDelta_[(size_t)root])<1.0e-8)continue;
-                    const double target=std::pow(10.0,db/20.0)-1.0;
-                    auto& smooth=smoothedRootDelta_[(size_t)root];
-                    smooth=gainSmoothingAlpha_*smooth+(1.0-gainSmoothingAlpha_)*target;
-                    if(std::abs(target)<1.0e-12 && std::abs(smooth)<1.0e-8)
-                        smooth=0.0;
-                    const double delta=smooth;
+                    const double delta=smoothedRootDelta_[(size_t)root];
                     if(delta==0.0)continue;
                     auto& tap=rootGainBands_[(size_t)root].filters;
                     m+=delta*tap[1].sample(tap[0].sample(dryM));
@@ -235,8 +242,9 @@ public:
             if(solo) {
                 auto audition=[&](int root)->std::array<double,2> {
                     auto& filters=soloBands_[(size_t)root].filters;
-                    return {filters[1].sample(filters[0].sample(dryM)),
-                            filters[3].sample(filters[2].sample(dryS))};
+                    const double gain=1.0+smoothedRootDelta_[(size_t)root];
+                    return {gain*filters[1].sample(filters[0].sample(dryM)),
+                            gain*filters[3].sample(filters[2].sample(dryS))};
                 };
                 const auto next=audition(currentSolo_);
                 if(soloFadeLeft_>0&&previousSolo_>=0){
