@@ -44,6 +44,8 @@ public:
     void mouseExit(const juce::MouseEvent&) override;
 
     void pushSpectrum(const std::array<float, PRISMVSTAudioProcessor::spectrumBins>&);
+    void pushPrismLabBars(const std::array<float, PRISMVSTAudioProcessor::labBars>&,
+                          const std::array<float, PRISMVSTAudioProcessor::labBars>&);
     void setSelectedSection(int section);
     std::function<void(int)> onSectionSelected;
 
@@ -55,6 +57,8 @@ private:
     float dragStartX = 0.0f;
 
     std::array<float, PRISMVSTAudioProcessor::spectrumBins> latestSpectrum {};
+    std::array<float, PRISMVSTAudioProcessor::labBars> latestLabDb {};
+    std::array<float, PRISMVSTAudioProcessor::labBars> latestLabPeakDb {};
 
     bool hasHover = false;
     juce::Point<float> hoverPoint;
