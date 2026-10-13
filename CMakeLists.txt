@@ -27,11 +27,11 @@ endif()
 
 juce_add_plugin(PRISMVST
   COMPANY_NAME "SpiralEtech"
-  BUNDLE_ID "com.spiraletech.prism.alpha001"
+  BUNDLE_ID "com.spiraletech.prism.roots.proto001"
   PLUGIN_MANUFACTURER_CODE SpEt
-  PLUGIN_CODE Pa01
+  PLUGIN_CODE PrR1
   FORMATS ${PRISMVST_FORMATS}
-  PRODUCT_NAME "PRISM Alpha 001"
+  PRODUCT_NAME "PRISM ROOTS PROTO 001"
   VST3_CATEGORIES Fx Mastering
   COPY_PLUGIN_AFTER_BUILD FALSE
 )
