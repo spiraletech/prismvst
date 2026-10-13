@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "RootsEditor.h"
 #include "PluginEditor.h"
 #include <cmath>
 
@@ -29,6 +30,11 @@ const char* PRISMVSTAudioProcessor::sectionName(int section) noexcept
 juce::String PRISMVSTAudioProcessor::sectionId(int section, const juce::String& suffix)
 {
     return "section" + juce::String(section + 1) + "_" + suffix;
+}
+
+juce::String PRISMVSTAudioProcessor::rootsNodeId(int node,const juce::String& suffix)
+{
+    return "roots_node" + juce::String(node + 1) + "_" + suffix;
 }
 
 juce::String PRISMVSTAudioProcessor::crossoverId(int crossover)
@@ -330,6 +336,53 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             juce::NormalisableRange<float>(-1.0f, 1.0f, 0.001f), 0.0f));
     }
 
+    // ROOTS replaces the visible six-knob interface. Keep legacy parameter
+    // IDs for saved Alpha compatibility; the dedicated ROOTS path ignores them.
+    p.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID { "roots_engine_mode", 1 }, "ROOTS Engine", true));
+    p.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID { "roots_mono", 1 }, "ROOTS Mono", false));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "roots_space", 1 }, "ROOTS Space",
+        juce::NormalisableRange<float>(0.0f,100.0f,0.1f),50.0f));
+
+    for (int i=0;i<prism::roots::v2::kNodes;++i)
+    {
+        using namespace prism::roots::v2;
+        const auto id=[i](const char* suffix){return rootsNodeId(i,suffix);};
+        const juce::String name="ROOTS " + juce::String(i+1) + " ";
+        juce::NormalisableRange<float> hzRange(20.0f,20000.0f,0.01f);
+        hzRange.setSkewForCentre(1000.0f);
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{id("hz"),1}, name + "Hz",hzRange,(float)Engine::defaults[(size_t)i]));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{id("gain_db"),1}, name + "Gain",
+            juce::NormalisableRange<float>(-60.0f,60.0f,0.01f),0.0f));
+        juce::NormalisableRange<float> qRange(0.15f,24.0f,0.01f);
+        qRange.setSkewForCentre(1.0f);
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{id("q"),1}, name + "Q",qRange,1.5f));
+        p.push_back(std::make_unique<juce::AudioParameterBool>(
+            juce::ParameterID{id("on"),1},name + "On",true));
+        p.push_back(std::make_unique<juce::AudioParameterBool>(
+            juce::ParameterID{id("solo"),1},name + "Solo",false));
+        p.push_back(std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID{id("domain"),1},name + "EQ Domain",
+            juce::StringArray{"STEREO","MID","SIDE"},0));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{id("space"),1},name + "Band Space",
+            juce::NormalisableRange<float>(0.0f,100.0f,0.1f),50.0f));
+        p.push_back(std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID{id("comp"),1},name + "Compressor",
+            juce::StringArray{"OFF","OPTICAL 3:1","OPTICAL 4:1","CLB1 TUBE 3:1","FET 4:1"},0));
+        p.push_back(std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID{id("detector"),1},name + "Dynamics Domain",
+            juce::StringArray{"STEREO LINK","DUAL MID/SIDE","MID ONLY","SIDE ONLY"},0));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{id("threshold"),1},name + "Threshold",
+            juce::NormalisableRange<float>(-60.0f,0.0f,0.1f),-18.0f));
+    }
+
     p.push_back(std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID { "analyzer_depth", 2 }, "Analyzer Depth",
         juce::StringArray { "FULL -96", "DEEP -120", "FORENSIC -144" }, 0));
@@ -360,6 +413,7 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     analyzerWorker.stopThread(1000);
 
     currentSampleRate = sampleRate;
+    rootsEngine.prepare(sampleRate);
     sanitizeCrossovers();
 
     for (auto& section : sectionStates)
@@ -775,6 +829,34 @@ void PRISMVSTAudioProcessor::updateMeters(const juce::AudioBuffer<float>& buffer
         ? (float)(-0.691 + 10.0 * std::log10(intMean)) : kFloorDb);
 }
 
+void PRISMVSTAudioProcessor::processRootsEngine(juce::AudioBuffer<float>& buffer)
+{
+    using namespace prism::roots::v2;
+    rootsEngine.setSpace(read(apvts,"roots_space"));
+    rootsEngine.setMono(read(apvts,"roots_mono")>=0.5f);
+    for(int i=0;i<kNodes;++i)
+    {
+        const auto id=[i](const char* s){return rootsNodeId(i,s);};
+        Config c;
+        c.hz=read(apvts,id("hz"));
+        c.gainDb=read(apvts,id("gain_db"));
+        c.q=read(apvts,id("q"));
+        c.enabled=read(apvts,id("on"))>=0.5f;
+        c.solo=read(apvts,id("solo"))>=0.5f;
+        c.domain=(Domain)juce::roundToInt(read(apvts,id("domain")));
+        c.space=read(apvts,id("space"));
+        c.comp=(Compressor)juce::roundToInt(read(apvts,id("comp")));
+        c.detector=(Detector)juce::roundToInt(read(apvts,id("detector")));
+        c.thresholdDb=read(apvts,id("threshold"));
+        rootsEngine.config(i,c);
+    }
+    if(buffer.getNumChannels()>=2)
+        rootsEngine.process(buffer.getWritePointer(0),
+                            buffer.getWritePointer(1),
+                            (size_t)buffer.getNumSamples());
+    gainReductionDb.store((float)rootsEngine.meter().largestGrDb);
+}
+
 void PRISMVSTAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -787,7 +869,10 @@ void PRISMVSTAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         inputPeak = juce::jmax(inputPeak, buffer.getMagnitude(c, 0, buffer.getNumSamples()));
     inputPeakDb.store(toDb(inputPeak + 1.0e-9f));
 
-    processSevenSectionEngine(buffer);
+    if(read(apvts,"roots_engine_mode")>=0.5f)
+        processRootsEngine(buffer);
+    else
+        processSevenSectionEngine(buffer);
     pushAnalyzerSamples(buffer);
     updateMeters(buffer);
 }
@@ -812,7 +897,7 @@ void PRISMVSTAudioProcessor::setStateInformation(const void* data, int size)
 
 juce::AudioProcessorEditor* PRISMVSTAudioProcessor::createEditor()
 {
-    return new PRISMVSTAudioProcessorEditor(*this);
+    return new RootsEditor(*this);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
