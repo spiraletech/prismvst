@@ -75,6 +75,8 @@ int main()
     // Contract: seven named sections, six crossovers, no legacy master bypass.
     {
         auto p = std::make_unique<PRISMVSTAudioProcessor>();
+        // These established regression proofs deliberately exercise the protected 1.2 DSP path.
+        setActual(*p, "roots_engine_mode", 0.0f);
 
         if (PRISMVSTAudioProcessor::numSections != 7
             || PRISMVSTAudioProcessor::numCrossovers != 6)
@@ -128,6 +130,8 @@ int main()
     // OFF means muted. A soloed-but-OFF section must produce silence.
     {
         auto p = std::make_unique<PRISMVSTAudioProcessor>();
+        // These established regression proofs deliberately exercise the protected 1.2 DSP path.
+        setActual(*p, "roots_engine_mode", 0.0f);
         p->prepareToPlay(48000.0, 512);
 
         setActual(*p, PRISMVSTAudioProcessor::sectionId(1, "solo"), 1.0f);
@@ -151,6 +155,8 @@ int main()
     // SOLO means audible isolation, and the section path must remain finite.
     {
         auto p = std::make_unique<PRISMVSTAudioProcessor>();
+        // These established regression proofs deliberately exercise the protected 1.2 DSP path.
+        setActual(*p, "roots_engine_mode", 0.0f);
         p->prepareToPlay(48000.0, 512);
         setActual(*p, PRISMVSTAudioProcessor::sectionId(1, "solo"), 1.0f);
 
@@ -175,6 +181,8 @@ int main()
     // Neutral seven-way reconstruction must not grossly change amplitude.
     {
         auto p = std::make_unique<PRISMVSTAudioProcessor>();
+        // These established regression proofs deliberately exercise the protected 1.2 DSP path.
+        setActual(*p, "roots_engine_mode", 0.0f);
         p->prepareToPlay(48000.0, 512);
 
         juce::AudioBuffer<float> b(2, 512);
@@ -220,6 +228,8 @@ int main()
         const auto measure = [mid](float storedWidth, float* stereoMeter = nullptr)
         {
             auto p = std::make_unique<PRISMVSTAudioProcessor>();
+        // These established regression proofs deliberately exercise the protected 1.2 DSP path.
+        setActual(*p, "roots_engine_mode", 0.0f);
             p->prepareToPlay(48000.0, 512);
             setActual(*p, PRISMVSTAudioProcessor::sectionId(mid, "solo"), 1.0f);
             setActual(*p, PRISMVSTAudioProcessor::sectionId(mid, "width_pct"), storedWidth);
@@ -256,6 +266,8 @@ int main()
     // Invalid crossover ordering must repair without changing the 7-section law.
     {
         auto p = std::make_unique<PRISMVSTAudioProcessor>();
+        // These established regression proofs deliberately exercise the protected 1.2 DSP path.
+        setActual(*p, "roots_engine_mode", 0.0f);
         setActual(*p, PRISMVSTAudioProcessor::crossoverId(4), 11000.0f);
         setActual(*p, PRISMVSTAudioProcessor::crossoverId(5), 900.0f);
         p->prepareToPlay(48000.0, 512);
@@ -276,6 +288,8 @@ int main()
     std::cerr << "TEST 7 exclusive SOLO" << std::endl;
     {
         auto p = std::make_unique<PRISMVSTAudioProcessor>();
+        // These established regression proofs deliberately exercise the protected 1.2 DSP path.
+        setActual(*p, "roots_engine_mode", 0.0f);
         p->prepareToPlay(48000.0, 512);
         setActual(*p, PRISMVSTAudioProcessor::sectionId(1, "solo"), 1.0f);
         setActual(*p, PRISMVSTAudioProcessor::sectionId(4, "solo"), 1.0f);
@@ -298,6 +312,8 @@ int main()
         const auto measure = [](float onyx, bool silence)
         {
             auto p = std::make_unique<PRISMVSTAudioProcessor>();
+        // These established regression proofs deliberately exercise the protected 1.2 DSP path.
+        setActual(*p, "roots_engine_mode", 0.0f);
             p->prepareToPlay(48000.0, 512);
             setActual(*p, PRISMVSTAudioProcessor::sectionId(4, "solo"), 1.0f);
             setActual(*p, PRISMVSTAudioProcessor::sectionId(4, "onyx_pct"), onyx);
