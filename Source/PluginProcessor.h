@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include <array>
 #include <atomic>
+#include "PrismLabAnalyzer.h"
 
 class PRISMVSTAudioProcessor final : public juce::AudioProcessor,
                                     private juce::AudioProcessorValueTreeState::Listener,
@@ -11,6 +12,7 @@ public:
     static constexpr int numSections = 7;
     static constexpr int numCrossovers = numSections - 1;
     static constexpr int spectrumBins = 512;
+    static constexpr int labBars = prism::analysis::LabBands::count;
 
     PRISMVSTAudioProcessor();
     ~PRISMVSTAudioProcessor() override;
@@ -47,6 +49,8 @@ public:
     float getLufsShort() const noexcept { return lufsShort.load(); }
     float getLufsIntegrated() const noexcept { return lufsIntegrated.load(); }
     void copySpectrum(std::array<float, spectrumBins>& destination) const noexcept;
+    void copyPrismLabBars(std::array<float, labBars>& db,
+                          std::array<float, labBars>& peakDb) const noexcept;
     float getStereoActivity(int section) const noexcept
     {
         return stereoActivity[(size_t)juce::jlimit(0, numSections - 1, section)].load();
@@ -145,6 +149,10 @@ private:
     int fftWritePos = 0;
     int fftHopCounter = 0;
     std::array<std::atomic<float>, spectrumBins> spectrum {};
+    // Written only by the existing analyzer worker; read by GUI via atomics.
+    prism::analysis::LabBands labAnalyzer;
+    std::array<std::atomic<float>, labBars> labDb {};
+    std::array<std::atomic<float>, labBars> labPeakDb {};
 
     double currentSampleRate = 44100.0;
     double integratedEnergy = 0.0;
