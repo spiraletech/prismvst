@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <numbers>
+#include "RootsSpectrumColours.h"
 
 namespace prism::roots::v2 {
 constexpr int kTerritories=7,kNodes=14;
@@ -50,6 +51,15 @@ public:
         z2_=b2_*v-a2_*out;
         return out;
     }
+    void setEdge(double sr,double frequency,bool highPass) noexcept {
+        const double hz=std::clamp(frequency,20.0,std::min(20000.0,sr*0.45));
+        const double w=2.0*std::numbers::pi*hz/sr;
+        const double co=std::cos(w),alpha=std::sin(w)/(2.0*0.7071067811865476);
+        const double norm=1.0/(1.0+alpha);
+        b0_=(highPass?(1.0+co):(1.0-co))*0.5*norm;
+        b1_=(highPass?-(1.0+co):(1.0-co))*norm;
+        b2_=b0_;a1_=-2.0*co*norm;a2_=(1.0-alpha)*norm;
+    }
     void reset() noexcept {z1_=z2_=0.0;}
 private:
     double b0_=1.0,b1_=0.0,b2_=0.0,a1_=0.0,a2_=0.0,z1_=0.0,z2_=0.0;
@@ -59,7 +69,7 @@ class Engine {
 public:
     explicit Engine(double sampleRate=48000.0) noexcept { prepare(sampleRate); }
     static constexpr std::array<double,kNodes> defaults{
-        1.,60.,85.,120.,175.,245.,370.,525.,790.,1450.,2600.,4450.,8300.,13500.
+        20.,60.,60.,120.,120.,250.,250.,500.,500.,2000.,2000.,6000.,6000.,20000.
     };
     void prepare(double sampleRate) noexcept {
         sr_=std::max(8000.0,sampleRate);
@@ -77,10 +87,15 @@ public:
             updateFilters(i);
         }
         haveConfig_=true;
+        for(int root=0;root<kTerritories;++root){
+            auto& taps=soloBands_[(size_t)root];
+            for(auto& f:taps.filters)f.reset();
+            updateSoloBand(root);
+        }
     }
     void config(int index, Config c) noexcept {
         if(index<0||index>=kNodes)return;
-        c.hz=std::clamp(c.hz,index==0?1.0:20.0,std::min(20000.0,sr_*0.45));
+        c.hz=std::clamp(c.hz,20.0,std::min(20000.0,sr_*0.45));
         c.q=std::clamp(c.q,0.15,24.0);
         c.gainDb=std::clamp(c.gainDb,-60.0,60.0);
         c.space=std::clamp(c.space,0.0,100.0);
@@ -89,24 +104,28 @@ public:
         const bool changed= n.config.hz!=c.hz || n.config.q!=c.q ||
                             n.config.gainDb!=c.gainDb;
         n.config=c;
-        if(changed)updateFilters(index);
+        if(changed){updateFilters(index);updateSoloBand(index/2);}
     }
     Config get(int index) const noexcept {return nodes_[(size_t)std::clamp(index,0,kNodes-1)].config;}
     void setSpace(double value) noexcept {space_=std::clamp(value,0.0,100.0);}
     void setMono(bool mono) noexcept {mono_=mono;}
+    // SOLO authority belongs to one ROOT, never to an individual handle.
+    void setSoloRoot(int root) noexcept {
+        soloRoot_=root>=0&&root<kTerritories?root:-1;
+    }
+    int soloRoot() const noexcept {return soloRoot_;}
     Meter meter() const noexcept {return meter_;}
     int soloTransitionSamplesRemaining() const noexcept {return soloFadeLeft_;}
     void process(float* l,float* r,std::size_t count) noexcept {
         if(!l||!r||count==0)return;
         bool active=false;
-        int requestedSolo=-1;
-        for(int index=0;index<kNodes;++index) {
-            const auto& n=nodes_[(size_t)index];
+        const int requestedSolo=soloRoot_;
+        for(const auto& n:nodes_) {
             if(!n.config.enabled)continue;
-            if(n.config.solo)requestedSolo=index;
-            active=active||n.config.solo||std::abs(n.config.gainDb)>0.00001||
+            active=active||std::abs(n.config.gainDb)>0.00001||
                    n.config.comp!=Compressor::off||n.config.space!=50.0;
         }
+        active=active||requestedSolo>=0;
         if(requestedSolo!=currentSolo_) {
             // Two soloed roots crossfade over 8 ms to prevent hard
             // discontinuities during rapid A/B auditioning.
@@ -128,17 +147,13 @@ public:
             const double dryM=((double)l[i]+(double)r[i])*0.5;
             const double dryS=((double)l[i]-(double)r[i])*0.5;
             double m=dryM,s=dryS;
-            if(solo){m=0.0;s=0.0;}
-            const double newMix=soloFadeLeft_>0
-                ?1.0-(double)soloFadeLeft_/(double)soloFadeSamples_:1.0;
+            // SOLO is a dedicated bandpass path below; normal EQ remains independent.
             for(int nodeIndex=0;nodeIndex<kNodes;++nodeIndex) {
+                if(solo)break; // bypass normal multi-root DSP during root audition
                 auto& node=nodes_[(size_t)nodeIndex];
                 const Config& c=node.config;
                 if(!c.enabled)continue;
-                // Exclusive solo, except the outgoing root while it fades.
-                const bool outgoing=soloFadeLeft_>0&&nodeIndex==previousSolo_;
-                if(solo&&nodeIndex!=currentSolo_&&!outgoing)continue;
-                const bool listen=solo;
+                const bool listen=false;
                 const bool usesTap=listen||c.comp!=Compressor::off||c.space!=50.0;
                 double tapM=0.0,tapS=0.0;
                 if(usesTap){
@@ -195,6 +210,20 @@ public:
                     m+=tapM*weight;s+=tapS*weight;
                 }
             }
+            if(solo) {
+                auto audition=[&](int root)->std::array<double,2> {
+                    auto& filters=soloBands_[(size_t)root].filters;
+                    return {filters[1].sample(filters[0].sample(dryM)),
+                            filters[3].sample(filters[2].sample(dryS))};
+                };
+                const auto next=audition(currentSolo_);
+                if(soloFadeLeft_>0&&previousSolo_>=0){
+                    const auto previous=audition(previousSolo_);
+                    const double amount=1.0-(double)soloFadeLeft_/(double)soloFadeSamples_;
+                    m=previous[0]*(1.0-amount)+next[0]*amount;
+                    s=previous[1]*(1.0-amount)+next[1]*amount;
+                } else {m=next[0];s=next[1];}
+            }
             if(soloFadeLeft_>0){
                 --soloFadeLeft_;
                 if(soloFadeLeft_==0)previousSolo_=-1;
@@ -228,6 +257,16 @@ private:
         Filter midEq,sideEq,midTap,sideTap;
         double e1=0.0,e2=0.0,midEnergy=0.0,sideEnergy=0.0;
     };
+    // Each root's two boundary handles determine the exact frequency
+    // interval for BOTH the palette and the audible bandpass.
+    void updateSoloBand(int root) noexcept {
+        const auto a=nodes_[(size_t)(2*root)].config.hz;
+        const auto b=nodes_[(size_t)(2*root+1)].config.hz;
+        const double low=std::min(a,b),high=std::max(a,b);
+        auto& tap=soloBands_[(size_t)root].filters;
+        tap[0].setEdge(sr_,low,true); tap[1].setEdge(sr_,high,false);
+        tap[2].setEdge(sr_,low,true); tap[3].setEdge(sr_,high,false);
+    }
     void updateFilters(int i) noexcept {
         auto& n=nodes_[(size_t)i];
         n.midEq.peak(sr_,n.config);n.sideEq.peak(sr_,n.config);
@@ -265,6 +304,9 @@ private:
         meter_.spaceApplied=1.0;meter_.largestGrDb=0.0;
     }
     std::array<Node,kNodes> nodes_{};
+    struct RootBand { std::array<Filter,4> filters; };
+    std::array<RootBand,kTerritories> soloBands_{};
+    int soloRoot_=-1;
     double sr_=48000.0,correlationAlpha_=0.999,sideAlpha_=0.99;
     double globalMidPower_=0.0,globalSidePower_=0.0,appliedSpace_=1.0,grMax_=0.0;
     double space_=50.0;
