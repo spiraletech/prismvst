@@ -66,6 +66,7 @@ public:
     static juce::String rootsNodeId(int node, const juce::String& suffix);
     static juce::String rootsRootSoloId(int root);
     static juce::String rootsRootGainId(int root);
+    static juce::String rootsRootControlId(int root, const juce::String& suffix);
     prism::roots::v2::Meter getRootsMeter() const noexcept { return rootsEngine.meter(); }
     static const char* sectionName(int section) noexcept;
 
