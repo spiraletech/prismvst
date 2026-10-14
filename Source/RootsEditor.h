@@ -5,6 +5,18 @@
 #include <functional>
 #include <memory>
 
+class RootSelectorButton final : public juce::TextButton {
+public:
+    std::function<void()> onContext;
+    void mouseDown(const juce::MouseEvent& event) override {
+        if(event.mods.isPopupMenu()) {
+            if(onContext)onContext();
+            return;
+        }
+        juce::TextButton::mouseDown(event);
+    }
+};
+
 class RootsGraph final : public juce::Component {
 public:
     explicit RootsGraph(PRISMVSTAudioProcessor& owner);
@@ -21,6 +33,7 @@ public:
     std::function<void(int)> onSelectNode;
     int selectedNode() const noexcept{return selected_;}
     void selectNode(int node);
+    void showRootMenu(int root);
 private:
     PRISMVSTAudioProcessor& processor_;
     std::array<float,PRISMVSTAudioProcessor::labBars> bands_{},peaks_{};
@@ -48,6 +61,7 @@ private:
     using ButtonA=juce::AudioProcessorValueTreeState::ButtonAttachment;
     PRISMVSTAudioProcessor& processor_;
     RootsGraph graph_;
+    std::array<RootSelectorButton,7> rootButtons_;
     juce::Slider gain_,bandSpace_,space_,threshold_;
     juce::ToggleButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};
     juce::Label title_,selection_,status_,gainLabel_,bandSpaceLabel_,
@@ -56,5 +70,6 @@ private:
     std::unique_ptr<ButtonA> monoA_,onA_,soloA_;
     int node_=0;
     void bindNode(int n);
+    void updateRootButtons();
     void timerCallback() override;
 };
