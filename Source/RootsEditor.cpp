@@ -135,7 +135,8 @@ void RootsGraph::paint(juce::Graphics& g){
     {
         zones[(size_t)node].hz=param(node,"hz");
         zones[(size_t)node].q=param(node,"q");
-        zones[(size_t)node].enabled=param(node,"on")>=0.5f;
+        zones[(size_t)node].enabled=pval(processor_.apvts,
+            PRISMVSTAudioProcessor::rootsRootControlId(node/2,"on"))>=0.5f;
     }
     // The visible coverage is defined by each ROOT's two boundary handles,
     // not Q distance or a fixed index/37 palette. Regions can intersect.
@@ -181,7 +182,8 @@ void RootsGraph::paint(juce::Graphics& g){
     for(int i=0;i<prism::roots::v2::kNodes;++i){
         const float hz=param(i,"hz");
         const float x=freqToX(hz),y=r.getCentreY();
-        const bool enabled=param(i,"on")>=0.5f;
+        const bool enabled=pval(processor_.apvts,
+            PRISMVSTAudioProcessor::rootsRootControlId(i/2,"on"))>=0.5f;
         const bool solo=pval(processor_.apvts,
              PRISMVSTAudioProcessor::rootsRootSoloId(i/2))>=0.5f;
         const auto col=territory(i/2);
