@@ -273,7 +273,8 @@ public:
                 allowed=std::min(globalWidth,
                     std::max(1.0,std::sqrt(0.98*globalMidPower_/globalSidePower_)));
             appliedSpace_=sideAlpha_*appliedSpace_+(1.0-sideAlpha_)*allowed;
-            if(mono_)appliedSpace_=0.0;
+            if(mono_ || (globalWidth==0.0 && appliedSpace_<1e-6))
+                appliedSpace_=0.0; // finish smoothed collapse at exact mono
             const double outL=m+appliedSpace_*s;
             const double outR=m-appliedSpace_*s;
             l[i]=(float)outL;r[i]=(float)outR;
