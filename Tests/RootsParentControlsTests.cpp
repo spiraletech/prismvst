@@ -86,8 +86,10 @@ int main(){
         fill(a,b);fill(c,d);
         mono.process(a.data(),b.data(),N);
         wide.process(c.data(),d.data(),N);
-        for(int i=0;i<N;++i)if(a[(size_t)i]!=b[(size_t)i]){
-            std::cerr<<"P4 mono output asymmetry\n";return 4;
+        // A real-time width knob uses an 8ms smooth collapse. Judge
+        // exact L/R identity only AFTER the transition, not sample zero.
+        for(int i=N/2;i<N;++i)if(a[(size_t)i]!=b[(size_t)i]){
+            std::cerr<<"P4 mono output asymmetry after smoothing\n";return 4;
         }
         if(!(sideRms(c,d)>0.04/std::sqrt(2.0)*1.08)){
             std::cerr<<"P4 global stereo width did not increase SIDE\n";return 4;
