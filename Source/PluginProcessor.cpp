@@ -32,6 +32,11 @@ juce::String PRISMVSTAudioProcessor::sectionId(int section, const juce::String& 
     return "section" + juce::String(section + 1) + "_" + suffix;
 }
 
+juce::String PRISMVSTAudioProcessor::rootsRootControlId(int root,const juce::String& suffix)
+{
+    return "roots_root" + juce::String(root + 1) + "_" + suffix;
+}
+
 juce::String PRISMVSTAudioProcessor::rootsRootGainId(int root)
 {
     return "roots_root" + juce::String(root + 1) + "_gain_db";
@@ -424,8 +429,29 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             juce::ParameterID { rootsRootGainId(root), 1 },
             juce::String(sectionName(root)) + " ROOT Gain",
             juce::NormalisableRange<float>(-60.0f,60.0f,0.01f),0.0f));
+        const auto id=[root](const char* suffix){return rootsRootControlId(root,suffix);};
+        const auto label=juce::String(sectionName(root))+" ROOT ";
+        p.push_back(std::make_unique<juce::AudioParameterBool>(
+            juce::ParameterID{id("on"),1},label+"Enabled",true));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{id("space"),1},label+"Band Space",
+            juce::NormalisableRange<float>(0.0f,100.0f,0.1f),50.0f));
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{id("threshold"),1},label+"Compression Threshold",
+            juce::NormalisableRange<float>(-60.0f,0.0f,0.1f),-18.0f));
+        p.push_back(std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID{id("comp"),1},label+"Compression Profile",
+            juce::StringArray{"OFF","OPTICAL 3:1","OPTICAL 4:1","CLB1 TUBE 3:1","FET 4:1"},0));
+        p.push_back(std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID{id("domain"),1},label+"EQ Domain",
+            juce::StringArray{"STEREO","MID","SIDE"},0));
+        p.push_back(std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID{id("detector"),1},label+"Compression Domain",
+            juce::StringArray{"STEREO LINK","DUAL MID/SIDE","MID ONLY","SIDE ONLY"},0));
     }
 
+    // Deprecated per-handle effect IDs are retained for old presets, but ignored
+    // by the ROOTS engine. Only the two Hz handles remain active.
     for (int i=0;i<prism::roots::v2::kNodes;++i)
     {
         using namespace prism::roots::v2;
@@ -924,13 +950,15 @@ void PRISMVSTAudioProcessor::processRootsEngine(juce::AudioBuffer<float>& buffer
         c.hz=read(apvts,id("hz"));
         c.gainDb=0.0; // retained obsolete host parameter is ignored
         c.q=read(apvts,id("q"));
-        c.enabled=read(apvts,id("on"))>=0.5f;
-        c.solo=false; // retired per-handle flags do not influence ROOT SOLO
-        c.domain=(Domain)juce::roundToInt(read(apvts,id("domain")));
-        c.space=read(apvts,id("space"));
-        c.comp=(Compressor)juce::roundToInt(read(apvts,id("comp")));
-        c.detector=(Detector)juce::roundToInt(read(apvts,id("detector")));
-        c.thresholdDb=read(apvts,id("threshold"));
+        const int root=i/2;
+        const auto parent=[root](const char* suffix){return rootsRootControlId(root,suffix);};
+        c.enabled=read(apvts,parent("on"))>=0.5f;
+        c.solo=false; // only root-level SOLO is authoritative
+        c.domain=(Domain)juce::roundToInt(read(apvts,parent("domain")));
+        c.space=read(apvts,parent("space"));
+        c.comp=(Compressor)juce::roundToInt(read(apvts,parent("comp")));
+        c.detector=(Detector)juce::roundToInt(read(apvts,parent("detector")));
+        c.thresholdDb=read(apvts,parent("threshold"));
         rootsEngine.config(i,c);
     }
     if(buffer.getNumChannels()>=2)

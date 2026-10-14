@@ -93,6 +93,7 @@ public:
             auto& taps=soloBands_[(size_t)root];
             for(auto& f:taps.filters)f.reset();
             for(auto& f:rootGainBands_[(size_t)root].filters)f.reset();
+            for(auto& f:rootFxBands_[(size_t)root].filters)f.reset();
             updateSoloBand(root);
         }
     }
@@ -171,56 +172,60 @@ public:
             const double dryM=((double)l[i]+(double)r[i])*0.5;
             const double dryS=((double)l[i]-(double)r[i])*0.5;
             double m=dryM,s=dryS;
-            // SOLO is a dedicated bandpass path below; normal EQ remains independent.
-            for(int nodeIndex=0;nodeIndex<kNodes;++nodeIndex) {
-                if(solo)break; // bypass normal multi-root DSP during root audition
-                auto& node=nodes_[(size_t)nodeIndex];
+            // One DSP state per ROOT; each pair of handles is ONLY the
+            // boundary definition. One stereo/dynamics profile per ROOT.
+            if(!solo)for(int root=0;root<kTerritories;++root) {
+                auto& node=nodes_[(size_t)(root*2)];
                 const Config& c=node.config;
                 if(!c.enabled)continue;
-                const bool listen=false;
-                const bool usesTap=listen||c.comp!=Compressor::off||c.space!=50.0;
-                double tapM=0.0,tapS=0.0;
-                if(usesTap){
-                    if(c.domain!=Domain::side)tapM=node.midTap.sample(dryM);
-                    if(c.domain!=Domain::mid)tapS=node.sideTap.sample(dryS);
+                const bool wantsEffects=c.comp!=Compressor::off ||
+                                        std::abs(c.space-50.0)>1e-5;
+                if(!wantsEffects)continue;
+                auto& tap=rootFxBands_[(size_t)root].filters;
+                // Keep both components measurable for phase-safe SPACE,
+                // even if compression was restricted to MID or SIDE.
+                const double bandMid=tap[1].sample(tap[0].sample(dryM));
+                const double bandSide=tap[3].sample(tap[2].sample(dryS));
+                const double tapM=c.domain==Domain::side?0.0:bandMid;
+                const double tapS=c.domain==Domain::mid?0.0:bandSide;
+                const double ea=1.0-correlationAlpha_;
+                node.midEnergy+=ea*(bandMid*bandMid-node.midEnergy);
+                node.sideEnergy+=ea*(bandSide*bandSide-node.sideEnergy);
+                if(std::abs(c.space-50.0)>1e-5){
+                    const double requested=spaceToWidth(c.space);
+                    double allowed=requested;
+                    if(requested>1.0&&node.sideEnergy>1e-15)
+                        allowed=std::min(requested,std::max(1.0,
+                           std::sqrt(0.98*node.midEnergy/node.sideEnergy)));
+                    // Only the SIDE content in this ROOT is changed.
+                    s+=(allowed-1.0)*bandSide;
                 }
-                // Boundaries are solely frequency controls: no per-handle
-                // peaking EQ or hidden per-handle gain is applied.
-                if(usesTap){
-                    const double ae=1.0-correlationAlpha_;
-                    node.midEnergy+=ae*(tapM*tapM-node.midEnergy);
-                    node.sideEnergy+=ae*(tapS*tapS-node.sideEnergy);
-                    const double localWidth=spaceToWidth(c.space);
-                    double allowedLocalWidth=localWidth;
-                    if(localWidth>1.0&&node.sideEnergy>1e-15)
-                       allowedLocalWidth=std::min(localWidth,
-                         std::max(1.0,std::sqrt(0.98*node.midEnergy/node.sideEnergy)));
-                    const double widthDiff=(allowedLocalWidth-1.0)*tapS;
-                    if(listen)tapS+=widthDiff;else s+=widthDiff;
-                }
-                if(c.comp!=Compressor::off){
-                    const double ratio=c.comp==Compressor::optical4 || c.comp==Compressor::fet4?4.0:3.0;
+                if(c.comp!=Compressor::off) {
+                    const double ratio=c.comp==Compressor::optical4 ||
+                                      c.comp==Compressor::fet4?4.0:3.0;
                     const double atk=c.comp==Compressor::fet4?0.0008:
                           c.comp==Compressor::tube3?0.012:0.010;
                     const double rel=c.comp==Compressor::fet4?0.14:
                           c.comp==Compressor::tube3?0.32:0.65;
                     const double attack=std::exp(-1.0/(atk*sr_));
                     const double release=std::exp(-1.0/(rel*sr_));
-                    const double stereoPeak=std::max(std::abs(tapM+tapS),std::abs(tapM-tapS));
+                    const double stereoPeak=std::max(std::abs(tapM+tapS),
+                                                      std::abs(tapM-tapS));
                     const double level1=c.detector==Detector::mid?std::abs(tapM):
-                        c.detector==Detector::side?std::abs(tapS):
-                        c.detector==Detector::linked?stereoPeak:std::abs(tapM);
+                          c.detector==Detector::side?std::abs(tapS):
+                          c.detector==Detector::linked?stereoPeak:std::abs(tapM);
                     const double level2=c.detector==Detector::dual?std::abs(tapS):level1;
                     node.e1=follow(node.e1,level1,attack,release);
                     node.e2=follow(node.e2,level2,attack,release);
                     const double g1=compressGain(node.e1,c.thresholdDb,ratio,c.comp);
                     const double g2=compressGain(node.e2,c.thresholdDb,ratio,c.comp);
-                    const double mGain=c.detector==Detector::side?1.0:g1;
-                    const double sGain=c.detector==Detector::mid?1.0:
-                         c.detector==Detector::dual?g2:g1;
-                    greatestGr=std::max(greatestGr,-20.0*std::log10(std::max(1e-9,std::min(mGain,sGain))));
-                    if(listen){tapM*=mGain;tapS*=sGain;}
-                    else{m+=tapM*(mGain-1.0);s+=tapS*(sGain-1.0);}
+                    const double mg=c.detector==Detector::side?1.0:g1;
+                    const double sg=c.detector==Detector::mid?1.0:
+                          c.detector==Detector::dual?g2:g1;
+                    greatestGr=std::max(greatestGr,-20.0*std::log10(
+                        std::max(1e-9,std::min(mg,sg))));
+                    m+=tapM*(mg-1.0);
+                    s+=tapS*(sg-1.0);
                 }
             }
             if(!solo) {
@@ -231,6 +236,7 @@ public:
                 // not mathematically flat brick-wall frequency selection.
                 for(int root=0;root<kTerritories;++root) {
                     const double db=rootGainDb_[(size_t)root];
+                    if(!nodes_[(size_t)(root*2)].config.enabled)continue;
                     if(std::abs(db)<0.00001&&std::abs(smoothedRootDelta_[(size_t)root])<1.0e-8)continue;
                     const double delta=smoothedRootDelta_[(size_t)root];
                     if(delta==0.0)continue;
@@ -267,7 +273,8 @@ public:
                 allowed=std::min(globalWidth,
                     std::max(1.0,std::sqrt(0.98*globalMidPower_/globalSidePower_)));
             appliedSpace_=sideAlpha_*appliedSpace_+(1.0-sideAlpha_)*allowed;
-            if(mono_)appliedSpace_=0.0;
+            if(mono_ || (globalWidth==0.0 && appliedSpace_<1e-6))
+                appliedSpace_=0.0; // finish smoothed collapse at exact mono
             const double outL=m+appliedSpace_*s;
             const double outR=m-appliedSpace_*s;
             l[i]=(float)outL;r[i]=(float)outR;
@@ -299,6 +306,9 @@ private:
         auto& gainTap=rootGainBands_[(size_t)root].filters;
         gainTap[0].setEdge(sr_,low,true);gainTap[1].setEdge(sr_,high,false);
         gainTap[2].setEdge(sr_,low,true);gainTap[3].setEdge(sr_,high,false);
+        auto& fxTap=rootFxBands_[(size_t)root].filters;
+        fxTap[0].setEdge(sr_,low,true);fxTap[1].setEdge(sr_,high,false);
+        fxTap[2].setEdge(sr_,low,true);fxTap[3].setEdge(sr_,high,false);
     }
     void updateFilters(int i) noexcept {
         auto& n=nodes_[(size_t)i];
@@ -340,6 +350,7 @@ private:
     struct RootBand { std::array<Filter,4> filters; };
     std::array<RootBand,kTerritories> soloBands_{};
     std::array<RootBand,kTerritories> rootGainBands_{};
+    std::array<RootBand,kTerritories> rootFxBands_{};
     std::array<double,kTerritories> rootGainDb_{};
     std::array<double,kTerritories> smoothedRootDelta_{};
     double gainSmoothingAlpha_=0.99;

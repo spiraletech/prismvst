@@ -24,11 +24,11 @@ juce::Colour territory(int i){
     };
     return juce::Colour(hues[(size_t)juce::jlimit(0,6,i)]);
 }
-void rotary(juce::Slider& s,juce::String suffix) {
+void rotary(juce::Slider& s,juce::String suffix,double resetValue) {
     s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     s.setTextBoxStyle(juce::Slider::TextBoxBelow,false,87,18);
     s.setTextValueSuffix(suffix);
-    s.setDoubleClickReturnValue(true,0.0);
+    s.setDoubleClickReturnValue(true,resetValue);
 }
 }
 RootsGraph::RootsGraph(PRISMVSTAudioProcessor& owner):processor_(owner) {
@@ -88,6 +88,10 @@ void RootsGraph::selectNode(int i){
     if(onSelectNode)onSelectNode(selected_);
     repaint();
 }
+void RootsGraph::showRootMenu(int root){
+    selectNode(juce::jlimit(0,6,root)*2);
+    popup();
+}
 void RootsGraph::paint(juce::Graphics& g){
     const auto full=getLocalBounds().toFloat();
     const auto r=area();
@@ -131,7 +135,8 @@ void RootsGraph::paint(juce::Graphics& g){
     {
         zones[(size_t)node].hz=param(node,"hz");
         zones[(size_t)node].q=param(node,"q");
-        zones[(size_t)node].enabled=param(node,"on")>=0.5f;
+        zones[(size_t)node].enabled=pval(processor_.apvts,
+            PRISMVSTAudioProcessor::rootsRootControlId(node/2,"on"))>=0.5f;
     }
     // The visible coverage is defined by each ROOT's two boundary handles,
     // not Q distance or a fixed index/37 palette. Regions can intersect.
@@ -177,7 +182,8 @@ void RootsGraph::paint(juce::Graphics& g){
     for(int i=0;i<prism::roots::v2::kNodes;++i){
         const float hz=param(i,"hz");
         const float x=freqToX(hz),y=r.getCentreY();
-        const bool enabled=param(i,"on")>=0.5f;
+        const bool enabled=pval(processor_.apvts,
+            PRISMVSTAudioProcessor::rootsRootControlId(i/2,"on"))>=0.5f;
         const bool solo=pval(processor_.apvts,
              PRISMVSTAudioProcessor::rootsRootSoloId(i/2))>=0.5f;
         const auto col=territory(i/2);
@@ -258,57 +264,83 @@ void RootsGraph::mouseWheelMove(const juce::MouseEvent&,const juce::MouseWheelDe
     // Frequency boundaries cannot secretly change Q or gain via the wheel.
 }
 void RootsGraph::popup(){
+    const int root=selected_/2;
+    const auto rid=[root](const char* suffix){
+        return PRISMVSTAudioProcessor::rootsRootControlId(root,suffix);
+    };
+    const auto current=[this,&rid](const char* suffix){
+        return pval(processor_.apvts,rid(suffix));
+    };
     juce::PopupMenu menu;
-    menu.addSectionHeader("ROOT "+juce::String(selected_/2+1)+"  /  "+PRISMVSTAudioProcessor::sectionName(selected_/2));
-    menu.addItem(1,"ENABLED",true,param(selected_,"on")>=0.5f);
-    const auto rootSoloId=PRISMVSTAudioProcessor::rootsRootSoloId(selected_/2);
-    const bool rootSolo=pval(processor_.apvts,rootSoloId)>=0.5f;
-    menu.addItem(2,"SOLO ENTIRE ROOT / OFF",true,rootSolo);
+    menu.addSectionHeader("ROOT "+juce::String(root+1)+" / "+
+                          PRISMVSTAudioProcessor::sectionName(root));
+    menu.addItem(1,"ROOT ENABLED",true,current("on")>=0.5f);
+    const bool solo=pval(processor_.apvts,
+        PRISMVSTAudioProcessor::rootsRootSoloId(root))>=0.5f;
+    menu.addItem(2,"SOLO ENTIRE ROOT / OFF",true,solo);
     menu.addSeparator();
-    menu.addSectionHeader("EQ CHANNEL");
-    menu.addItem(10,"STEREO",true,param(selected_,"domain")<0.5f);
-    menu.addItem(11,"MID",true,juce::roundToInt(param(selected_,"domain"))==1);
-    menu.addItem(12,"SIDE",true,juce::roundToInt(param(selected_,"domain"))==2);
+    menu.addSectionHeader("ROOT STEREO / EQ DOMAIN");
+    menu.addItem(10,"STEREO",true,juce::roundToInt(current("domain"))==0);
+    menu.addItem(11,"MID",true,juce::roundToInt(current("domain"))==1);
+    menu.addItem(12,"SIDE",true,juce::roundToInt(current("domain"))==2);
     menu.addSeparator();
-    menu.addSectionHeader("DYNAMICS PROFILE (original models; no licensed emulation)");
-    static const char* names[]{"OFF","OPTICAL 3:1","OPTICAL 4:1","CLB1 TUBE 3:1","FET 4:1"};
-    for(int i=0;i<5;++i)menu.addItem(20+i,names[i],true,
-                               juce::roundToInt(param(selected_,"comp"))==i);
+    menu.addSectionHeader("ROOT COMPRESSOR MODEL");
+    static const char* names[]{"OFF","OPTICAL 3:1","OPTICAL 4:1",
+                               "CLB1 TUBE 3:1","FET 4:1"};
+    for(int i=0;i<5;++i)
+        menu.addItem(20+i,names[i],true,juce::roundToInt(current("comp"))==i);
     menu.addSeparator();
-    menu.addSectionHeader("COMPRESSOR STEREO DOMAIN");
+    menu.addSectionHeader("ROOT COMPRESSOR CHANNEL");
     static const char* dn[]{"STEREO LINK","DUAL MID/SIDE","MID ONLY","SIDE ONLY"};
-    for(int i=0;i<4;++i)menu.addItem(30+i,dn[i],true,
-                          juce::roundToInt(param(selected_,"detector"))==i);
+    for(int i=0;i<4;++i)
+        menu.addItem(30+i,dn[i],true,juce::roundToInt(current("detector"))==i);
     menu.addSeparator();
-    menu.addItem(40,"BAND MONO (SPACE 0)");
-    menu.addItem(41,"BAND NEUTRAL (SPACE 50)");
-    menu.addItem(42,"BAND WIDE (SPACE 100)");
+    menu.addItem(40,"ROOT SPACE: MONO (0)");
+    menu.addItem(41,"ROOT SPACE: NEUTRAL (50)");
+    menu.addItem(42,"ROOT SPACE: WIDE (100)");
     const juce::Component::SafePointer<RootsGraph> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
-        [safe](int id){
+        [safe,root](int id){
             if(safe==nullptr||id<=0)return;
             auto& graph=*safe;
-            const int n=graph.selected_;
-            if(id==1)graph.write(n,"on",graph.param(n,"on")>=0.5f?0.0f:1.0f);
-            if(id==2) {
-                const auto id=PRISMVSTAudioProcessor::rootsRootSoloId(n/2);
-                const bool engaged=pval(graph.processor_.apvts,id)>=0.5f;
-                change(graph.processor_,id,engaged?0.0f:1.0f);
+            const auto rid=[root](const char* suffix){
+                return PRISMVSTAudioProcessor::rootsRootControlId(root,suffix);
+            };
+            const auto value=[&graph,&rid](const char* suffix){
+                return pval(graph.processor_.apvts,rid(suffix));
+            };
+            const auto set=[&graph,&rid](const char* suffix,float v){
+                change(graph.processor_,rid(suffix),v);
+            };
+            if(id==1)set("on",value("on")>=0.5f?0.0f:1.0f);
+            if(id==2){
+                const auto key=PRISMVSTAudioProcessor::rootsRootSoloId(root);
+                const bool on=pval(graph.processor_.apvts,key)>=0.5f;
+                change(graph.processor_,key,on?0.0f:1.0f);
             }
-            if(id>=10&&id<=12)graph.write(n,"domain",(float)(id-10));
-            if(id>=20&&id<=24)graph.write(n,"comp",(float)(id-20));
-            if(id>=30&&id<=33)graph.write(n,"detector",(float)(id-30));
-            if(id>=40&&id<=42)graph.write(n,"space",(float)((id-40)*50));
+            if(id>=10&&id<=12)set("domain",(float)(id-10));
+            if(id>=20&&id<=24)set("comp",(float)(id-20));
+            if(id>=30&&id<=33)set("detector",(float)(id-30));
+            if(id>=40&&id<=42)set("space",(float)((id-40)*50));
             graph.repaint();
         });
 }
-
 RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
 : juce::AudioProcessorEditor(&p),processor_(p),graph_(p) {
     setSize(1120,755);setResizable(true,true);
     setResizeLimits(840,610,1800,1100);
     addAndMakeVisible(graph_);
     graph_.onSelectNode=[this](int n){bindNode(n);};
+    for(int root=0;root<7;++root){
+        auto& b=rootButtons_[(size_t)root];
+        b.setButtonText("ROOT "+juce::String(root+1)+"  "+
+            PRISMVSTAudioProcessor::sectionName(root));
+        b.onClick=[this,root](){graph_.selectNode(root*2);};
+        b.onContext=[this,root](){graph_.showRootMenu(root);};
+        b.setColour(juce::TextButton::textColourOffId,
+                    juce::Colour::fromRGB(192,213,220));
+        addAndMakeVisible(b);
+    }
     for(auto* label:{&title_,&selection_,&status_,&gainLabel_,&bandSpaceLabel_,
                      &spaceLabel_,&thresholdLabel_}){
         addAndMakeVisible(*label);
@@ -317,16 +349,20 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     title_.setText("PRISM  /  ROOTS PROTO 001",juce::dontSendNotification);
     title_.setFont(juce::Font(juce::FontOptions(25.0f,juce::Font::bold)));
     for(auto* s:{&gain_,&bandSpace_,&space_,&threshold_}){
-        addAndMakeVisible(*s);rotary(*s,"");
+        addAndMakeVisible(*s);rotary(*s,"",s==&gain_?0.0:
+             s==&threshold_?-18.0:50.0);
         s->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour::fromRGB(143,192,204));
         s->setColour(juce::Slider::rotarySliderOutlineColourId,juce::Colour::fromRGB(38,55,65));
         s->setColour(juce::Slider::textBoxTextColourId,juce::Colour::fromRGB(239,243,245));
         s->setColour(juce::Slider::textBoxBackgroundColourId,juce::Colour::fromRGB(13,19,25));
         s->setColour(juce::Slider::textBoxOutlineColourId,juce::Colour::fromRGB(38,55,65));
     }
-    gainLabel_.setText("ROOT GAIN  ±60 dB",juce::dontSendNotification);
-    bandSpaceLabel_.setText("BAND SPACE",juce::dontSendNotification);
-    spaceLabel_.setText("MASTER SPACE",juce::dontSendNotification);
+    gainLabel_.setText("ROOT GAIN (dB)",juce::dontSendNotification);
+    gain_.setTooltip("Entire ROOT frequency range gain: -60 to +60 dB");
+    bandSpaceLabel_.setText("ROOT SPACE",juce::dontSendNotification);
+    spaceLabel_.setText("STEREO SPACE",juce::dontSendNotification);
+    bandSpace_.setTooltip("Selected ROOT only: 0 mono, 50 neutral, 100 wide");
+    space_.setTooltip("Global stereo: 0 mono, 50 neutral, 100 widened if phase permits");
     thresholdLabel_.setText("COMP THRESHOLD",juce::dontSendNotification);
     for(auto* b:{&mono_,&on_,&solo_})addAndMakeVisible(*b);
     monoA_=std::make_unique<ButtonA>(processor_.apvts,"roots_mono",mono_);
@@ -339,21 +375,40 @@ void RootsEditor::bindNode(int n){
     node_=juce::jlimit(0,prism::roots::v2::kNodes-1,n);
     gainA_.reset();bandSpaceA_.reset();thresholdA_.reset();
     onA_.reset();soloA_.reset();
-    const auto id=[this](const char* suffix){
-        return PRISMVSTAudioProcessor::rootsNodeId(node_,suffix);
+    const auto rid=[this](const char* suffix){
+        return PRISMVSTAudioProcessor::rootsRootControlId(node_/2,suffix);
     };
     gainA_=std::make_unique<SliderA>(processor_.apvts,
        PRISMVSTAudioProcessor::rootsRootGainId(node_/2),gain_);
-    bandSpaceA_=std::make_unique<SliderA>(processor_.apvts,id("space"),bandSpace_);
-    thresholdA_=std::make_unique<SliderA>(processor_.apvts,id("threshold"),threshold_);
-    onA_=std::make_unique<ButtonA>(processor_.apvts,id("on"),on_);
+    bandSpaceA_=std::make_unique<SliderA>(processor_.apvts,rid("space"),bandSpace_);
+    thresholdA_=std::make_unique<SliderA>(processor_.apvts,rid("threshold"),threshold_);
+    onA_=std::make_unique<ButtonA>(processor_.apvts,rid("on"),on_);
     soloA_=std::make_unique<ButtonA>(processor_.apvts,
         PRISMVSTAudioProcessor::rootsRootSoloId(node_/2),solo_);
     selection_.setText("ROOT "+juce::String(node_/2+1)+" / "+
         PRISMVSTAudioProcessor::sectionName(node_/2)+
-        "  HANDLE "+juce::String(node_%2+1),juce::dontSendNotification);
+        "  BOUNDARY "+juce::String(node_%2+1),juce::dontSendNotification);
+    updateRootButtons();
+}
+void RootsEditor::updateRootButtons(){
+    for(int root=0;root<7;++root){
+        const bool selected=graph_.selectedNode()/2==root;
+        auto& button=rootButtons_[(size_t)root];
+        button.setToggleState(selected,juce::dontSendNotification);
+        button.setColour(juce::TextButton::buttonOnColourId,
+            territory(root).withAlpha(0.52f));
+        button.setColour(juce::TextButton::buttonColourId,
+            juce::Colour::fromRGB(22,32,41));
+    }
 }
 void RootsEditor::timerCallback(){
+    // Threshold has no audio effect unless an actual compressor model is selected.
+    const int comp=juce::roundToInt(pval(processor_.apvts,
+         PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp")));
+    threshold_.setEnabled(comp!=0);
+    thresholdLabel_.setText(comp==0?"THRESHOLD (COMP OFF)":"COMP THRESHOLD",
+                            juce::dontSendNotification);
+    updateRootButtons();
     std::array<float,PRISMVSTAudioProcessor::labBars> bars{},peaks{};
     processor_.copyPrismLabBars(bars,peaks);
     graph_.updateAnalyzer(bars,peaks);
@@ -383,13 +438,18 @@ void RootsEditor::paint(juce::Graphics& g){
     g.drawRoundedRectangle(15.0f,(float)bottomY,(float)getWidth()-30.0f,123.0f,9.0f,1.0f);
     g.setColour(juce::Colour::fromRGB(142,162,172));
     g.setFont(juce::Font(juce::FontOptions(10.0f)));
-    g.drawText("L-DRAG HANDLE: HORIZONTAL FREQUENCY ONLY   /   ROOT GAIN BELOW   /   RIGHT-CLICK: COMP + M/S + ROOT SOLO",
+    g.drawText("SELECT ROOT ABOVE  /  DRAG Hz BOUNDARIES  /  RIGHT-CLICK ROOT: SPACE, STEREO & COMP",
                24,getHeight()-28,getWidth()-48,18,juce::Justification::centredLeft);
 }
 void RootsEditor::resized(){
     const int w=getWidth(),h=getHeight();
     title_.setBounds(35,13,330,37);
-    graph_.setBounds(16,58,w-32,h-238);
+    const int buttonY=59,buttonGap=6,buttonX=18;
+    const int buttonW=(w-36-6*buttonGap)/7;
+    for(int root=0;root<7;++root)
+        rootButtons_[(size_t)root].setBounds(
+            buttonX+root*(buttonW+buttonGap),buttonY,buttonW,30);
+    graph_.setBounds(16,97,w-32,h-277);
     const int panelY=h-153;
     selection_.setBounds(31,panelY+2,210,26);
     status_.setBounds(w-450,panelY+2,425,27);

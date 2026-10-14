@@ -120,9 +120,12 @@ int main(){
         Engine engine(sr);std::vector<float> l(n),r(n);
         sine(l,r,1000,0.65);
         const double dry=rms(l);
-        Config c=engine.get(0);c.hz=1000;c.q=2.0;c.comp=Compressor::fet4;
+        // Test inside the ROOT passband, not at the 2-pole filter
+        // crossover where partial cancellation can raise broadband RMS.
+        Config c=engine.get(0);c.hz=200;c.q=2.0;c.comp=Compressor::fet4;
         c.thresholdDb=-30.0;c.detector=Detector::linked;
         engine.config(0,c);
+        auto upper=engine.get(1);upper.hz=3000.0;engine.config(1,upper);
         engine.process(l.data(),r.data(),n);
         if(!(rms(l)<dry*0.96 && engine.meter().largestGrDb>1.0)){
             std::cerr<<"D FAIL compression "<<rms(l)<<" / "<<dry<<"\n";return 4;
