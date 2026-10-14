@@ -49,7 +49,7 @@ int main(){
     {
         Engine plain(sr),collapsed(sr);
         bounds(plain);bounds(collapsed);
-        auto c=collapsed.get(0);c.space=0.0;collapsed.config(0,c);
+        auto c=collapsed.get(0);c.space=0.0;c.domain=Domain::mid;collapsed.config(0,c);
         std::vector<float> l(N),r(N),l2(N),r2(N);
         fill(l,r);fill(l2,r2);
         plain.process(l.data(),r.data(),N);
@@ -58,7 +58,7 @@ int main(){
         if(!(original>1e-3&&narrow<original*0.75)){
            std::cerr<<"P2 ROOT space didn't narrow band "<<narrow<<"/"<<original<<"\n";return 2;
         }
-        std::cout<<"P2 PASS: one ROOT SPACE controls entire boundary interval\n";
+        std::cout<<"P2 PASS: ROOT SPACE still works with MID-only compressor domain\n";
     }
     // Proof 3: root compressor responds to its threshold, not per-handle
     // knobs, and has real measured gain reduction.
