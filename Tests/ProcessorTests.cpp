@@ -94,6 +94,32 @@ int main()
         if(!setActual(p,soloId(5),0.0f)||p.getActiveRootsSolo()!=-1)return 1;
         std::cerr<<"ROOTS parent SOLO proof passed: sibling stable, root transfer, exclusive OFF\n";
     }
+    // ROOTS UI/host contract: every effect belongs to one of seven ROOTS,
+    // never to one of fourteen frequency-boundary handles.
+    {
+        PRISMVSTAudioProcessor p;
+        for(int root=0;root<PRISMVSTAudioProcessor::numSections;++root){
+            for(const char* suffix:{"on","space","threshold","comp","domain","detector"})
+                if(p.apvts.getParameter(
+                    PRISMVSTAudioProcessor::rootsRootControlId(root,suffix))==nullptr){
+                    std::cerr<<"ROOT parent parameter missing: "<<suffix<<"\n";
+                    return 1;
+                }
+            if(p.apvts.getParameter(PRISMVSTAudioProcessor::rootsRootGainId(root))==nullptr)
+                return 1;
+        }
+        const auto root0=PRISMVSTAudioProcessor::rootsRootControlId(0,"space");
+        const auto root1=PRISMVSTAudioProcessor::rootsRootControlId(1,"space");
+        if(!setActual(p,root0,5.0f) ||
+           p.apvts.getRawParameterValue(root0)->load()!=5.0f ||
+           p.apvts.getRawParameterValue(root1)->load()!=50.0f)
+            return 1;
+        // The global stereo-space control is independent of selected ROOT.
+        if(!setActual(p,"roots_space",0.0f) ||
+           p.apvts.getRawParameterValue("roots_space")->load()!=0.0f)
+            return 1;
+        std::cerr<<"ROOTS parent control IDs, independence, and stereo-space passed\n";
+    }
     std::cerr << "TEST 1 schema" << std::endl;
     // -------------------------------------------------------------------------
     // Contract: seven named sections, six crossovers, no legacy master bypass.
