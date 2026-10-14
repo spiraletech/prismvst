@@ -182,13 +182,15 @@ public:
                                         std::abs(c.space-50.0)>1e-5;
                 if(!wantsEffects)continue;
                 auto& tap=rootFxBands_[(size_t)root].filters;
-                double tapM=c.domain==Domain::side?0.0:
-                    tap[1].sample(tap[0].sample(dryM));
-                double tapS=c.domain==Domain::mid?0.0:
-                    tap[3].sample(tap[2].sample(dryS));
+                // Keep both components measurable for phase-safe SPACE,
+                // even if compression was restricted to MID or SIDE.
+                const double bandMid=tap[1].sample(tap[0].sample(dryM));
+                const double bandSide=tap[3].sample(tap[2].sample(dryS));
+                const double tapM=c.domain==Domain::side?0.0:bandMid;
+                const double tapS=c.domain==Domain::mid?0.0:bandSide;
                 const double ea=1.0-correlationAlpha_;
-                node.midEnergy+=ea*(tapM*tapM-node.midEnergy);
-                node.sideEnergy+=ea*(tapS*tapS-node.sideEnergy);
+                node.midEnergy+=ea*(bandMid*bandMid-node.midEnergy);
+                node.sideEnergy+=ea*(bandSide*bandSide-node.sideEnergy);
                 if(std::abs(c.space-50.0)>1e-5){
                     const double requested=spaceToWidth(c.space);
                     double allowed=requested;
@@ -196,7 +198,7 @@ public:
                         allowed=std::min(requested,std::max(1.0,
                            std::sqrt(0.98*node.midEnergy/node.sideEnergy)));
                     // Only the SIDE content in this ROOT is changed.
-                    s+=(allowed-1.0)*tapS;
+                    s+=(allowed-1.0)*bandSide;
                 }
                 if(c.comp!=Compressor::off) {
                     const double ratio=c.comp==Compressor::optical4 ||
