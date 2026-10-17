@@ -91,11 +91,14 @@ private:
     juce::ComboBox analyzerDepth_;
     juce::TextButton heatToggle_{"SONAR ON"},freezeButton_{"FREEZE"};
     juce::TextButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};
-    juce::TextButton themeButton_{"THEME"},dynButton_{"DYN OFF"};
+    juce::TextButton themeButton_{"THEME"};
     int themeIndex_=0,mode_=0,carveSlot_=0;
     std::array<juce::TextButton,4> modeButtons_;
     std::array<juce::TextButton,4> carveSlotButtons_;
     juce::Slider carveFrequency_,carveDepth_,carveQ_,carveThreshold_;
+    std::array<juce::Slider,4> onyxSliders_;
+    std::array<juce::Label,4> onyxLabels_;
+    std::array<std::unique_ptr<SliderA>,4> onyxAttachments_;
     juce::TextButton carveOn_{"CARVE ON"},carveDynamic_{"DYNAMIC"};
     juce::Label carveFrequencyLabel_,carveDepthLabel_,carveQLabel_,carveThresholdLabel_;
     std::unique_ptr<SliderA> carveFrequencyA_,carveDepthA_,carveQA_,carveThresholdA_;
