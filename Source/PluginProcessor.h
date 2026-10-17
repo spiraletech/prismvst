@@ -19,6 +19,7 @@ public:
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
+    juce::AudioProcessorParameter* getBypassParameter() const override { return apvts.getParameter("master_bypass"); }
 
     const juce::String getName() const override { return "PRISMVST"; }
     bool acceptsMidi() const override { return false; }
@@ -50,9 +51,14 @@ private:
         std::array<juce::dsp::IIR::Filter<float>, 2> detector;
         float envelope = 0.0f;
         float smoothedGainDb = 0.0f;
+        int controlCountdown = 0;
+        float frequency = 1000.0f, q = 0.85f, gain = 0.0f;
+        juce::SmoothedValue<float> enabledMix;
+        std::array<std::atomic<float>*, 9> parameters {};
     };
 
     std::array<DynamicBand, numEqBands> bands;
+    std::array<std::atomic<float>*, 7> globals {};
     std::array<juce::dsp::IIR::Filter<float>, 2> loudHp;
     std::array<juce::dsp::IIR::Filter<float>, 2> loudShelf;
 
@@ -65,6 +71,8 @@ private:
     std::array<std::atomic<float>, spectrumBins> spectrum {};
 
     double currentSampleRate = 44100.0;
+    juce::SmoothedValue<float> trimGain;
+    std::array<juce::SmoothedValue<float>, 4> onyxControls;
     double integratedEnergy = 0.0;
     uint64_t integratedSamples = 0;
 

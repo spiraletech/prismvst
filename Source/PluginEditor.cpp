@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include <cmath>
+#include <complex>
 
 namespace
 {
@@ -157,6 +158,13 @@ SpectrumDisplay::SpectrumDisplay(PRISMVSTAudioProcessor& p)
     auraPersistence.fill(0.0f);
     setMouseCursor(juce::MouseCursor::CrosshairCursor);
     setRepaintsOnMouseActivity(true);
+}
+
+SpectrumDisplay::~SpectrumDisplay()
+{
+    if (dragging)
+        for (const auto* suffix : { "freq", "gain" })
+            processor.apvts.getParameter(bandId(selectedBand, suffix))->endChangeGesture();
 }
 
 juce::Rectangle<float> SpectrumDisplay::graphBounds() const
@@ -411,6 +419,43 @@ void SpectrumDisplay::paint(juce::Graphics& g)
                  juce::PathStrokeType(1.45f, juce::PathStrokeType::curved,
                                       juce::PathStrokeType::rounded));
 
+    // Static EQ response uses the same biquad design as the audio processor.
+    const double sampleRate = processor.getSampleRate() > 1 ? processor.getSampleRate() : 48000.0;
+    juce::Path response;
+    for (int px = 0; px <= (int)b.getWidth(); px += 2)
+    {
+        const float x = b.getX() + (float)px;
+        const float f = juce::jmin(xToFrequency(x), (float)sampleRate * 0.45f);
+        double magnitude = 1.0;
+        const auto z = std::exp(std::complex<double>(0, -juce::MathConstants<double>::twoPi * f / sampleRate));
+        for (int band = 0; band < PRISMVSTAudioProcessor::numEqBands; ++band)
+        {
+            if (parameter(bandId(band, "enabled")) < 0.5f) continue;
+            const auto coeff = juce::dsp::IIR::ArrayCoefficients<float>::makePeakFilter(sampleRate,
+                juce::jmin(parameter(bandId(band, "freq")), (float)sampleRate * 0.45f),
+                parameter(bandId(band, "q")), juce::Decibels::decibelsToGain(parameter(bandId(band, "gain"))));
+            magnitude *= std::abs(((double)coeff[0] + (double)coeff[1]*z + (double)coeff[2]*z*z)
+                               / ((double)coeff[3] + (double)coeff[4]*z + (double)coeff[5]*z*z));
+        }
+        const float db = (float)(20.0 * std::log10(juce::jmax(1.0e-12, magnitude)));
+        const float y = juce::jmap(juce::jlimit(-18.0f, 18.0f, db), -18.0f, 18.0f, b.getBottom(), b.getY());
+        if (px == 0) response.startNewSubPath(x, y); else response.lineTo(x, y);
+    }
+    const juce::Colour responseColour(0xffe8bb78);
+    g.setColour(responseColour);
+    g.strokePath(response, juce::PathStrokeType(2.0f));
+    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+    g.drawText("EQ +18 / 0 / -18 dB  |  drag nodes to edit", b.toNearestInt().removeFromTop(18), juce::Justification::centredRight);
+    for (int band = 0; band < PRISMVSTAudioProcessor::numEqBands; ++band)
+    {
+        const float x = frequencyToX(parameter(bandId(band, "freq")));
+        const float y = juce::jmap(parameter(bandId(band, "gain")), -18.0f, 18.0f, b.getBottom(), b.getY());
+        g.setColour(parameter(bandId(band, "enabled")) >= 0.5f ? responseColour : kMuted);
+        g.fillEllipse(x - 7, y - 7, 14, 14);
+        if (band == selectedBand) g.drawEllipse(x - 11, y - 11, 22, 22, 1.5f);
+        g.setColour(kBlack);
+        g.drawText(juce::String(band + 1), (int)x - 7, (int)y - 7, 14, 14, juce::Justification::centred);
+    }
     g.setColour(kBorder.withAlpha(0.76f));
     g.drawRoundedRectangle(b, 4.0f, 1.0f);
 
@@ -443,6 +488,47 @@ void SpectrumDisplay::paint(juce::Graphics& g)
     }
 }
 
+void SpectrumDisplay::mouseDown(const juce::MouseEvent& e)
+{
+    if (!graphBounds().contains(e.position)) return;
+    float nearest = 24.0f;
+    int hit = -1;
+    for (int band = 0; band < PRISMVSTAudioProcessor::numEqBands; ++band)
+    {
+        const auto b = graphBounds();
+        const juce::Point<float> point(frequencyToX(parameter(bandId(band, "freq"))),
+            juce::jmap(parameter(bandId(band, "gain")), -18.0f, 18.0f, b.getBottom(), b.getY()));
+        const float distance = point.getDistanceFrom(e.position);
+        if (distance < nearest) { nearest = distance; hit = band; }
+    }
+    if (hit < 0) return;
+    setSelectedBand(hit);
+    if (onBandSelected) onBandSelected(hit);
+    dragging = true;
+    for (const auto* suffix : { "freq", "gain" })
+        processor.apvts.getParameter(bandId(selectedBand, suffix))->beginChangeGesture();
+}
+
+void SpectrumDisplay::mouseDrag(const juce::MouseEvent& e)
+{
+    if (!dragging) return;
+    const auto b = graphBounds();
+    auto* frequency = processor.apvts.getParameter(bandId(selectedBand, "freq"));
+    auto* gain = processor.apvts.getParameter(bandId(selectedBand, "gain"));
+    frequency->setValueNotifyingHost(frequency->convertTo0to1(xToFrequency(e.position.x)));
+    gain->setValueNotifyingHost(gain->convertTo0to1(juce::jmap(juce::jlimit(b.getY(), b.getBottom(), e.position.y),
+        b.getBottom(), b.getY(), -18.0f, 18.0f)));
+    repaint();
+}
+
+void SpectrumDisplay::mouseUp(const juce::MouseEvent&)
+{
+    if (!dragging) return;
+    for (const auto* suffix : { "freq", "gain" })
+        processor.apvts.getParameter(bandId(selectedBand, suffix))->endChangeGesture();
+    dragging = false;
+}
+
 void SpectrumDisplay::mouseMove(const juce::MouseEvent& e)
 {
     hoverPoint = e.position;
@@ -468,9 +554,6 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
 {
     setLookAndFeel(&lookAndFeel);
     setOpaque(true);
-    setResizable(true, true);
-    setResizeLimits(1080, 700, 1800, 1200);
-    setSize(1360, 880);
 
     for (int i = 0; i < PRISMVSTAudioProcessor::numEqBands; ++i)
     {
@@ -500,6 +583,25 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
     addAndMakeVisible(releaseSlider);
     addAndMakeVisible(onyxSlider);
 
+    const char* detailNames[] = { "Q / WIDTH", "THRESHOLD", "RATIO", "DRIVE", "BIAS", "DENSITY", "OUTPUT", "SAMPLE CEILING" };
+    const char* detailUnits[] = { "", " dB", ":1", " dB", "", "", " dB", " dB" };
+    const double defaults[] = { 0.85, -18.0, 2.0, 3.0, 0.05, 0.35, 0.0, -0.3 };
+    for (size_t i = 0; i < detailSliders.size(); ++i)
+    {
+        configureKnob(detailSliders[i], detailUnits[i], defaults[i]);
+        detailSliders[i].setName(detailNames[i]);
+        detailSliders[i].setTooltip(detailNames[i]);
+        addAndMakeVisible(detailSliders[i]);
+        detailLabels[i].setText(detailNames[i], juce::dontSendNotification);
+        detailLabels[i].setColour(juce::Label::textColourId, kMuted);
+        detailLabels[i].setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(detailLabels[i]);
+    }
+    const char* globalIds[] = { "onyx_drive", "onyx_bias", "onyx_density", "master_trim", "ceiling" };
+    for (size_t i = 0; i < 5; ++i)
+        detailAttachments[i + 3] = std::make_unique<SliderAttachment>(processor.apvts, globalIds[i], detailSliders[i + 3]);
+    onyxSlider.setTextValueSuffix("");
+    onyxSlider.setTooltip("ONYX wet amount: 0 = dry, 1 = fully engaged");
     configureLever();
     addAndMakeVisible(precisionLever);
 
@@ -509,7 +611,7 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
 
     statusLabel.setColour(juce::Label::textColourId, kMuted);
     statusLabel.setFont(juce::Font(juce::FontOptions(10.0f)));
-    statusLabel.setText("stable DSP  •  analyzer 0 to -36 dBFS  •  4.5 dB/oct display slope  •  no scrolling",
+    statusLabel.setText("DYNAMIC EQ  /  linked stereo  /  zero latency",
                         juce::dontSendNotification);
     addAndMakeVisible(statusLabel);
 
@@ -526,7 +628,13 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
     onyxA = std::make_unique<SliderAttachment>(processor.apvts, "onyx", onyxSlider);
     bypassA = std::make_unique<ButtonAttachment>(processor.apvts, "master_bypass", bypassButton);
 
+    spectrumDisplay.onBandSelected = [this](int band) { bindSelectedBand(band); };
     bindSelectedBand(0);
+    // Resizing invokes resized() immediately; all child controls must exist first.
+    setResizable(true, true);
+    setResizeLimits(1080, 820, 1800, 1200);
+    setSize(1280, 920);
+    timerCallback();
     startTimerHz(30);
 }
 
@@ -587,6 +695,13 @@ void PRISMVSTAudioProcessorEditor::bindSelectedBand(int band)
     enabledA = std::make_unique<ButtonAttachment>(
         processor.apvts, bandId(selectedBand, "enabled"), enabledButton);
 
+    const char* ids[] = { "q", "threshold", "ratio" };
+    for (size_t i = 0; i < 3; ++i)
+    {
+        detailAttachments[i].reset();
+        detailAttachments[i] = std::make_unique<SliderAttachment>(processor.apvts, bandId(selectedBand, ids[i]), detailSliders[i]);
+    }
+    frequencySlider.setDoubleClickReturnValue(true, std::array<double, 6>{60, 120, 400, 1200, 4000, 10000}[(size_t)selectedBand]);
     updatePrecisionSensitivity();
     repaint();
 }
@@ -612,9 +727,9 @@ void PRISMVSTAudioProcessorEditor::timerCallback()
 
     peakLabel.setText("PEAK  " + juce::String(processor.getPeakDb(), 1) + " dBFS",
                       juce::dontSendNotification);
-    lufsShortLabel.setText("LUFS-S  " + juce::String(processor.getLufsShort(), 1),
+    lufsShortLabel.setText("WTD BLOCK  " + juce::String(processor.getLufsShort(), 1),
                            juce::dontSendNotification);
-    lufsIntegratedLabel.setText("LUFS-I  " + juce::String(processor.getLufsIntegrated(), 1),
+    lufsIntegratedLabel.setText("WTD AVG  " + juce::String(processor.getLufsIntegrated(), 1),
                                 juce::dontSendNotification);
 
     repaint();
@@ -683,14 +798,14 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
 
     g.setColour(kCyan);
     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-    g.drawText("RECOVERY 001   v0.3.4",
+    g.drawText("DYNAMIC EQ   v0.4.0",
                header.withTrimmedLeft(178.0f).withWidth(175.0f).toNearestInt(),
                juce::Justification::centredLeft);
 
     g.setColour(kMuted);
     g.setFont(juce::Font(juce::FontOptions(9.5f)));
-    g.drawText("ETHERTECH  /  STABLE DYNAMIC EQ CORE  /  HARDWARE SHELF UI",
-               header.withTrimmedLeft(370.0f).withWidth(470.0f).toNearestInt(),
+    g.drawText("SPIRAL ETHER TECH",
+               header.withTrimmedLeft(370.0f).withWidth(170.0f).toNearestInt(),
                juce::Justification::centredLeft);
 
     const auto tabsPanel = juce::Rectangle<float>(
@@ -698,20 +813,20 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
     paintMetalPanel(g, tabsPanel, false);
 
     const auto graphPanel = juce::Rectangle<float>(
-        12.0f, 114.0f, bounds.getWidth() - 98.0f, bounds.getHeight() - 362.0f);
+        12.0f, 114.0f, bounds.getWidth() - 98.0f, bounds.getHeight() - 502.0f);
     paintMetalPanel(g, graphPanel, false);
 
     const auto meterPanel = juce::Rectangle<float>(
-        bounds.getWidth() - 78.0f, 114.0f, 66.0f, bounds.getHeight() - 362.0f);
+        bounds.getWidth() - 78.0f, 114.0f, 66.0f, bounds.getHeight() - 502.0f);
     paintMetalPanel(g, meterPanel, false);
     paintMeter(g, meterPanel.reduced(18.0f, 34.0f), processor.getPeakDb());
 
     const auto infoPanel = juce::Rectangle<float>(
-        12.0f, bounds.getHeight() - 240.0f, bounds.getWidth() - 24.0f, 34.0f);
+        12.0f, bounds.getHeight() - 380.0f, bounds.getWidth() - 24.0f, 34.0f);
     paintMetalPanel(g, infoPanel, false);
 
     const auto controlPanel = juce::Rectangle<float>(
-        12.0f, bounds.getHeight() - 200.0f, bounds.getWidth() - 24.0f, 188.0f);
+        12.0f, bounds.getHeight() - 340.0f, bounds.getWidth() - 24.0f, 328.0f);
     paintMetalPanel(g, controlPanel, true);
 
     for (auto p : {
@@ -727,7 +842,7 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
         g.drawLine(p.x - 2.5f, p.y, p.x + 2.5f, p.y, 1.0f);
     }
 
-    const int controlY = getHeight() - 188;
+    const int controlY = getHeight() - 328;
     const int availableWidth = getWidth() - 170;
     const int cellWidth = availableWidth / 6;
 
@@ -747,7 +862,7 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
             g.setColour(juce::Colour(0xff59636a).withAlpha(0.36f));
             g.drawVerticalLine(x,
                                (float)controlY + 18.0f,
-                               (float)getHeight() - 28.0f);
+                               (float)getHeight() - 180.0f);
             g.setColour(kText.withAlpha(0.88f));
         }
     }
@@ -781,14 +896,14 @@ void PRISMVSTAudioProcessorEditor::resized()
             30);
     }
 
-    spectrumDisplay.setBounds(18, 120, w - 110, h - 374);
+    spectrumDisplay.setBounds(18, 120, w - 110, h - 514);
 
-    selectedBandLabel.setBounds(28, h - 235, 90, 26);
-    statusLabel.setBounds(112, h - 235, w - 390, 26);
-    enabledButton.setBounds(w - 176, h - 232, 72, 24);
-    bypassButton.setBounds(w - 98, h - 232, 70, 24);
+    selectedBandLabel.setBounds(28, h - 375, 90, 26);
+    statusLabel.setBounds(112, h - 375, w - 390, 26);
+    enabledButton.setBounds(w - 176, h - 372, 72, 24);
+    bypassButton.setBounds(w - 98, h - 372, 70, 24);
 
-    const int controlTop = h - 174;
+    const int controlTop = h - 314;
     const int availableWidth = w - 170;
     const int cellWidth = availableWidth / 6;
     const int knobSize = juce::jmin(126, cellWidth - 18);
@@ -805,4 +920,11 @@ void PRISMVSTAudioProcessorEditor::resized()
     }
 
     precisionLever.setBounds(w - 126, controlTop + 8, 72, 126);
+    const int detailWidth = (w - 48) / 8;
+    for (size_t i = 0; i < detailSliders.size(); ++i)
+    {
+        const int x = 24 + (int)i * detailWidth;
+        detailLabels[i].setBounds(x, h - 164, detailWidth, 22);
+        detailSliders[i].setBounds(x + (detailWidth - 106) / 2, h - 142, 106, 120);
+    }
 }

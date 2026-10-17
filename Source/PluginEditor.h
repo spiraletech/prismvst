@@ -30,10 +30,15 @@ class SpectrumDisplay final : public juce::Component
 {
 public:
     explicit SpectrumDisplay(PRISMVSTAudioProcessor&);
+    ~SpectrumDisplay() override;
 
     void paint(juce::Graphics&) override;
     void mouseMove(const juce::MouseEvent&) override;
     void mouseExit(const juce::MouseEvent&) override;
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    std::function<void(int)> onBandSelected;
 
     void pushSpectrum(const std::array<float, PRISMVSTAudioProcessor::spectrumBins>&);
     void setSelectedBand(int band);
@@ -46,6 +51,7 @@ private:
     std::array<float, 192> auraPersistence {};
     juce::Point<float> hoverPoint {};
     bool hovering = false;
+    bool dragging = false;
 
     juce::Rectangle<float> graphBounds() const;
     float frequencyToX(float frequency) const;
@@ -91,6 +97,9 @@ private:
     juce::Slider onyxSlider;
     juce::Slider precisionLever;
 
+    std::array<juce::Slider, 8> detailSliders;
+    std::array<juce::Label, 8> detailLabels;
+    std::array<std::unique_ptr<SliderAttachment>, 8> detailAttachments;
     juce::Label selectedBandLabel;
     juce::Label statusLabel;
     juce::Label peakLabel;

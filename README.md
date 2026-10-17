@@ -1,5 +1,9 @@
 # PRISMVST
 
+## v0.4.0 development update
+
+See [CHANGES-0.4.md](CHANGES-0.4.md) for the current interface, DSP repairs, validation coverage and release limitations. The v0.3.4 notes below describe the previous recovery build.
+
 PRISMVST is EtherTech / SpiralEtech's Windows-first VST3 frequency-specialized dynamic EQ and spectral shaping processor for FL Studio.
 
 ## v0.3.4 recovery build
