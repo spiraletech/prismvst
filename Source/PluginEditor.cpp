@@ -555,7 +555,10 @@ void PRISMVSTAudioProcessorEditor::configureKnob(juce::Slider& slider,
     slider.setTextValueSuffix(suffix);
     slider.setNumDecimalPlacesToDisplay(decimals);
     slider.setDoubleClickReturnValue(true, defaultValue);
-    slider.setMouseDragSensitivity(320);
+    slider.setMouseDragSensitivity(500);
+    slider.setVelocityBasedMode(false);
+    slider.setRotaryParameters(juce::MathConstants<float>::pi * 1.25f,
+                               juce::MathConstants<float>::pi * 2.75f, true);
 }
 
 void PRISMVSTAudioProcessorEditor::configureLever()
