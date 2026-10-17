@@ -99,7 +99,7 @@ private:
     std::unique_ptr<SliderA> carveFrequencyA_,carveDepthA_,carveQA_,carveThresholdA_;
     std::unique_ptr<ButtonA> carveOnA_,carveDynamicA_;
     juce::Label title_,selection_,status_,gainLabel_,thresholdLabel_,
-        analyzerDepthLabel_,analyzerSlopeLabel_,analyzerMemoryLabel_;
+        analyzerDepthLabel_,analyzerSlopeLabel_,analyzerMemoryLabel_,assistEvidenceLabel_;
     using ComboA=juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     std::unique_ptr<SliderA> gainA_,thresholdA_,analyzerSlopeA_,analyzerMemoryA_;
     std::unique_ptr<ComboA> analyzerDepthA_;

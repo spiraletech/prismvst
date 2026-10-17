@@ -645,13 +645,15 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     for(auto* label:{&title_,&selection_,&status_,&gainLabel_,
                      &thresholdLabel_,&carveFrequencyLabel_,&carveDepthLabel_,
                      &carveQLabel_,&carveThresholdLabel_,&analyzerDepthLabel_,
-                     &analyzerSlopeLabel_,&analyzerMemoryLabel_}){
+                     &analyzerSlopeLabel_,&analyzerMemoryLabel_,&assistEvidenceLabel_}){
         addAndMakeVisible(*label);
         label->setColour(juce::Label::textColourId,juce::Colour::fromRGB(205,224,229));
         label->setFont(juce::Font(juce::FontOptions("Segoe UI",12.0f,juce::Font::plain)));
         label->setJustificationType(juce::Justification::centredLeft);
     }
     title_.setText("SURGERY EQ  /  v1.0",juce::dontSendNotification);
+    assistEvidenceLabel_.setFont(juce::Font(juce::FontOptions("Segoe UI",11.0f,juce::Font::plain)));
+    assistEvidenceLabel_.setText("ASSIST  /  WAITING FOR SIGNAL",juce::dontSendNotification);
     title_.setFont(juce::Font(juce::FontOptions("Segoe UI",24.0f,juce::Font::bold)));
     selection_.setFont(juce::Font(juce::FontOptions("Segoe UI",12.0f,juce::Font::bold)));
     status_.setFont(juce::Font(juce::FontOptions("Segoe UI",11.5f,juce::Font::plain)));
@@ -843,6 +845,7 @@ void RootsEditor::setMode(int next){
     for(auto& b:carveSlotButtons_)b.setVisible(carve);
     carveOn_.setVisible(carve);carveDynamic_.setVisible(carve);
     assistApply_.setVisible(mode_==3);
+    assistEvidenceLabel_.setVisible(mode_==3);
     gain_.setVisible(mode_==0);gainLabel_.setVisible(mode_==0);
     threshold_.setVisible(mode_==0||mode_==2);
     thresholdLabel_.setVisible(mode_==0||mode_==2);
@@ -924,6 +927,14 @@ void RootsEditor::timerCallback(){
             juce::String(finding.observedFrames)+" FRAMES":
             "ASSIST / NO PERSISTENT NARROW PEAK IN ROOT";
         assistApply_.setTooltip(detail+" (heuristic; not ML)");
+        assistEvidenceLabel_.setText(
+            finding.ready?
+                "CANDIDATE "+hzText(finding.hz)+"Hz  /  "+
+                    juce::String(finding.prominenceDb,1)+"dB EXCESS":
+                finding.observedFrames>0?
+                    "SCANNING "+juce::String(finding.observedFrames)+"/8 FRAMES":
+                    "ASSIST  /  NO PERSISTENT PEAK",
+            juce::dontSendNotification);
     } else status_.setText(status,juce::dontSendNotification);
 }
 void RootsEditor::paint(juce::Graphics& g){
@@ -1026,7 +1037,8 @@ void RootsEditor::resized(){
     }
     carveOn_.setBounds(left,panelY+38,cw-2,25);
     carveDynamic_.setBounds(left,panelY+69,cw-2,25);
-    assistApply_.setBounds(left,panelY+51,2*cw-12,34);
+    assistEvidenceLabel_.setBounds(left,panelY+31,2*cw-12,18);
+    assistApply_.setBounds(left,panelY+55,2*cw-12,33);
     dynButton_.setBounds(left+6*cw,panelY+36,cw-2,26);
     analyzerDepthLabel_.setBounds(left+2*cw,panelY+27,cw,18);
     analyzerDepth_.setBounds(left+2*cw,panelY+50,cw,28);
