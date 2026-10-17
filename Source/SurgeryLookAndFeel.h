@@ -71,9 +71,7 @@ public:
     }
     void drawButtonText(juce::Graphics& g,juce::TextButton& b,bool,bool) override {
         g.setColour(b.isEnabled()?juce::Colour(0xffe4f0f1):juce::Colour(0xff83969c));
-        g.setFont(juce::Font(juce::FontOptions("Segoe UI",
-            juce::jlimit(11.0f,13.0f,b.getHeight()*.43f),
-            juce::Font::bold)));
+        g.setFont(juce::Font(juce::FontOptions(juce::jlimit(11.0f,13.0f,b.getHeight()*.43f),juce::Font::bold)));
         g.drawFittedText(b.getButtonText(),b.getLocalBounds().reduced(5,2),
                          juce::Justification::centred,1);
     }

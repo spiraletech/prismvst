@@ -123,7 +123,7 @@ void RootsGraph::paint(juce::Graphics& g){
     g.setGradientFill(bg);g.fillRoundedRectangle(full.reduced(1.0f),10.0f);
     g.setColour(juce::Colour::fromRGB(58,74,86));
     g.drawRoundedRectangle(full.reduced(1.0f),10.0f,1.0f);
-    g.setFont(juce::Font(juce::FontOptions("Segoe UI",11.0f,juce::Font::bold)));
+    g.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::bold)));
     g.setColour(juce::Colour::fromRGB(145,172,182));
     g.drawText(frozen_?"ANALYZE / FROZEN":"ANALYZE / POST-DSP LIVE",
                r.getX(),7.0f,r.getWidth(),16.0f,juce::Justification::centredLeft);
@@ -151,7 +151,7 @@ void RootsGraph::paint(juce::Graphics& g){
     }
     // ROOT handle height is constant; vertical axis is exclusively dBFS.
     // ROOT gain is a separate, single control in the bottom panel.
-    g.setFont(juce::Font(juce::FontOptions("Segoe UI",11.0f,juce::Font::plain)));
+    g.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::plain)));
     g.setColour(juce::Colour::fromRGB(184,197,209));
     g.drawText("Hz",8,16,34,16,juce::Justification::centredLeft);
     g.drawText("dBFS",juce::roundToInt(r.getRight()),16,44,16,juce::Justification::centredRight);
@@ -314,7 +314,7 @@ void RootsGraph::paint(juce::Graphics& g){
     g.setColour(focusedColor.withAlpha(0.18f));
     g.fillRoundedRectangle(r.getX(),24.0f,171.0f,20.0f,4.0f);
     g.setColour(focusedColor.brighter(0.45f));
-    g.setFont(juce::Font(juce::FontOptions("Segoe UI",11.0f,juce::Font::bold)));
+    g.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::bold)));
     g.drawFittedText("ROOT "+juce::String(selectedRoot+1)+"  /  C1–C4",
         juce::Rectangle<int>((int)r.getX()+6,25,160,18),
         juce::Justification::centredLeft,1);
@@ -399,7 +399,7 @@ void RootsGraph::paint(juce::Graphics& g){
         g.setColour(juce::Colour::fromRGB(6,11,18).withAlpha(0.97f));
         g.fillRoundedRectangle(left,top,274,27,4.0f);
         g.setColour(juce::Colour::fromRGB(236,243,247));
-        g.setFont(juce::Font(juce::FontOptions("Segoe UI",11.0f)));
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
         g.drawFittedText(text,(int)left+6,(int)top+3,262,21,
                          juce::Justification::centredLeft,1);
     }
@@ -648,15 +648,15 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
                      &analyzerSlopeLabel_,&analyzerMemoryLabel_,&assistEvidenceLabel_}){
         addAndMakeVisible(*label);
         label->setColour(juce::Label::textColourId,juce::Colour::fromRGB(205,224,229));
-        label->setFont(juce::Font(juce::FontOptions("Segoe UI",12.0f,juce::Font::plain)));
+        label->setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::plain)));
         label->setJustificationType(juce::Justification::centredLeft);
     }
     title_.setText("SURGERY EQ  /  v1.0",juce::dontSendNotification);
-    assistEvidenceLabel_.setFont(juce::Font(juce::FontOptions("Segoe UI",11.0f,juce::Font::plain)));
+    assistEvidenceLabel_.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::plain)));
     assistEvidenceLabel_.setText("ASSIST  /  WAITING FOR SIGNAL",juce::dontSendNotification);
-    title_.setFont(juce::Font(juce::FontOptions("Segoe UI",24.0f,juce::Font::bold)));
-    selection_.setFont(juce::Font(juce::FontOptions("Segoe UI",12.0f,juce::Font::bold)));
-    status_.setFont(juce::Font(juce::FontOptions("Segoe UI",11.5f,juce::Font::plain)));
+    title_.setFont(juce::Font(juce::FontOptions(24.0f,juce::Font::bold)));
+    selection_.setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::bold)));
+    status_.setFont(juce::Font(juce::FontOptions(11.5f,juce::Font::plain)));
     status_.setJustificationType(juce::Justification::centredRight);
     for(auto* s:{&gain_,&threshold_}){
         addAndMakeVisible(*s);rotary(*s,"",s==&gain_?0.0:-18.0);
@@ -977,14 +977,14 @@ void RootsEditor::paint(juce::Graphics& g){
     // No internal vertical bars under control labels: one coherent shelf.
     const auto label=lab?juce::Colour(0xff24404a):juce::Colour(0xff93b1bd);
     g.setColour(label);
-    g.setFont(juce::Font(juce::FontOptions("Segoe UI",11.0f,juce::Font::bold)));
+    g.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::bold)));
     const auto headerLayout=surgery::ui::headerLayout(getWidth());
     g.drawFittedText("SPIRAL ETHER TECH  /  SONAR ROOTS PROCESSOR",
                headerLayout.brand.x,headerLayout.brand.y,
                headerLayout.brand.width,headerLayout.brand.height,
                juce::Justification::centredRight,1);
     g.setColour(label.withAlpha(.85f));
-    g.setFont(juce::Font(juce::FontOptions("Segoe UI",11.0f,juce::Font::plain)));
+    g.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::plain)));
     g.drawText("SURGERY ENGINE / ROOTS / CARVE / DYN / ANALYZE",
                24,getHeight()-27,getWidth()-48,18,juce::Justification::centredLeft);
 }
