@@ -143,7 +143,9 @@ public:
                     std::abs(smoothedRootDelta_[(size_t)root])>1.0e-8;
         for(const auto& n:nodes_) {
             if(!n.config.enabled)continue;
-            active=active||n.config.comp!=Compressor::off||n.config.space!=50.0;
+            active=active||n.config.comp!=Compressor::off||n.config.space!=50.0 ||
+                n.config.sparkle>0.0 || n.config.shine>0.0 ||
+                n.config.smooth>0.0 || n.config.tape>0.0;
         }
         active=active||requestedSolo>=0;
         if(requestedSolo!=currentSolo_) {
