@@ -53,6 +53,14 @@ int main()
             }
 
 
+    // Isolate ONYX from EQ dynamics so the test measures the named effect.
+    for (int k = 1; k <= 6; ++k)
+    {
+        const auto id = "band" + std::to_string(k) + "_enabled";
+        if (auto* param = p.apvts.getParameter(id))
+            param->setValueNotifyingHost(0.0f);
+    }
+
     // ONYX parameters must have real, measurable signal effects at full rotation.
     auto setParam = [&](const char* id, float value) {
         auto* param = p.apvts.getParameter(id);
