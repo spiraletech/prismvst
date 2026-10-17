@@ -1,60 +1,32 @@
-# PRISMVST
+# SURGERY EQ v1.0 — Spiral Ether Tech
 
-PRISMVST is EtherTech / SpiralEtech's Windows-first VST3 frequency-specialized dynamic EQ and spectral shaping processor for FL Studio.
+Original Windows-first surgical equalization VST3 developed in C++20/JUCE.
 
-## v0.3.4 recovery build
+**Development branch:** `surgery-eq-v1.0`. This is an engineering build and is not declared production-ready until Windows CI and actual FL Studio verification pass.
 
-This build restores the last known-good processor/parameter architecture from commit \`40527b0\` and keeps the VST3 identity stable. The hardware-shelf redesign is isolated to the editor layer.
+## Built features
+- Seven ROOTS, two boundary handles each; fixed stereo/root EQ and compression engine
+- Four CARVE slots per ROOT (28 total), static and threshold-driven dynamic cuts with stereo/Mid/Side targeting
+- Direct graph CARVE frequency/depth dragging and four-slot parameter shelf
+- ROOT / CARVE / SPACE / DYN / ANALYZE UI modes
+- Stationary SONAR heat/persistence field from calibrated spectrum frames
+- Evidence-based, deterministic ASSIST candidate scan with explicit user approval to apply a correction
+- ON, SOLO, MONO and DYN buttons; root-level context menu without compressor model listings
+- Four chassis themes plus per-ROOT persisted RGB customization (palette and custom hex)
+- Windows VST3 packaging as `SURGERY EQ v1.0.vst3`
 
-### Stable DSP
+This version **does not** contain an instrument-separating AI model, pretrained intelligence or completed EXTRACT engine.
 
-Six dynamic EQ bands preserve the original parameter IDs:
-
-- \`bandN_enabled\`
-- \`bandN_freq\`
-- \`bandN_gain\`
-- \`bandN_q\`
-- \`bandN_dyn_range\`
-- \`bandN_threshold\`
-- \`bandN_ratio\`
-- \`bandN_attack\`
-- \`bandN_release\`
-
-The original global parameters are also preserved:
-
-- \`onyx\`, \`onyx_drive\`, \`onyx_bias\`, \`onyx_density\`
-- \`solfeggio_grid\`
-- \`master_trim\`, \`ceiling\`, \`master_bypass\`
-
-No new audio-processing topology is introduced by the UI overhaul.
-
-### Front panel
-
-The visible hardware shelf intentionally stays compact:
-
-\`FREQ | GAIN | DYN | ATTACK | RELEASE | ONYX | PRECISION\`
-
-The selected band also exposes \`ON\`. Global \`BYPASS\` remains available. Q, threshold, ratio and the deeper ONYX/master parameters remain valid host parameters and are not deleted from presets or automation.
-
-### Analyzer
-
-The editor uses a stationary aura display rather than scrolling spectrogram history:
-
-- visible working range: 0 to -36 dBFS
-- 4.5 dB/oct display compensation
-- display compensation affects visualization only
-- frequency / measured dBFS / musical-note hover readout
-- persistent radial aura field
-- no conveyor-belt history
+See [Audio Doctrine / UI Thesis](docs/SURGERY_EQ_V1_0_AUDIO_BIBLE.md) and [implementation status](SURGERY_EQ_V1_0_STATUS.md).
 
 ## Build
+Windows x64, Visual Studio C++ workload, CMake 3.24+, JUCE 8.0.4 fetched by configure:
 
-Requires CMake 3.24+ and a C++20 compiler. JUCE 8.0.4 is fetched by CMake.
-
-\`\`\`bash
+```powershell
 cmake -S . -B build -A x64 -DPRISMVST_BUILD_TESTS=ON
 cmake --build build --config Release --parallel 2
 ctest --test-dir build -C Release --output-on-failure
-\`\`\`
+```
 
-The Windows workflow verifies the VST3 bundle structure before uploading the build artifact.
+## Compatibility
+VST3 bundle identity and historic host parameter IDs remain unchanged from ROOTS PROTO 001. Visible product name and artifact filename changed; FL Studio discovery and old-project recall require in-host confirmation. Back up prior projects before using this branch.

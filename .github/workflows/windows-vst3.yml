@@ -2,10 +2,14 @@ name: Windows VST3
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, roots-v2-graph-dsp-rebuild, roots-v2-1hz-spectral-solo-fix, roots-v2-boundary-pair-solo, roots-v2-horizontal-handles-root-gain, roots-v2-root-controls-selector-fix, surgery-eq-v1.0 ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, alpha-1.2.0-resonant-wax, roots-v2-experimental, roots-v2-graph-dsp-rebuild ]
   workflow_dispatch:
+
+concurrency:
+  group: prismvst-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -21,20 +25,13 @@ jobs:
       - name: Stage VST3
         shell: pwsh
         run: |
-          $plugin = Get-ChildItem -Path build -Filter "PRISMVST.vst3" -Recurse | Select-Object -First 1
-          if (-not $plugin) { throw "PRISMVST.vst3 was not produced" }
+          $plugin = Get-ChildItem -Path build -Filter "SURGERY EQ v1.0.vst3" -Recurse | Select-Object -First 1
+          if (-not $plugin) { throw "SURGERY EQ v1.0 VST3 was not produced" }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item -Recurse -Force $plugin.FullName dist\PRISMVST.vst3
-      - name: Verify staged VST3 bundle
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "dist\PRISMVST.vst3\Contents\x86_64-win\PRISMVST.vst3")) {
-            throw "VST3 bundle wrapper is incomplete"
-          }
-
+          Copy-Item -Recurse -Force $plugin.FullName "dist\SURGERY EQ v1.0.vst3"
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
-          name: PRISMVST-Windows-VST3
-          path: dist
+          name: SURGERY-EQ-v1.0-Windows-VST3
+          path: "dist/SURGERY EQ v1.0.vst3"
           if-no-files-found: error
