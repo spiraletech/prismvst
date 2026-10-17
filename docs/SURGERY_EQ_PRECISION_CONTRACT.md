@@ -1,34 +1,27 @@
-# SURGERY EQ — Precision and Evidence Contract (Prototype)
+# SURGERY EQ — Precision and Display Contract
 
-## CARVE centres: ROOT-bound by construction
-Each of ROOT 1–7 owns four independent CARVE centre frequencies. A CARVE centre cannot cross that ROOT's current left/right handle positions using graph drag, Ctrl-drag, knob edits, or audio engine parameter configuration. Existing out-of-range automation is bounded at processing time. Moving a ROOT boundary constrains its child centres at gesture end.
+## ROOT-constrained CARVE
+Each of ROOT 1–7 has four independent, initially OFF CARVEs. CARVE centre frequencies are restricted to the selected ROOT boundary interval. EQ filter skirts outside the centre interval remain smooth; the graph must not falsely suggest brick-wall filtering.
 
-A centre-frequency boundary does not mean an infinitely steep band-limited EQ. The actual peaking filter has skirts outside its centre, and the audio engine preserves smooth tails. Zero influence beyond ROOT would require a different DSP architecture.
+## Precision
+- Ctrl+drag an enabled CARVE node: logarithmic fine-frequency scrub without depth changes
+- Normal drag: frequency and cut depth (centre clamped within ROOT)
+- Mouse wheel: quality factor, Shift+wheel: finer Q adjustment
+- Ctrl+wheel: fine-frequency adjustment
+- True Q parameter range is 0.300–96.000 with 0.001 host parameter steps
+- Higher Q means narrower filter response, but does not improve FFT frequency resolution
 
-## Precision control
-- Ctrl+drag active CARVE: slow logarithmic frequency scrub only; depth unchanged
-- Normal drag: centre frequency + cut depth, restricted to ROOT
-- Mouse wheel on active CARVE: Q factor; Shift+wheel gives smaller steps
-- Ctrl+wheel: fine frequency adjustment
-- Q host parameter resolution: 0.001 (0.300 to 24.000); edit exact numeric value in its field
-- Higher Q = narrower modeled notch
+## Chromatic SONAR
+- One measured post-DSP frequency / dBFS FFT spectrum, filled beneath the real spectrum envelope
+- Hue varies by frequency; fill intensity and holographic glints are scaled by actual measured FFT energy
+- Optional visual-only moving pearlescent sweep suggests a holographic foil finish; it is **not** additional audio information
+- Display animation pauses when the spectrum is frozen or silent
+- Background Hann-windowed FFT: size 4096, audio-to-analyzer FIFO, and worker-thread transform
+- No FFT or graphics on the audio callback; zero extra audio latency is reported to the host
+- No source separation, sidechain masking detection, or automatic correction engine in this version
 
-## SONAR display
-- SPECTRUM: calibrated FFT log-frequency envelope, optional persistence fill
-- HEATMAP: separate frequency-versus-level persistence field, never a second histogram underneath the spectrum
-- New host parameter surgery_heat_view persists view choice (factory spectrum)
-- CARVE overlay is a modeled maximum static response, not measured live dynamic gain reduction
-- Existing aura_color switches SONAR shading on/off; no visual option changes audio
+## Manual analysis
+ANALYZE provides view-range, display-slope, visual decay, SONAR toggle and FREEZE plus post-FFT readouts. The user decides whether and where to CARVE. No candidate-generation or apply-suggestion path exists.
 
-## Conservative ASSIST
-- Measured narrow-peak prominence limited to selected ROOT
-- At least 60 consecutive stable GUI frames, ~2 seconds at 30 Hz, and >15 dB prominence
-- Proposed cut never exceeds 3 dB; a resonance is not inherently defective
-- Explicit APPLY SUGGESTION required; no overwrite when all four CARVEs are active
-- This is deterministic diagnostics, not a trained audio ML model
-
-## GOLF-GUFF / XENON assessment
-GOLF-GUFF provides verified model routing, identities, scorecard, governance and model bridging, not a turnkey audio diagnostic neural network. XENON provides music-data contracts, not an equalizer ML inference runtime. Their verification and permission principles can inform a future non-real-time architecture but neither repository was integrated into this real-time VST callback.
-
-## Release gates
-Windows build and CTest are necessary but not sufficient. FL Studio interaction, visual accuracy, Ctrl-drag feel, Q wheel adjustment, automation recall, listening A/B, click-free automation and CPU profiling still require in-DAW tests.
+## Quality gates
+Windows CMake/CTest success does not prove FL Studio visual appearance, CPU efficiency, automation compatibility or perceptual EQ quality. Those need in-DAW verification.

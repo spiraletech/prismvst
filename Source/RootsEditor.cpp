@@ -1,7 +1,6 @@
 #include "RootsEditor.h"
 #include "RootsSpectrumColours.h"
 #include "SurgerySpectralColours.h"
-#include "SurgerySpectrogram.h"
 #include <cmath>
 #include <numbers>
 
@@ -95,16 +94,20 @@ void RootsGraph::updateAnalyzer(
         pval(processor_.apvts,"aura_memory"));
     bands_=spectrumEnvelope_.frame();
     peaks_=pk;
-    const float low=param((selected_/2)*2,"hz");
-    const float high=param((selected_/2)*2+1,"hz");
-    assist_.observe(values,std::min(low,high),std::max(low,high));
+    // Holographic foil swipes only while measured post-DSP spectrum is active.
+    // No synthetic spectral peaks: a silent signal holds the decorative phase.
+    float loudest=-144.0f;
+    for(const float db:values)loudest=std::max(loudest,db);
+    if(loudest>-95.0f){
+        chromaPhase_+=0.0038f;
+        if(chromaPhase_>=1.0f)chromaPhase_-=1.0f;
+    }
     repaint();
 }
 void RootsGraph::selectNode(int i){
     const int target=juce::jlimit(0,prism::roots::v2::kNodes-1,i);
     if(target==selected_)return;
     selected_=target;
-    assist_.reset(); // Stale diagnostic targets must not transfer to another ROOT.
     // Once solo audition is engaged it travels with the selected root.
     processor_.transferRootsSoloTo(selected_);
     if(onSelectNode)onSelectNode(selected_);
@@ -238,24 +241,36 @@ void RootsGraph::paint(juce::Graphics& g){
         shade.addColour(0.55,juce::Colour(0xff110e1f).withAlpha(0.25f));
         g.setGradientFill(shade);
         g.fillRect(r);
-        // Fine vertical activity reflects the real FFT magnitudes.
-        // These remain INSIDE the same single envelope and do not create
-        // a separate lower bar graph. Clip is applied only once.
-        constexpr int spectralSlices=128;
+        // Iridescent holographic foil: restrained cross-frequency diffraction
+        // and a smooth optical swipe. Each glint is multiplied by measured
+        // spectral energy: silence remains completely dark.
+        // Entire layer is clipped to the SINGLE dBFS envelope.
+        constexpr int spectralSlices=160;
         for(int i=0;i<spectralSlices;++i){
             const float u=((float)i+0.5f)/(float)spectralSlices;
             const float hz=20.0f*std::pow(1000.0f,u);
-            const int bin=juce::jlimit(0,N-1,
-                (int)(u*(float)N));
-            const float strength=surgery::spectrum::brightness(bands_[(size_t)bin]);
-            if(strength<0.012f)continue;
-            const auto rgb=surgery::spectrum::colourAt(hz);
-            const auto shine=juce::Colour::fromFloatRGBA(
-                rgb.r,rgb.g,rgb.b,0.13f+0.49f*strength);
+            const int bin=juce::jlimit(0,N-1,(int)(u*(float)N));
+            const float energy=surgery::spectrum::brightness(bands_[(size_t)bin]);
+            if(energy<0.009f)continue;
+            const auto base=surgery::spectrum::colourAt(hz);
+            const auto foil=surgery::spectrum::foil(hz,bands_[(size_t)bin],
+                                                    chromaPhase_);
             const float x1=r.getX()+r.getWidth()*(float)i/spectralSlices;
             const float x2=r.getX()+r.getWidth()*(float)(i+1)/spectralSlices;
-            g.setColour(shine);
-            g.fillRect(x1,r.getY(),x2-x1+0.45f,r.getHeight());
+            const auto tint=juce::Colour::fromFloatRGBA(
+                base.r,base.g,base.b,0.065f+0.16f*energy);
+            g.setColour(tint);
+            g.fillRect(x1,r.getY(),x2-x1+0.4f,r.getHeight());
+            if(foil.strength>0.012f){
+                const auto highlight=juce::Colour::fromFloatRGBA(
+                    foil.colour.r,foil.colour.g,foil.colour.b,foil.strength);
+                juce::ColourGradient foilFade(
+                    highlight,x1,r.getY(),
+                    highlight.withAlpha(foil.strength*0.10f),
+                    x1,r.getBottom(),false);
+                g.setGradientFill(foilFade);
+                g.fillRect(x1,r.getY(),x2-x1+0.45f,r.getHeight());
+            }
         }
         g.restoreState();
     }
@@ -265,6 +280,10 @@ void RootsGraph::paint(juce::Graphics& g){
         juce::Colour(0xffa8c6ff),r.getRight(),r.getY(),false);
     edge.addColour(0.34,juce::Colour(0xffe4a7d4));
     edge.addColour(0.66,juce::Colour(0xffff9bbb));
+    g.setGradientFill(edge);
+    // Soft iridescent rim above the true energy curve; no false FFT peaks.
+    g.strokePath(spectrumPath,juce::PathStrokeType(3.5f,
+        juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
     g.setGradientFill(edge);
     g.strokePath(spectrumPath,juce::PathStrokeType(1.3f,
         juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
@@ -319,7 +338,7 @@ void RootsGraph::paint(juce::Graphics& g){
     }
     g.setColour(juce::Colour(0xffacc3cf));
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
-    g.drawText("SONAR / FREQUENCY-COLORED ENERGY     CARVE / STATIC RESPONSE",
+    g.drawText("SONAR / IRIDESCENT ENERGY FIELD     CARVE / STATIC RESPONSE",
                r.getX(),r.getBottom()+23.0f,r.getWidth(),16.0f,
                juce::Justification::centredLeft);
     // Both boundary handles always live on one horizontal rail.
@@ -738,15 +757,16 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     for(auto* label:{&title_,&selection_,&status_,&gainLabel_,
                      &thresholdLabel_,&carveFrequencyLabel_,&carveDepthLabel_,
                      &carveQLabel_,&carveThresholdLabel_,&analyzerDepthLabel_,
-                     &analyzerSlopeLabel_,&analyzerMemoryLabel_,&assistEvidenceLabel_}){
+                     &analyzerSlopeLabel_,&analyzerMemoryLabel_,&analyzerLegend_}){
         addAndMakeVisible(*label);
         label->setColour(juce::Label::textColourId,juce::Colour::fromRGB(205,224,229));
         label->setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::plain)));
         label->setJustificationType(juce::Justification::centredLeft);
     }
     title_.setText("SURGERY EQ  /  v1.0",juce::dontSendNotification);
-    assistEvidenceLabel_.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::plain)));
-    assistEvidenceLabel_.setText("ASSIST  /  WAITING FOR SIGNAL",juce::dontSendNotification);
+    analyzerLegend_.setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::bold)));
+    analyzerLegend_.setText("CHROMATIC SONAR   /   FREQUENCY × ENERGY",
+                            juce::dontSendNotification);
     title_.setFont(juce::Font(juce::FontOptions(24.0f,juce::Font::bold)));
     selection_.setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::bold)));
     status_.setFont(juce::Font(juce::FontOptions(11.5f,juce::Font::plain)));
@@ -803,33 +823,6 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         b->setClickingTogglesState(true);
         addAndMakeVisible(*b);
     }
-    addAndMakeVisible(assistApply_);
-    assistApply_.onClick=[this]{
-        const auto suggestion=graph_.finding();
-        if(!suggestion.ready)return;
-        const int root=node_/2;
-        const float low=pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(root*2,"hz"));
-        const float high=pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(root*2+1,"hz"));
-        if(suggestion.hz<std::min(low,high)||suggestion.hz>std::max(low,high))return;
-        // Explicit user-approved parameter edit, no autonomous audio changes.
-        int target=-1;
-        for(int slot=0;slot<4;++slot)
-            if(pval(processor_.apvts,PRISMVSTAudioProcessor::carveId(root,slot,"on"))<0.5f){
-                target=slot;break;
-            }
-        if(target<0)return; // NEVER overwrite an engineer's four active corrections.
-        carveSlot_=target;
-        const auto id=[root,target](const char* s){
-            return PRISMVSTAudioProcessor::carveId(root,target,s);
-        };
-        change(processor_,id("hz"),suggestion.hz);
-        change(processor_,id("depth"),suggestion.suggestedDepthDb);
-        change(processor_,id("q"),5.0f);
-        change(processor_,id("on"),1.0f);
-        bindCarve();
-        setMode(1);
-    };
-    assistApply_.setTooltip("Manually approve a SONAR-evidenced corrective CARVE on selected ROOT");
     addAndMakeVisible(dynButton_);
     dynButton_.onClick=[this]{
         const auto id=PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp");
@@ -955,8 +948,7 @@ void RootsEditor::setMode(int next){
     for(auto* l:{&carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_,&carveThresholdLabel_})l->setVisible(carve);
     for(auto& b:carveSlotButtons_)b.setVisible(carve);
     carveOn_.setVisible(carve);carveDynamic_.setVisible(carve);
-    assistApply_.setVisible(mode_==3);
-    assistEvidenceLabel_.setVisible(mode_==3);
+    analyzerLegend_.setVisible(mode_==3);
     gain_.setVisible(mode_==0);gainLabel_.setVisible(mode_==0);
     threshold_.setVisible(mode_==0||mode_==2);
     thresholdLabel_.setVisible(mode_==0||mode_==2);
@@ -1024,16 +1016,6 @@ void RootsEditor::timerCallback(){
         juce::String(state.correlation,2)+"  /  GR "+
         juce::String(state.largestGrDb,1)+" dB";
     if(mode_==3){
-        const auto finding=graph_.finding();
-        const int root=node_/2;
-        const float low=pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(root*2,"hz"));
-        const float high=pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(root*2+1,"hz"));
-        bool available=false;
-        for(int slot=0;slot<4;++slot)
-            available|=pval(processor_.apvts,
-                 PRISMVSTAudioProcessor::carveId(root,slot,"on"))<0.5f;
-        assistApply_.setEnabled(finding.ready && available &&
-            finding.hz>=std::min(low,high) && finding.hz<=std::max(low,high));
         const auto metrics=graph_.spectralMetrics();
         const juce::String line=metrics.signalPresent?
             "POST FFT  /  PEAK "+hzText(metrics.loudestHz)+"Hz  "+
@@ -1041,21 +1023,6 @@ void RootsEditor::timerCallback(){
             hzText(metrics.approximateCentroidHz)+"Hz":
             "POST FFT  /  SILENCE OR BELOW DISPLAY FLOOR";
         status_.setText(line,juce::dontSendNotification);
-        const juce::String detail=finding.ready?
-            "ASSIST / REVIEW "+hzText(finding.hz)+"Hz  +"+
-            juce::String(finding.prominenceDb,1)+"dB LOCAL PEAK  /  "+
-            juce::String(finding.observedFrames)+" FRAMES":
-            "ASSIST / NO PERSISTENT NARROW PEAK IN ROOT";
-        assistApply_.setTooltip(detail+" (heuristic; not ML)");
-        assistEvidenceLabel_.setText(
-            finding.ready?
-                "CANDIDATE "+hzText(finding.hz)+"Hz  /  "+
-                    juce::String(finding.prominenceDb,1)+"dB EXCESS":
-                finding.observedFrames>0?
-                    "VALIDATING "+juce::String(finding.observedFrames)+"/"+
-                    juce::String(surgery::Finding::minimumStableFrames)+" FRAMES":
-                    "ASSIST  /  NO PERSISTENT PEAK",
-            juce::dontSendNotification);
     } else status_.setText(status,juce::dontSendNotification);
 }
 void RootsEditor::paint(juce::Graphics& g){
@@ -1158,8 +1125,7 @@ void RootsEditor::resized(){
     }
     carveOn_.setBounds(left,panelY+38,cw-2,25);
     carveDynamic_.setBounds(left,panelY+69,cw-2,25);
-    assistEvidenceLabel_.setBounds(left,panelY+31,2*cw-12,18);
-    assistApply_.setBounds(left,panelY+55,2*cw-12,33);
+    analyzerLegend_.setBounds(left+12,panelY+40,2*cw-12,38);
     dynButton_.setBounds(left+6*cw,panelY+36,cw-2,26);
     analyzerDepthLabel_.setBounds(left+2*cw,panelY+27,cw,18);
     analyzerDepth_.setBounds(left+2*cw,panelY+50,cw,28);

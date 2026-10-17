@@ -40,6 +40,35 @@ inline float brightness(float db) noexcept {
     const float u=std::clamp((db+108.0f)/102.0f,0.0f,1.0f);
     return std::pow(u,1.25f);
 }
+struct Foil {
+    RGB colour;
+    float strength;
+};
+// Holographic thin-film aesthetic: chroma shifts with spectral location and
+// display time; opacity is strictly modulated by real FFT dBFS energy.
+// It is visualization, not a measurement of physical optical interference.
+inline Foil foil(float hz,float db,float phase) noexcept {
+    constexpr float tau=6.28318530718f;
+    const float u=std::clamp(std::log(std::clamp(hz,20.0f,20000.0f)/20.0f)/
+                              std::log(1000.0f),0.0f,1.0f);
+    const float wrapped=phase-std::floor(phase);
+    const float diff=std::abs(u-wrapped);
+    const float swipeDistance=std::min(diff,1.0f-diff);
+    const float movingSwipe=std::exp(-125.0f*swipeDistance*swipeDistance);
+    const float interference=0.5f+0.5f*std::sin(tau*(u*4.75f-wrapped*1.55f));
+    const float glint=std::pow(interference,10.0f);
+    const float shift=tau*(u*2.4f+wrapped);
+    // Pale cyan/opal/rose/lavender diffraction, not static spectrum sections.
+    const RGB light{
+       0.67f+0.32f*(0.5f+0.5f*std::sin(shift+0.3f)),
+       0.69f+0.30f*(0.5f+0.5f*std::sin(shift+2.39f)),
+       0.72f+0.27f*(0.5f+0.5f*std::sin(shift+4.48f))
+    };
+    const float energy=brightness(db);
+    const float strength=energy*std::clamp(0.035f+0.25f*glint+
+            0.45f*movingSwipe,0.0f,0.75f);
+    return {light,strength};
+}
 inline float plotFraction(float hz) noexcept {
     return std::clamp(std::log(std::clamp(hz,20.0f,20000.0f)/20.0f)/
                       std::log(1000.0f),0.0f,1.0f);

@@ -2,7 +2,6 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "SurgerySpectrumFill.h"
-#include "SurgeryAssist.h"
 #include "SurgeryLookAndFeel.h"
 #include "SurgeryHeaderLayout.h"
 #include "SurgeryNodeFocus.h"
@@ -43,7 +42,6 @@ public:
     int selectedNode() const noexcept{return selected_;}
     void selectNode(int node);
     void showRootMenu(int root);
-    surgery::Finding finding() const noexcept {return assist_.finding();}
     surgery::SpectralSnapshot spectralMetrics() const noexcept {
         return surgery::summarizeSpectrum(bands_);
     }
@@ -60,8 +58,8 @@ private:
     bool fineDragging_=false;
     int theme_=0,mode_=0,slot_=0;
     surgery::LiveSpectrumEnvelope<PRISMVSTAudioProcessor::labBars> spectrumEnvelope_;
-    surgery::AssistScanner<PRISMVSTAudioProcessor::labBars> assist_;
     bool hover_=false,frozen_=false;
+    float chromaPhase_=0.0f; // display-only foil phase; held during freeze
     juce::Point<float> mouse_;
     juce::Rectangle<float> area() const;
     float freqToX(float f) const;
@@ -93,7 +91,7 @@ private:
     juce::ComboBox analyzerDepth_;
     juce::TextButton heatToggle_{"SONAR ON"},freezeButton_{"FREEZE"};
     juce::TextButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};
-    juce::TextButton themeButton_{"THEME"},dynButton_{"DYN OFF"},assistApply_{"APPLY SUGGESTION"};
+    juce::TextButton themeButton_{"THEME"},dynButton_{"DYN OFF"};
     int themeIndex_=0,mode_=0,carveSlot_=0;
     std::array<juce::TextButton,4> modeButtons_;
     std::array<juce::TextButton,4> carveSlotButtons_;
@@ -103,7 +101,7 @@ private:
     std::unique_ptr<SliderA> carveFrequencyA_,carveDepthA_,carveQA_,carveThresholdA_;
     std::unique_ptr<ButtonA> carveOnA_,carveDynamicA_;
     juce::Label title_,selection_,status_,gainLabel_,thresholdLabel_,
-        analyzerDepthLabel_,analyzerSlopeLabel_,analyzerMemoryLabel_,assistEvidenceLabel_;
+        analyzerDepthLabel_,analyzerSlopeLabel_,analyzerMemoryLabel_,analyzerLegend_;
     using ComboA=juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     std::unique_ptr<SliderA> gainA_,thresholdA_,analyzerSlopeA_,analyzerMemoryA_;
     std::unique_ptr<ComboA> analyzerDepthA_;
