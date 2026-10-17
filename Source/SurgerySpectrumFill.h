@@ -24,5 +24,7 @@ public:
         }
     }
     const Frame& frame() const noexcept {return values_;}
+private:
+    Frame values_{};
 };
 } // namespace surgery
