@@ -128,6 +128,9 @@ private:
     std::array<std::array<std::array<ThirdOrderAllPass, 2>, numSections>, numCrossovers> compensators;
     std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>, numCrossovers> crossoverSmoothers;
     std::array<SectionState, numSections> sectionStates;
+    struct OnyxState { float air=0.0f,presence=0.0f,smooth=0.0f,dc=0.0f; };
+    std::array<OnyxState,2> onyxFinish {};
+    void processOnyxFinish(juce::AudioBuffer<float>&) noexcept;
     prism::roots::v2::Engine rootsEngine;
     surgery::CarveEngine carveEngine;
     std::array<std::atomic<float>, numSections> stereoActivity {};
