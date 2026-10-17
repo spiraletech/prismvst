@@ -38,10 +38,13 @@ public:
     // 2*|FFT|/sum(window) calibrates a bin-centred sine's peak amplitude.
     // Bars too narrow for an FFT bin use the nearest bin, so their values
     // represent band-peaks LIMITED by actual FFT resolution (sr / N).
-    void processMagnitudes(const float* mags,int binCount,int fftSize,double sampleRate) noexcept {
+    // Supply windowSum=N for JUCE's normalized Hann; default retains the
+    // unnormalized symmetric-Hann contract used by standalone callers.
+    void processMagnitudes(const float* mags,int binCount,int fftSize,double sampleRate,
+                           double windowSum=0.0) noexcept {
         if(!mags || binCount<=1 || fftSize<4 || sampleRate<=0.0)return;
         const int last=std::min(binCount-1,fftSize/2);
-        const double gain=4.0/static_cast<double>(fftSize-1);
+        const double gain=windowSum>0.0?2.0/windowSum:4.0/static_cast<double>(fftSize-1);
         for(int i=0;i<count;++i) {
             const double lo=frequencyAt(static_cast<float>(i)/count);
             const double hi=frequencyAt(static_cast<float>(i+1)/count);

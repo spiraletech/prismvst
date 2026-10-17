@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(PRISMVST VERSION 1.0.0 LANGUAGES CXX)
+project(PRISMVST VERSION 1.0.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -69,6 +69,8 @@ if(PRISMVST_BUILD_TESTS)
   juce_add_console_app(prismvst_tests PRODUCT_NAME "PRISMVST Tests")
   target_sources(prismvst_tests PRIVATE
     Tests/ProcessorTests.cpp
+    Tests/QualityTests.cpp
+    Tests/AllocationProbe.cpp
     Source/PluginProcessor.cpp
     Source/PluginProcessor.h
     Source/PluginEditor.cpp
@@ -89,6 +91,9 @@ if(PRISMVST_BUILD_TESTS)
     juce::juce_audio_utils
     juce::juce_dsp
   )
+  if(MSVC)
+    target_link_options(prismvst_tests PRIVATE /STACK:8388608)
+  endif()
   add_test(NAME prismvst_tests COMMAND prismvst_tests)
   # Independent native C++20 ROOTS core; deliberately not linked into v1.2 DSP.
   add_executable(prism_roots_tests Tests/RootsCoreTests.cpp Source/PrismRootsCore.h)

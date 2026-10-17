@@ -27,6 +27,7 @@ public:
 class RootsGraph final : public juce::Component {
 public:
     explicit RootsGraph(PRISMVSTAudioProcessor& owner);
+    ~RootsGraph() override;
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
@@ -110,6 +111,18 @@ private:
     std::unique_ptr<ComboA> analyzerDepthA_;
     std::unique_ptr<ButtonA> heatA_;
     std::unique_ptr<ButtonA> monoA_,onA_,soloA_;
+    juce::TextButton bypass_{"BYPASS"},compare_{"A / B: A"},copy_{"COPY A > B"};
+    juce::TextButton save_{"SAVE"},load_{"LOAD"};
+    juce::TextButton peakHold_{"PEAK HOLD"};
+    juce::Slider output_;
+    juce::Label outputLabel_,compLabel_,domainLabel_,detectorLabel_;
+    juce::ComboBox compressor_,domain_,detector_;
+    std::unique_ptr<ComboA> compressorA_,domainA_,detectorA_;
+    std::unique_ptr<SliderA> outputA_;
+    std::unique_ptr<ButtonA> bypassA_;
+    std::unique_ptr<juce::FileChooser> presetChooser_;
+    juce::TooltipWindow tooltips_{this, 650};
+    void choosePreset(bool save);
     int node_=0;
     void bindNode(int n);
     void bindCarve();

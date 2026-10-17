@@ -77,9 +77,12 @@ public:
         correlationAlpha_=std::exp(-1.0/(0.025*sr_));
         sideAlpha_=std::exp(-1.0/(0.008*sr_));
         gainSmoothingAlpha_=std::exp(-1.0/(0.010*sr_));
+        airAlpha_=1.0-std::exp(-2.0*std::numbers::pi*4200.0/sr_);
+        presenceAlpha_=1.0-std::exp(-2.0*std::numbers::pi*1600.0/sr_);
+        dcAlpha_=1.0-std::exp(-2.0*std::numbers::pi*8.0/sr_);
         globalMidPower_=globalSidePower_=0.0;appliedSpace_=1.0;
         grMax_=0.0;meter_={};
-        currentSolo_=-1;previousSolo_=-1;soloFadeLeft_=0;soloFadeSamples_=0;
+        currentSolo_=-1;previousSolo_=-1;previousRequest_=-1;soloWet_=0;soloFadeLeft_=0;soloFadeSamples_=0;
         smoothedRootDelta_.fill(0.0);
         for(int i=0;i<kNodes;++i) {
             auto& node=nodes_[(size_t)i];
@@ -88,7 +91,14 @@ public:
             node.midTap.reset();node.sideTap.reset();
             node.e1=node.e2=node.sideEnergy=node.midEnergy=0.0;
             node.onyxMid={};node.onyxSide={};
+            node.fx={node.config.sparkle,node.config.shine,node.config.smooth,node.config.tape};
+            node.enableMix=node.config.enabled?1.0:0.0;
+            node.monoMix=rootMono_[(size_t)(i/2)]?1.0:0.0;
+            node.compMix=node.config.comp==Compressor::off?0.0:1.0;
+            node.threshold=node.config.thresholdDb;
             updateFilters(i);
+            config(i,node.config);
+            node.currentSoftAlpha=node.softAlpha;
         }
         haveConfig_=true;
         for(int root=0;root<kTerritories;++root){
@@ -109,6 +119,12 @@ public:
         auto& n=nodes_[(size_t)index];
         const bool changed=n.config.hz!=c.hz || n.config.q!=c.q;
         n.config=c;
+        if(c.comp!=Compressor::off)n.profile=c.comp;
+        n.attack=std::exp(-1.0/((n.profile==Compressor::fet4?0.0008:n.profile==Compressor::tube3?0.012:0.010)*sr_));
+        n.release=std::exp(-1.0/((n.profile==Compressor::fet4?0.14:n.profile==Compressor::tube3?0.32:0.65)*sr_));
+        n.softAlpha=1.0-std::exp(-2.0*std::numbers::pi*(16000.0-13400.0*c.smooth)/sr_);
+        n.tapeDrive=1.0+3.5*c.tape;
+        n.tapeNorm=std::tanh(n.tapeDrive);
         if(changed){updateFilters(index);updateSoloBand(index/2);}
     }
     Config get(int index) const noexcept {return nodes_[(size_t)std::clamp(index,0,kNodes-1)].config;}
@@ -134,34 +150,18 @@ public:
     int soloTransitionSamplesRemaining() const noexcept {return soloFadeLeft_;}
     void process(float* l,float* r,std::size_t count) noexcept {
         if(!l||!r||count==0)return;
-        bool active=false;
         const int requestedSolo=soloRoot_;
-        for(int root=0;root<kTerritories;++root)
-            if(nodes_[(size_t)(2*root)].config.enabled)
-                active=active||rootMono_[(size_t)root]||
-                    std::abs(rootGainDb_[(size_t)root])>0.00001||
-                    std::abs(smoothedRootDelta_[(size_t)root])>1.0e-8;
-        for(const auto& n:nodes_) {
-            if(!n.config.enabled)continue;
-            active=active||n.config.comp!=Compressor::off||n.config.space!=50.0 ||
-                n.config.sparkle>0.0 || n.config.shine>0.0 ||
-                n.config.smooth>0.0 || n.config.tape>0.0;
-        }
-        active=active||requestedSolo>=0;
-        if(requestedSolo!=currentSolo_) {
+        if(requestedSolo!=previousRequest_) {
             // Two soloed roots crossfade over 8 ms to prevent hard
             // discontinuities during rapid A/B auditioning.
-            previousSolo_=(requestedSolo>=0&&currentSolo_>=0)?currentSolo_:-1;
-            currentSolo_=requestedSolo;
+            previousSolo_=(requestedSolo>=0&&currentSolo_>=0&&soloWet_>0)?currentSolo_:-1;
+            if(requestedSolo>=0)currentSolo_=requestedSolo;
+            previousRequest_=requestedSolo;
             soloFadeSamples_=previousSolo_>=0
                 ?std::max(1,(int)std::lround(sr_*0.008)):0;
             soloFadeLeft_=soloFadeSamples_;
         }
         const bool solo=requestedSolo>=0;
-        // Truly transparent neutral bypass for pristine A/B.
-        if(!solo&&!active&&!mono_&&space_==50.0) {
-            measureUnchanged(l,r,count);return;
-        }
         double sumL=0.0,sumR=0.0,sumCross=0.0,sumM=0.0,sumS=0.0;
         double greatestGr=0.0;
         const double globalWidth=mono_?0.0:spaceToWidth(space_);
@@ -183,75 +183,24 @@ public:
             double m=dryM,s=dryS;
             // One DSP state per ROOT; each pair of handles is ONLY the
             // boundary definition. One stereo/dynamics profile per ROOT.
-            if(!solo)for(int root=0;root<kTerritories;++root) {
+            std::array<double,kTerritories> rootM{},rootS{},processedM{},processedS{};
+            for(int root=0;root<kTerritories;++root) {
                 auto& node=nodes_[(size_t)(root*2)];
-                const Config& c=node.config;
-                if(!c.enabled)continue;
-                const bool wantsEffects=c.comp!=Compressor::off ||
-                                        rootMono_[(size_t)root] ||
-                                        std::abs(c.space-50.0)>1e-5 || c.sparkle>0.0 ||
-                                        c.shine>0.0 || c.smooth>0.0 || c.tape>0.0;
-                if(!wantsEffects)continue;
                 auto& tap=rootFxBands_[(size_t)root].filters;
                 // Keep both components measurable for phase-safe SPACE,
                 // even if compression was restricted to MID or SIDE.
                 const double bandMid=tap[1].sample(tap[0].sample(dryM));
                 const double bandSide=tap[3].sample(tap[2].sample(dryS));
-                const double tapM=c.domain==Domain::side?0.0:bandMid;
-                const double tapS=c.domain==Domain::mid?0.0:bandSide;
                 const double ea=1.0-correlationAlpha_;
                 node.midEnergy+=ea*(bandMid*bandMid-node.midEnergy);
                 node.sideEnergy+=ea*(bandSide*bandSide-node.sideEnergy);
-                if(rootMono_[(size_t)root]) {
-                    // Frequency-selective mono: remove SIDE only within this
-                    // ROOT's HP/LP territory. Never collapse the entire mix.
-                    s-=bandSide;
-                }
-                if(std::abs(c.space-50.0)>1e-5){
-                    const double requested=spaceToWidth(c.space);
-                    double allowed=requested;
-                    if(requested>1.0&&node.sideEnergy>1e-15)
-                        allowed=std::min(requested,std::max(1.0,
-                           std::sqrt(0.98*node.midEnergy/node.sideEnergy)));
-                    // Only the SIDE content in this ROOT is changed.
-                    s+=(allowed-1.0)*bandSide;
-                }
-                // Process spectral colour on the selected ROOT only, never master.
-                if(c.sparkle+c.shine+c.smooth+c.tape>0.0) {
-                    const double processedM=onyxSample(tapM,node.onyxMid,c);
-                    const double processedS=onyxSample(tapS,node.onyxSide,c);
-                    m+=processedM-tapM;
-                    s+=processedS-tapS;
-                }
-                if(c.comp!=Compressor::off) {
-                    const double ratio=c.comp==Compressor::optical4 ||
-                                      c.comp==Compressor::fet4?4.0:3.0;
-                    const double atk=c.comp==Compressor::fet4?0.0008:
-                          c.comp==Compressor::tube3?0.012:0.010;
-                    const double rel=c.comp==Compressor::fet4?0.14:
-                          c.comp==Compressor::tube3?0.32:0.65;
-                    const double attack=std::exp(-1.0/(atk*sr_));
-                    const double release=std::exp(-1.0/(rel*sr_));
-                    const double stereoPeak=std::max(std::abs(tapM+tapS),
-                                                      std::abs(tapM-tapS));
-                    const double level1=c.detector==Detector::mid?std::abs(tapM):
-                          c.detector==Detector::side?std::abs(tapS):
-                          c.detector==Detector::linked?stereoPeak:std::abs(tapM);
-                    const double level2=c.detector==Detector::dual?std::abs(tapS):level1;
-                    node.e1=follow(node.e1,level1,attack,release);
-                    node.e2=follow(node.e2,level2,attack,release);
-                    const double g1=compressGain(node.e1,c.thresholdDb,ratio,c.comp);
-                    const double g2=compressGain(node.e2,c.thresholdDb,ratio,c.comp);
-                    const double mg=c.detector==Detector::side?1.0:g1;
-                    const double sg=c.detector==Detector::mid?1.0:
-                          c.detector==Detector::dual?g2:g1;
-                    greatestGr=std::max(greatestGr,-20.0*std::log10(
-                        std::max(1e-9,std::min(mg,sg))));
-                    m+=tapM*(mg-1.0);
-                    s+=tapS*(sg-1.0);
-                }
+                rootM[(size_t)root]=bandMid;rootS[(size_t)root]=bandSide;
+                double fm=bandMid,fs=bandSide;
+                applyRootEffects(root,bandMid,bandSide,fm,fs,greatestGr);
+                processedM[(size_t)root]=fm;processedS[(size_t)root]=fs;
+                m+=fm-bandMid;s+=fs-bandSide;
             }
-            if(!solo) {
+            {
                 // One gain per ROOT, applied to the *whole* interval.
                 // Shared HP/LP coefficients with the SOLO path guarantee the
                 // coloured territory and affected signal agree in frequency.
@@ -259,28 +208,28 @@ public:
                 // not mathematically flat brick-wall frequency selection.
                 for(int root=0;root<kTerritories;++root) {
                     const double db=rootGainDb_[(size_t)root];
-                    if(!nodes_[(size_t)(root*2)].config.enabled)continue;
+
                     if(std::abs(db)<0.00001&&std::abs(smoothedRootDelta_[(size_t)root])<1.0e-8)continue;
-                    const double delta=smoothedRootDelta_[(size_t)root];
+                    const double delta=smoothedRootDelta_[(size_t)root]*nodes_[(size_t)(root*2)].enableMix;
                     if(delta==0.0)continue;
-                    auto& tap=rootGainBands_[(size_t)root].filters;
-                    const double bm=tap[1].sample(tap[0].sample(dryM));
-                    const double bs=tap[3].sample(tap[2].sample(dryS));
+                    const double bm=rootM[(size_t)root],bs=rootS[(size_t)root];
                     const auto domain=nodes_[(size_t)(root*2)].config.domain;
                     if(domain!=Domain::side)m+=delta*bm;
-                    if(domain!=Domain::mid)s+=delta*bs;
+                    if(domain!=Domain::mid)s+=delta*bs*(1.0-nodes_[(size_t)(root*2)].monoMix);
                 }
             }
-            if(solo) {
+            const double soloStep=1.0/(0.008*sr_);
+            soloWet_=solo?std::min(1.0,soloWet_+soloStep):std::max(0.0,soloWet_-soloStep);
+            if(soloWet_>0.0&&currentSolo_>=0) {
+                const double normalM=m,normalS=s;
                 auto audition=[&](int root)->std::array<double,2> {
-                    auto& filters=soloBands_[(size_t)root].filters;
-                    const double gain=1.0+smoothedRootDelta_[(size_t)root];
-                    const double bm=filters[1].sample(filters[0].sample(dryM));
-                    const double bs=filters[3].sample(filters[2].sample(dryS));
-                    const auto domain=nodes_[(size_t)(root*2)].config.domain;
-                    return {(domain==Domain::side?bm:gain*bm),
-                            rootMono_[(size_t)root]?0.0:
-                            (domain==Domain::mid?bs:gain*bs)};
+                    const auto& node=nodes_[(size_t)(root*2)];
+                    const double delta=smoothedRootDelta_[(size_t)root]*node.enableMix;
+                    const double bm=rootM[(size_t)root],bs=rootS[(size_t)root];
+                    const auto domain=node.config.domain;
+                    const double auditionMid=processedM[(size_t)root]+(domain==Domain::side?0.0:delta*bm);
+                    const double auditionSide=processedS[(size_t)root]+(domain==Domain::mid?0.0:delta*bs*(1.0-node.monoMix));
+                    return {auditionMid,auditionSide};
                 };
                 const auto next=audition(currentSolo_);
                 if(soloFadeLeft_>0&&previousSolo_>=0){
@@ -289,6 +238,7 @@ public:
                     m=previous[0]*(1.0-amount)+next[0]*amount;
                     s=previous[1]*(1.0-amount)+next[1]*amount;
                 } else {m=next[0];s=next[1];}
+                m=normalM+soloWet_*(m-normalM);s=normalS+soloWet_*(s-normalS);
             }
             if(soloFadeLeft_>0){
                 --soloFadeLeft_;
@@ -320,28 +270,90 @@ public:
     }
 private:
     struct OnyxMemory { double air=0.0,presence=0.0,soft=0.0,dc=0.0; };
-    double onyxSample(double x,OnyxMemory& state,const Config& c) const noexcept {
-        const auto a=[this](double hz) {return 1.0-std::exp(-2.0*std::numbers::pi*hz/sr_);};
-        state.air+=a(4200.0)*(x-state.air);
-        double y=x+c.sparkle*0.20*std::tanh((x-state.air)*(1.0+c.sparkle));
-        state.presence+=a(1600.0)*(y-state.presence);
-        y+=c.shine*0.30*(y-state.presence);
-        state.soft+=a(16000.0-13400.0*c.smooth)*(y-state.soft);
-        y+=c.smooth*0.88*(state.soft-y);
-        if(c.tape>0.0) {
-            const double drive=1.0+3.5*c.tape;
-            y+=c.tape*(std::tanh(drive*y)/std::tanh(drive)-y);
-            state.dc+=a(8.0)*(y-state.dc);
+    struct Node {
+        Config config{};
+        double attack=0.99,release=0.999,softAlpha=0.9,tapeDrive=1.0,tapeNorm=0.7615941559557649;
+        Filter midEq,sideEq,midTap,sideTap;
+        double e1=0.0,e2=0.0,midEnergy=0.0,sideEnergy=0.0;
+        OnyxMemory onyxMid{},onyxSide{};
+        std::array<double,4> fx{};
+        double enableMix=1,monoMix=0,compMix=0,threshold=-18,currentSoftAlpha=0.9;
+        Compressor profile=Compressor::optical3;
+    };
+    void applyRootEffects(int root, double bandMid, double bandSide,
+                          double& m, double& s, double& greatestGr) noexcept {
+        auto& node=nodes_[(size_t)(root*2)];
+        const auto& c=node.config;
+        const double originalM=m,originalS=s;
+        const double a=1.0-gainSmoothingAlpha_;
+        const std::array<double,4> targets{c.sparkle,c.shine,c.smooth,c.tape};
+        for(size_t i=0;i<4;++i)node.fx[i]+=a*(targets[i]-node.fx[i]);
+        node.enableMix+=a*((c.enabled?1.0:0.0)-node.enableMix);
+        node.monoMix+=a*((rootMono_[(size_t)root]?1.0:0.0)-node.monoMix);
+        node.compMix+=a*((c.comp==Compressor::off?0.0:1.0)-node.compMix);
+        node.threshold+=a*(c.thresholdDb-node.threshold);
+        node.currentSoftAlpha+=a*(node.softAlpha-node.currentSoftAlpha);
+        const double tapM=c.domain==Domain::side?0.0:bandMid;
+        const double tapS=c.domain==Domain::mid?0.0:bandSide;
+        if(std::abs(c.space-50.0)>1e-5){
+            const double requested=spaceToWidth(c.space);
+            double allowed=requested;
+            if(requested>1.0&&node.sideEnergy>1e-15)
+                allowed=std::min(requested,std::max(1.0,
+                   std::sqrt(0.98*node.midEnergy/node.sideEnergy)));
+            // Only the SIDE content in this ROOT is changed.
+            s+=(allowed-1.0)*bandSide;
+        }
+        // Process spectral colour on the selected ROOT only, never master.
+        {
+            const double processedM=onyxSample(tapM,node.onyxMid,node);
+            const double processedS=onyxSample(tapS,node.onyxSide,node);
+            m+=processedM-tapM;
+            s+=processedS-tapS;
+        }
+        {
+            const double ratio=node.profile==Compressor::optical4 ||
+                      node.profile==Compressor::fet4?4.0:3.0;
+            const double stereoPeak=std::max(std::abs(tapM+tapS),
+                              std::abs(tapM-tapS));
+            const double level1=c.detector==Detector::mid?std::abs(tapM):
+                  c.detector==Detector::side?std::abs(tapS):
+                  c.detector==Detector::linked?stereoPeak:std::abs(tapM);
+            const double level2=c.detector==Detector::dual?std::abs(tapS):level1;
+            node.e1=follow(node.e1,level1,node.attack,node.release);
+            node.e2=follow(node.e2,level2,node.attack,node.release);
+            if(node.compMix>1e-8) {
+            const double g1=compressGain(node.e1,node.threshold,ratio,node.profile);
+            const double g2=compressGain(node.e2,node.threshold,ratio,node.profile);
+            const double mg=c.detector==Detector::side?1.0:g1;
+            const double sg=c.detector==Detector::mid?1.0:
+                  c.detector==Detector::dual?g2:g1;
+            greatestGr=std::max(greatestGr,-20.0*std::log10(
+                std::max(1e-9,std::min(mg,sg)))*node.compMix*node.enableMix);
+            m+=node.compMix*tapM*(mg-1.0);
+            s+=node.compMix*tapS*(sg-1.0);
+            }
+        }
+        s-=node.monoMix*(bandSide+s-originalS);
+        m=originalM+node.enableMix*(m-originalM);
+        s=originalS+node.enableMix*(s-originalS);
+    }
+    double onyxSample(double x,OnyxMemory& state,const Node& node) const noexcept {
+        const double sparkle=node.fx[0],shine=node.fx[1],smooth=node.fx[2],tape=node.fx[3];
+        state.air+=airAlpha_*(x-state.air);
+        double y=x;
+        if(sparkle>1e-10)y+=sparkle*0.20*std::tanh((x-state.air)*(1.0+sparkle));
+        state.presence+=presenceAlpha_*(y-state.presence);
+        y+=shine*0.30*(y-state.presence);
+        state.soft+=node.currentSoftAlpha*(y-state.soft);
+        y+=smooth*0.88*(state.soft-y);
+        if(tape>0.0) {
+            y+=tape*(std::tanh(node.tapeDrive*y)/node.tapeNorm-y);
+            state.dc+=dcAlpha_*(y-state.dc);
             y-=state.dc;
         }
         return y;
     }
-    struct Node {
-        Config config{};
-        Filter midEq,sideEq,midTap,sideTap;
-        double e1=0.0,e2=0.0,midEnergy=0.0,sideEnergy=0.0;
-        OnyxMemory onyxMid{},onyxSide{};
-    };
     // Each root's two boundary handles determine the exact frequency
     // interval for BOTH the palette and the audible bandpass.
     void updateSoloBand(int root) noexcept {
@@ -403,12 +415,14 @@ private:
     std::array<bool,kTerritories> rootMono_{};
     std::array<double,kTerritories> smoothedRootDelta_{};
     double gainSmoothingAlpha_=0.99;
+    double airAlpha_=0.5,presenceAlpha_=0.2,dcAlpha_=0.001;
     int soloRoot_=-1;
     double sr_=48000.0,correlationAlpha_=0.999,sideAlpha_=0.99;
     double globalMidPower_=0.0,globalSidePower_=0.0,appliedSpace_=1.0,grMax_=0.0;
     double space_=50.0;
     bool mono_=false,haveConfig_=false;
-    int currentSolo_=-1,previousSolo_=-1,soloFadeLeft_=0,soloFadeSamples_=0;
+    int currentSolo_=-1,previousSolo_=-1,previousRequest_=-1,soloFadeLeft_=0,soloFadeSamples_=0;
+    double soloWet_=0;
     Meter meter_{};
 };
 } // namespace prism::roots::v2

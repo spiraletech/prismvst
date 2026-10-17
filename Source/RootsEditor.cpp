@@ -39,6 +39,15 @@ RootsGraph::RootsGraph(PRISMVSTAudioProcessor& owner):processor_(owner) {
     bands_.fill(-144.0f);peaks_.fill(-144.0f);
     setMouseCursor(juce::MouseCursor::CrosshairCursor);
 }
+RootsGraph::~RootsGraph(){
+    if(dragging_>=0)
+        if(auto* parameter=processor_.apvts.getParameter(PRISMVSTAudioProcessor::rootsNodeId(dragging_,"hz")))
+            parameter->endChangeGesture();
+    if(draggingCarve_>=0)
+        for(const char* suffix:{"hz","depth"})
+            if(auto* parameter=processor_.apvts.getParameter(PRISMVSTAudioProcessor::carveId(selected_/2,draggingCarve_,suffix)))
+                parameter->endChangeGesture();
+}
 juce::Rectangle<float> RootsGraph::area() const {
     // Reserve a header rail for ROOT-specific C1-C4 foreground selectors.
     return getLocalBounds().toFloat().reduced(46.0f,46.0f);
@@ -137,7 +146,7 @@ void RootsGraph::paint(juce::Graphics& g){
     g.setColour(juce::Colour::fromRGB(145,172,182));
     // Measured frequency/intensity colouring, independent of ROOT or theme.
     g.drawText(frozen_?"SONAR / FROZEN":"SONAR / LIVE FREQUENCY ENERGY",
-               r.getX(),7.0f,r.getWidth(),16.0f,juce::Justification::centredLeft);
+               juce::Rectangle<float>(r.getX(),7.0f,r.getWidth(),16.0f).toNearestInt(),juce::Justification::centredLeft);
     // Frequency and calibrated dBFS dimensions.
     static constexpr std::array<float,11> freqs{
         20,40,80,160,315,630,1250,2500,5000,10000,20000
@@ -345,7 +354,7 @@ void RootsGraph::paint(juce::Graphics& g){
     g.setColour(juce::Colour(0xffacc3cf));
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
     g.drawText("SONAR / IRIDESCENT ENERGY FIELD     CARVE / STATIC RESPONSE",
-               r.getX(),r.getBottom()+23.0f,r.getWidth(),16.0f,
+               juce::Rectangle<float>(r.getX(),r.getBottom()+23.0f,r.getWidth(),16.0f).toNearestInt(),
                juce::Justification::centredLeft);
     // Both boundary handles always live on one horizontal rail.
     g.setColour(juce::Colour::fromRGB(159,182,191).withAlpha(0.14f));
@@ -465,12 +474,12 @@ void RootsGraph::paint(juce::Graphics& g){
                  juce::String(pval(processor_.apvts,id("depth")),1)+" dB";
         }
         const float left=juce::jlimit(r.getX(),r.getRight()-274.0f,mouse_.x+12);
-        const float top=juce::jlimit(r.getY(),r.getBottom()-29.0f,mouse_.y-39.0f);
+        const float hoverTop=juce::jlimit(r.getY(),r.getBottom()-29.0f,mouse_.y-39.0f);
         g.setColour(juce::Colour::fromRGB(6,11,18).withAlpha(0.97f));
-        g.fillRoundedRectangle(left,top,274,27,4.0f);
+        g.fillRoundedRectangle(left,hoverTop,274,27,4.0f);
         g.setColour(juce::Colour::fromRGB(236,243,247));
         g.setFont(juce::Font(juce::FontOptions(11.0f)));
-        g.drawFittedText(text,(int)left+6,(int)top+3,262,21,
+        g.drawFittedText(text,(int)left+6,(int)hoverTop+3,262,21,
                          juce::Justification::centredLeft,1);
     }
 }
@@ -742,8 +751,7 @@ void RootsGraph::popup(){
 RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
 : juce::AudioProcessorEditor(&p),processor_(p),graph_(p) {
     setLookAndFeel(&lookAndFeel_);
-    setSize(1120,755);setResizable(true,true);
-    setResizeLimits(840,610,1800,1100);
+
     addAndMakeVisible(graph_);
     graph_.onSelectNode=[this](int n){bindNode(n);};
     graph_.onSelectCarve=[this](int slot){
@@ -769,9 +777,9 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         label->setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::plain)));
         label->setJustificationType(juce::Justification::centredLeft);
     }
-    title_.setText("SURGERY EQ  /  v1.0",juce::dontSendNotification);
+    title_.setText("SURGERY EQ  /  v1.0.1",juce::dontSendNotification);
     analyzerLegend_.setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::bold)));
-    analyzerLegend_.setText("CHROMATIC SONAR   /   FREQUENCY × ENERGY",
+    analyzerLegend_.setText("CHROMATIC SONAR   /   FREQUENCY x ENERGY",
                             juce::dontSendNotification);
     title_.setFont(juce::Font(juce::FontOptions(24.0f,juce::Font::bold)));
     selection_.setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::bold)));
@@ -825,7 +833,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     carveQ_.setMouseDragSensitivity(2800);
     carveQ_.setNumDecimalPlacesToDisplay(3);
     carveFrequency_.setTooltip("Exact Hz value: type in the field. CTRL+drag a CARVE node for fine frequency scrubbing.");
-    carveQ_.setTooltip("Ultra-surgical Q 0.300 to 96.000. Higher = tighter notch; 0–100% tightness shown above knob. SHIFT+wheel = fine Q.");
+    carveQ_.setTooltip("Ultra-surgical Q 0.300 to 96.000. Higher = tighter notch; 0-100% tightness shown above knob. SHIFT+wheel = fine Q.");
     carveFrequencyLabel_.setText("FREQUENCY Hz",juce::dontSendNotification);
     carveDepthLabel_.setText("CUT DEPTH dB",juce::dontSendNotification);
     carveQLabel_.setText("Q / PRECISION",juce::dontSendNotification);
@@ -854,6 +862,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         static const char* names[]{"ONYX","ETHER LAB","ALIEN GRID","CINEMA VOID"};
         themeButton_.setButtonText(juce::String("THEME  /  ")+names[themeIndex_]);
         graph_.repaint();
+        timerCallback();
         repaint();
     };
     themeButton_.setButtonText("THEME  /  ONYX");
@@ -883,11 +892,56 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         freezeButton_.setButtonText(graph_.isFrozen()?"RESUME":"FREEZE");
     };
     addAndMakeVisible(freezeButton_);
-    bindNode(0);
-    setMode(0);
-    startTimerHz(60);
+    compressor_.addItemList({ "COMP OFF", "OPTICAL 3:1", "OPTICAL 4:1", "TUBE 3:1", "FET 4:1" },1);
+    domain_.addItemList({ "STEREO", "MID", "SIDE" },1);
+    detector_.addItemList({ "LINKED", "DUAL M/S", "MID ONLY", "SIDE ONLY" },1);
+    for(auto* box:{&compressor_,&domain_,&detector_})addAndMakeVisible(*box);
+    compLabel_.setText("COMPRESSION",juce::dontSendNotification);
+    domainLabel_.setText("EQ DOMAIN",juce::dontSendNotification);
+    detectorLabel_.setText("DETECTOR",juce::dontSendNotification);
+    for(auto* label:{&compLabel_,&domainLabel_,&detectorLabel_,&outputLabel_}){
+        label->setFont(juce::Font(juce::FontOptions(11.0f)));
+        label->setColour(juce::Label::textColourId,juce::Colour(0xffafc8cf));
+        addAndMakeVisible(*label);
+    }
+    for(auto* button:{&bypass_,&compare_,&copy_,&save_,&load_,&peakHold_})addAndMakeVisible(*button);
+    peakHold_.onClick=[this]{processor_.resetPeakHold();};
+    peakHold_.setTooltip("Maximum output sample peak. Click to reset. CLIP warns of digital full-scale overload.");
+    bypass_.setClickingTogglesState(true);
+    bypass_.setTooltip("5 ms dry bypass crossfade; processing stays warm. Fully bypassed output is exact input.");
+    bypassA_=std::make_unique<ButtonA>(processor_.apvts,"surgery_bypass",bypass_);
+    compare_.onClick=[this]{processor_.switchComparison();timerCallback();};
+    copy_.onClick=[this]{processor_.copyComparison();};
+    compare_.setTooltip("Switch between two complete settings for this plugin instance. Save presets to keep either setting.");
+    copy_.setTooltip("Copy the active comparison into the other slot.");
+    save_.onClick=[this]{choosePreset(true);};
+    load_.onClick=[this]{choosePreset(false);};
+    output_.setSliderStyle(juce::Slider::LinearHorizontal);
+    output_.setTextBoxStyle(juce::Slider::TextBoxRight,false,68,22);
+    output_.setTextValueSuffix(" dB");output_.setDoubleClickReturnValue(true,0.0);
+    output_.setTooltip("Output trim with 20 ms smoothing. Double-click for unity.");
+    outputLabel_.setText("OUTPUT",juce::dontSendNotification);
+    addAndMakeVisible(output_);
+    outputA_=std::make_unique<SliderA>(processor_.apvts,"surgery_output_db",output_);
+    bindNode(0);setMode(0);
+    setResizable(true,true);setResizeLimits(840,610,1800,1100);setSize(1120,755);
+    timerCallback();startTimerHz(60);
 }
 RootsEditor::~RootsEditor(){stopTimer();setLookAndFeel(nullptr);}
+void RootsEditor::choosePreset(bool saving){
+    presetChooser_=std::make_unique<juce::FileChooser>(saving?"Save SURGERY EQ preset":"Load SURGERY EQ preset",
+        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Surgery EQ.surgerypreset"),"*.surgerypreset");
+    const auto chooserFlags=saving?(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting):
+        (juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles);
+    presetChooser_->launchAsync(chooserFlags,[safe=juce::Component::SafePointer<RootsEditor>(this),saving](const juce::FileChooser& chooser){
+        if(safe==nullptr)return;
+        auto file=chooser.getResult();if(file==juce::File{})return;
+        const bool ok=saving?safe->processor_.savePreset(file.withFileExtension("surgerypreset")):safe->processor_.loadPreset(file);
+        if(!ok)juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Preset could not be opened",
+            saving?"Could not write this preset. Choose a writable folder.":"Choose a valid SURGERY EQ preset file.");
+        safe->timerCallback();
+    });
+}
 void RootsEditor::bindNode(int n){
     node_=juce::jlimit(0,prism::roots::v2::kNodes-1,n);
     for(auto& a:onyxAttachments_)a.reset();
@@ -897,11 +951,15 @@ void RootsEditor::bindNode(int n){
             processor_.apvts,
             PRISMVSTAudioProcessor::rootsRootControlId(node_/2,names[(size_t)i]),
             onyxSliders_[(size_t)i]);
+    compressorA_.reset();domainA_.reset();detectorA_.reset();
     gainA_.reset();thresholdA_.reset();monoA_.reset();
     onA_.reset();soloA_.reset();
     const auto rid=[this](const char* suffix){
         return PRISMVSTAudioProcessor::rootsRootControlId(node_/2,suffix);
     };
+    compressorA_=std::make_unique<ComboA>(processor_.apvts,rid("comp"),compressor_);
+    domainA_=std::make_unique<ComboA>(processor_.apvts,rid("domain"),domain_);
+    detectorA_=std::make_unique<ComboA>(processor_.apvts,rid("detector"),detector_);
     gainA_=std::make_unique<SliderA>(processor_.apvts,
        PRISMVSTAudioProcessor::rootsRootGainId(node_/2),gain_);
 
@@ -971,6 +1029,8 @@ void RootsEditor::setMode(int next){
     for(auto& b:carveSlotButtons_)b.setVisible(carve);
     carveOn_.setVisible(carve);carveDynamic_.setVisible(carve);
     analyzerLegend_.setVisible(mode_==3);
+    for(auto* box:{&compressor_,&domain_,&detector_})box->setVisible(mode_==0);
+    for(auto* label:{&compLabel_,&domainLabel_,&detectorLabel_})label->setVisible(mode_==0);
     gain_.setVisible(mode_==0);gainLabel_.setVisible(mode_==0);
     threshold_.setVisible(mode_==0);
     thresholdLabel_.setVisible(mode_==0);
@@ -992,6 +1052,7 @@ void RootsEditor::setMode(int next){
     freezeButton_.setVisible(analyze);
     graph_.setPresentation(themeIndex_,mode_,carveSlot_);
     resized();
+    timerCallback();
     repaint();
 }
 void RootsEditor::updateRootButtons(){
@@ -1006,15 +1067,28 @@ void RootsEditor::updateRootButtons(){
     }
 }
 void RootsEditor::timerCallback(){
+    const bool b=processor_.comparisonSlot()==1;
+    compare_.setButtonText(b?"A / B: B":"A / B: A");
+    copy_.setButtonText(b?"COPY B > A":"COPY A > B");
+    const float held=processor_.getPeakHoldDb();
+    peakHold_.setButtonText((held>=0.0f?"CLIP ":"PEAK ")+juce::String(held,1)+" dB");
+    peakHold_.setToggleState(held>=0.0f,juce::dontSendNotification);
     themeIndex_=juce::jlimit(0,3,juce::roundToInt(pval(processor_.apvts,"surgery_theme")));
     lookAndFeel_.setTheme(themeIndex_);
+    const auto labelColour=themeIndex_==1?juce::Colour(0xff17303c):juce::Colour(0xffc1d9e0);
+    for(auto* label:{&title_,&selection_,&status_,&gainLabel_,&thresholdLabel_,
+                    &carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_,&carveThresholdLabel_,
+                    &analyzerDepthLabel_,&analyzerSlopeLabel_,&analyzerMemoryLabel_,&analyzerLegend_,
+                    &compLabel_,&domainLabel_,&detectorLabel_,&outputLabel_})
+        label->setColour(juce::Label::textColourId,labelColour);
+    for(auto& label:onyxLabels_)label.setColour(juce::Label::textColourId,labelColour);
     static const char* themeNames[]{"ONYX","ETHER LAB","ALIEN GRID","CINEMA VOID"};
     themeButton_.setButtonText(juce::String("THEME / ")+themeNames[themeIndex_]);
     // Show when compression is disabled; never present inactive controls as working.
     const int comp=juce::roundToInt(pval(processor_.apvts,
          PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp")));
     threshold_.setEnabled(true);
-thresholdLabel_.setText(comp==0?"THRESHOLD (DRAG TO ENABLE)":"COMP THRESHOLD",
+thresholdLabel_.setText(comp==0?"THRESHOLD / OFF":"COMP THRESHOLD",
                             juce::dontSendNotification);
     updateRootButtons();
     const float factor=pval(processor_.apvts,
@@ -1035,7 +1109,7 @@ thresholdLabel_.setText(comp==0?"THRESHOLD (DRAG TO ENABLE)":"COMP THRESHOLD",
     const juce::String status=
         "IN "+juce::String(processor_.getInputPeakDb(),1)+" dBFS  /  OUT "+
         juce::String(processor_.getPeakDb(),1)+" dBFS  /  CORR "+
-        juce::String(state.correlation,2)+"  /  GR "+
+        juce::String(state.correlation,2)+"  /  ROOT GR "+
         juce::String(state.largestGrDb,1)+" dB";
     if(mode_==3){
         const auto metrics=graph_.spectralMetrics();
@@ -1095,8 +1169,7 @@ void RootsEditor::paint(juce::Graphics& g){
                juce::Justification::centredRight,1);
     g.setColour(label.withAlpha(.85f));
     g.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::plain)));
-    g.drawText("SURGERY ENGINE / ROOTS / CARVE / ONYX / ANALYZE",
-               24,getHeight()-27,getWidth()-48,18,juce::Justification::centredLeft);
+
 }
 void RootsEditor::resized(){
     const int w=getWidth(),h=getHeight();
@@ -1118,8 +1191,20 @@ void RootsEditor::resized(){
         modeButtons_[(size_t)i].setBounds(18+i*(modeWidth+modeGap),modeTop,modeWidth,29);
     const int panelY=h-153;
     selection_.setBounds(32,panelY+4,220,27);
-    status_.setBounds(w-470,panelY+4,440,27);
+    status_.setBounds(24,h-187,w-48,21);
+    bypass_.setBounds(18,h-29,82,24);
+    compare_.setBounds(106,h-29,76,24);copy_.setBounds(188,h-29,96,24);
+    save_.setBounds(290,h-29,54,24);load_.setBounds(350,h-29,54,24);
+    peakHold_.setBounds(410,h-29,116,24);
+    outputLabel_.setBounds(w-285,h-29,60,24);output_.setBounds(w-225,h-29,205,24);
     const int left=24, usable=w-48, cw=usable/7;
+    const std::array<juce::ComboBox*,3> boxes{&compressor_,&domain_,&detector_};
+    const std::array<juce::Label*,3> captions{&compLabel_,&domainLabel_,&detectorLabel_};
+    for(int i=0;i<3;++i){
+        const int x=left+(i+3)*cw;
+        captions[(size_t)i]->setBounds(x,panelY+24,cw-6,20);
+        boxes[(size_t)i]->setBounds(x,panelY+49,cw-8,30);
+    }
     struct Entry{juce::Slider* slider;juce::Label* label;};
     const std::array<Entry,2> controls{{
         {&gain_,&gainLabel_},{&threshold_,&thresholdLabel_}
