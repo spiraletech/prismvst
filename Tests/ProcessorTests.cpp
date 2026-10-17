@@ -419,7 +419,9 @@ int main()
         setActual(p,id(1,2,"dynamic"),1.0f);
         setActual(p,id(1,2,"domain"),2.0f);
         setActual(p,id(1,1,"depth"),5.0f);
-        const float midpoint=std::sqrt(65.0f*120.0f);
+        // Third CARVE slot resets to its own log-spaced position, not ROOT centre.
+        const float midpoint=(float)std::exp(std::log(65.0)+
+            (3.0/5.0)*std::log(120.0/65.0));
         if(!p.resetCarveNode(1,2)
             ||std::abs(value(id(1,2,"hz"))-midpoint)>0.1f
             ||std::abs(value(id(1,2,"depth")))>0.001f
