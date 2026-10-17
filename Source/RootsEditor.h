@@ -78,20 +78,25 @@ private:
     RootsGraph graph_;
     SurgeryLookAndFeel lookAndFeel_;
     std::array<RootSelectorButton,7> rootButtons_;
-    juce::Slider gain_,bandSpace_,space_,threshold_;
+    juce::Slider gain_,threshold_,analyzerSlope_,analyzerMemory_;
+    juce::ComboBox analyzerDepth_;
+    juce::TextButton heatToggle_{"SONAR ON"};
     juce::TextButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};
     juce::TextButton themeButton_{"THEME"},dynButton_{"DYN OFF"},assistApply_{"APPLY SUGGESTION"};
     int themeIndex_=0,mode_=0,carveSlot_=0;
-    std::array<juce::TextButton,5> modeButtons_;
+    std::array<juce::TextButton,4> modeButtons_;
     std::array<juce::TextButton,4> carveSlotButtons_;
     juce::Slider carveFrequency_,carveDepth_,carveQ_,carveThreshold_;
     juce::TextButton carveOn_{"CARVE ON"},carveDynamic_{"DYNAMIC"};
     juce::Label carveFrequencyLabel_,carveDepthLabel_,carveQLabel_,carveThresholdLabel_;
     std::unique_ptr<SliderA> carveFrequencyA_,carveDepthA_,carveQA_,carveThresholdA_;
     std::unique_ptr<ButtonA> carveOnA_,carveDynamicA_;
-    juce::Label title_,selection_,status_,gainLabel_,bandSpaceLabel_,
-        spaceLabel_,thresholdLabel_;
-    std::unique_ptr<SliderA> gainA_,bandSpaceA_,spaceA_,thresholdA_;
+    juce::Label title_,selection_,status_,gainLabel_,thresholdLabel_,
+        analyzerDepthLabel_,analyzerSlopeLabel_,analyzerMemoryLabel_;
+    using ComboA=juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+    std::unique_ptr<SliderA> gainA_,thresholdA_,analyzerSlopeA_,analyzerMemoryA_;
+    std::unique_ptr<ComboA> analyzerDepthA_;
+    std::unique_ptr<ButtonA> heatA_;
     std::unique_ptr<ButtonA> monoA_,onA_,soloA_;
     int node_=0;
     void bindNode(int n);
