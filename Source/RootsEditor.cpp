@@ -377,6 +377,14 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         b->setColour(juce::TextButton::textColourOnId,juce::Colours::white);
         addAndMakeVisible(*b);
     }
+    addAndMakeVisible(dynButton_);
+    dynButton_.onClick=[this]{
+        const auto id=PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp");
+        const bool active=pval(processor_.apvts,id)>=0.5f;
+        change(processor_,id,active?0.0f:4.0f);
+        timerCallback();
+    };
+    dynButton_.setTooltip("Enable surgical fast-response ROOT compression (internal FET-style response)");
     addAndMakeVisible(themeButton_);
     themeButton_.onClick=[this]{
         themeIndex_=(themeIndex_+1)%4;
@@ -427,6 +435,9 @@ void RootsEditor::timerCallback(){
     const int comp=juce::roundToInt(pval(processor_.apvts,
          PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp")));
     threshold_.setEnabled(comp!=0);
+    dynButton_.setButtonText(comp==0?"DYN OFF":"DYN ON");
+    dynButton_.setColour(juce::TextButton::buttonColourId,
+                         comp==0?juce::Colour(0xff1d2c36):juce::Colour(0xff187a83));
     thresholdLabel_.setText(comp==0?"THRESHOLD (COMP OFF)":"COMP THRESHOLD",
                             juce::dontSendNotification);
     updateRootButtons();
@@ -493,4 +504,5 @@ void RootsEditor::resized(){
     on_.setBounds(left,panelY+36,cw-2,25);
     solo_.setBounds(left,panelY+66,cw-2,25);
     mono_.setBounds(left+6*cw,panelY+72,cw-2,25);
+    dynButton_.setBounds(left+6*cw,panelY+36,cw-2,26);
 }

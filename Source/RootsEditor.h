@@ -64,7 +64,7 @@ private:
     std::array<RootSelectorButton,7> rootButtons_;
     juce::Slider gain_,bandSpace_,space_,threshold_;
     juce::TextButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};
-    juce::TextButton themeButton_{"THEME"};
+    juce::TextButton themeButton_{"THEME"},dynButton_{"DYN OFF"};
     int themeIndex_=0;
     juce::Label title_,selection_,status_,gainLabel_,bandSpaceLabel_,
         spaceLabel_,thresholdLabel_;
