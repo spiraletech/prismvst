@@ -284,24 +284,39 @@ void RootsGraph::paint(juce::Graphics& g){
                          juce::Justification::centredLeft,1);
     }
 }
+int RootsGraph::hitCarveNode(juce::Point<float> point) const {
+    if(mode_!=1)return -1;
+    const int root=selected_/2;
+    float nearest=14.0f;
+    int target=-1;
+    for(int slot=0;slot<4;++slot){
+        const auto id=[root,slot](const char* suffix){
+            return PRISMVSTAudioProcessor::carveId(root,slot,suffix);
+        };
+        if(pval(processor_.apvts,id("on"))<0.5f)continue;
+        const float x=freqToX(pval(processor_.apvts,id("hz")));
+        const float y=area().getCentreY()+1.35f*pval(processor_.apvts,id("depth"));
+        const float distance=point.getDistanceFrom({x,y});
+        // Prefer the selected slot for overlapping neutral nodes.
+        if(distance<nearest-0.5f || (slot==slot_&&distance<=nearest+0.5f)){
+            nearest=distance;target=slot;
+        }
+    }
+    return target;
+}
 void RootsGraph::mouseDown(const juce::MouseEvent& e){
     mouse_=e.position;hover_=true;
-    if(!e.mods.isPopupMenu()&&mode_==1){
-        const int root=selected_/2;
-        for(int slot=0;slot<4;++slot){
-            const auto id=[root,slot](const char* s){
-                return PRISMVSTAudioProcessor::carveId(root,slot,s);
-            };
-            if(pval(processor_.apvts,id("on"))<0.5f)continue;
-            const float x=freqToX(pval(processor_.apvts,id("hz")));
-            const float y=area().getCentreY()+1.35f*pval(processor_.apvts,id("depth"));
-            if(e.position.getDistanceFrom({x,y})<=13.0f){
-                draggingCarve_=slot;
-                if(onSelectCarve)onSelectCarve(slot);
-                for(const auto* name:{"hz","depth"})
-                    if(auto* p=processor_.apvts.getParameter(id(name)))p->beginChangeGesture();
-                return;
-            }
+    if(!e.mods.isPopupMenu()){
+        const int slot=hitCarveNode(e.position);
+        if(slot>=0){
+            draggingCarve_=slot;
+            if(onSelectCarve)onSelectCarve(slot);
+            const int root=selected_/2;
+            for(const auto* suffix:{"hz","depth"})
+                if(auto* parameter=processor_.apvts.getParameter(
+                       PRISMVSTAudioProcessor::carveId(root,slot,suffix)))
+                    parameter->beginChangeGesture();
+            return;
         }
     }
     const int hit=hitNode(e.position);
@@ -365,8 +380,22 @@ void RootsGraph::mouseUp(const juce::MouseEvent&){
 void RootsGraph::mouseMove(const juce::MouseEvent& e){mouse_=e.position;hover_=true;repaint();}
 void RootsGraph::mouseExit(const juce::MouseEvent&){hover_=false;repaint();}
 void RootsGraph::mouseDoubleClick(const juce::MouseEvent& e){
-    const int hit=hitNode(e.position);
-    if(hit>=0){selectNode(hit);repaint();} // no per-handle gain reset
+    if(e.mods.isPopupMenu())return;
+    // Finish any gesture opened by the second mouse-down before resetting.
+    const int carve=hitCarveNode(e.position);
+    const int boundary=carve<0?hitNode(e.position):-1;
+    if(draggingCarve_>=0||dragging_>=0)mouseUp(e);
+    if(carve>=0){
+        if(onSelectCarve)onSelectCarve(carve);
+        processor_.resetCarveNode(selected_/2,carve);
+        repaint();
+        return;
+    }
+    if(boundary>=0){
+        selectNode(boundary);
+        processor_.resetRootBoundary(boundary);
+        repaint();
+    }
 }
 void RootsGraph::mouseWheelMove(const juce::MouseEvent&,const juce::MouseWheelDetails&){
     // Frequency boundaries cannot secretly change Q or gain via the wheel.
@@ -521,6 +550,9 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     for(auto* s:{&carveFrequency_,&carveDepth_,&carveQ_,&carveThreshold_}){
         rotary(*s,"",0.0);addAndMakeVisible(*s);
     }
+    carveDepth_.setDoubleClickReturnValue(true,0.0);
+    carveQ_.setDoubleClickReturnValue(true,2.0);
+    carveThreshold_.setDoubleClickReturnValue(true,-24.0);
     carveFrequencyLabel_.setText("FREQUENCY Hz",juce::dontSendNotification);
     carveDepthLabel_.setText("CUT DEPTH dB",juce::dontSendNotification);
     carveQLabel_.setText("Q / PRECISION",juce::dontSendNotification);
@@ -606,6 +638,10 @@ void RootsEditor::bindCarve(){
     carveQA_.reset();carveThresholdA_.reset();
     carveOnA_.reset();carveDynamicA_.reset();
     const int root=node_/2,slot=carveSlot_;
+    const float a=pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(root*2,"hz"));
+    const float b=pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(root*2+1,"hz"));
+    carveFrequency_.setDoubleClickReturnValue(true,
+        std::sqrt((double)juce::jmax(20.0f,a)*(double)juce::jmax(20.0f,b)));
     const auto id=[root,slot](const char* s){
         return PRISMVSTAudioProcessor::carveId(root,slot,s);
     };
@@ -746,8 +782,11 @@ void RootsEditor::paint(juce::Graphics& g){
     const auto label=lab?juce::Colour(0xff24404a):juce::Colour(0xff93b1bd);
     g.setColour(label);
     g.setFont(juce::Font(juce::FontOptions(10.0f,juce::Font::bold)));
-    g.drawText("SPIRAL ETHER TECH  /  SONAR ROOTS PROCESSOR",
-               365,19,getWidth()-385,22,juce::Justification::centredRight);
+    const auto headerLayout=surgery::ui::headerLayout(getWidth());
+    g.drawFittedText("SPIRAL ETHER TECH  /  SONAR ROOTS PROCESSOR",
+               headerLayout.brand.x,headerLayout.brand.y,
+               headerLayout.brand.width,headerLayout.brand.height,
+               juce::Justification::centredRight,1);
     g.setColour(label.withAlpha(.85f));
     g.setFont(juce::Font(juce::FontOptions(10.0f)));
     g.drawText("SURGERY ENGINE / ROOTS / CARVE / SPACE / DYN / ANALYZE",
@@ -755,9 +794,12 @@ void RootsEditor::paint(juce::Graphics& g){
 }
 void RootsEditor::resized(){
     const int w=getWidth(),h=getHeight();
-    title_.setBounds(35,13,330,37);
-    themeButton_.setBounds(w-190,40,172,21);
-    const int buttonY=59,buttonGap=6,buttonX=18;
+    const auto headerLayout=surgery::ui::headerLayout(w);
+    title_.setBounds(headerLayout.title.x,headerLayout.title.y,
+                     headerLayout.title.width,headerLayout.title.height);
+    themeButton_.setBounds(headerLayout.theme.x,headerLayout.theme.y,
+                           headerLayout.theme.width,headerLayout.theme.height);
+    const int buttonY=headerLayout.rootsY,buttonGap=6,buttonX=18;
     const int buttonW=(w-36-6*buttonGap)/7;
     for(int root=0;root<7;++root)
         rootButtons_[(size_t)root].setBounds(

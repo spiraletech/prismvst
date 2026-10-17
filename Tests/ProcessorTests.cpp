@@ -389,6 +389,50 @@ int main()
         }
     }
 
+    // Double-click reset actions route through these host-aware processor methods.
+    // Resetting one ROOT frequency cannot reset gain, SOLO or a neighboring boundary.
+    {
+        PRISMVSTAudioProcessor p;
+        const auto value=[&](const juce::String& id) {
+            if(const auto* v=p.apvts.getRawParameterValue(id))return v->load();
+            return -999.0f;
+        };
+        const auto left=PRISMVSTAudioProcessor::rootsNodeId(3,"hz");
+        const auto sibling=PRISMVSTAudioProcessor::rootsNodeId(2,"hz");
+        const auto rootGain=PRISMVSTAudioProcessor::rootsRootGainId(1);
+        setActual(p,left,92.0f);setActual(p,sibling,65.0f);
+        setActual(p,rootGain,7.0f);
+        if(!p.resetRootBoundary(3)||std::abs(value(left)-120.0f)>0.02f
+            ||std::abs(value(sibling)-65.0f)>0.02f
+            ||std::abs(value(rootGain)-7.0f)>0.02f
+            ||p.resetRootBoundary(-1)||p.resetRootBoundary(14)){
+            std::cerr<<"ROOT boundary double-click reset failed\n";return 21;
+        }
+        const auto id=[](int root,int slot,const char* name) {
+            return PRISMVSTAudioProcessor::carveId(root,slot,name);
+        };
+        setActual(p,id(1,2,"on"),1.0f);
+        setActual(p,id(1,2,"hz"),1470.0f);
+        setActual(p,id(1,2,"depth"),14.0f);
+        setActual(p,id(1,2,"q"),9.0f);
+        setActual(p,id(1,2,"threshold"),-45.0f);
+        setActual(p,id(1,2,"dynamic"),1.0f);
+        setActual(p,id(1,2,"domain"),2.0f);
+        setActual(p,id(1,1,"depth"),5.0f);
+        const float midpoint=std::sqrt(65.0f*120.0f);
+        if(!p.resetCarveNode(1,2)
+            ||std::abs(value(id(1,2,"hz"))-midpoint)>0.1f
+            ||std::abs(value(id(1,2,"depth")))>0.001f
+            ||std::abs(value(id(1,2,"q"))-2.0f)>0.02f
+            ||std::abs(value(id(1,2,"threshold"))+24.0f)>0.11f
+            ||value(id(1,2,"dynamic"))>0.5f
+            ||value(id(1,2,"domain"))>0.5f
+            ||value(id(1,2,"on"))<0.5f
+            ||std::abs(value(id(1,1,"depth"))-5.0f)>0.02f
+            ||p.resetCarveNode(7,0)||p.resetCarveNode(0,-1)){
+            std::cerr<<"CARVE node double-click neutral reset failed\n";return 22;
+        }
+    }
     std::cout << "PRISM ROOTS PROTO 001 legacy DSP compatibility tests passed\n";
     return 0;
 }

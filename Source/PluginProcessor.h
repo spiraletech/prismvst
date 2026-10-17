@@ -66,6 +66,9 @@ public:
     static juce::String crossoverId(int crossover);
     static juce::String rootsNodeId(int node, const juce::String& suffix);
     static juce::String carveId(int root, int slot, const juce::String& suffix);
+    // Message-thread, host-automatable node resets used by the graph double-click.
+    bool resetRootBoundary(int node);
+    bool resetCarveNode(int root, int slot);
     static juce::String rootsRootSoloId(int root);
     static juce::String rootsRootGainId(int root);
     static juce::String rootsRootControlId(int root, const juce::String& suffix);

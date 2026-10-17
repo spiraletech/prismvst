@@ -52,6 +52,45 @@ juce::String PRISMVSTAudioProcessor::carveId(int root,int slot,const juce::Strin
     return "surgery_carve_r"+juce::String(root+1)+"_c"+juce::String(slot+1)+"_"+suffix;
 }
 
+bool PRISMVSTAudioProcessor::resetRootBoundary(int node)
+{
+    if(node<0||node>=prism::roots::v2::kNodes)return false;
+    if(auto* parameter=apvts.getParameter(rootsNodeId(node,"hz"))) {
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(
+            (float)prism::roots::v2::Engine::defaults[(size_t)node]));
+        parameter->endChangeGesture();
+        return true;
+    }
+    return false;
+}
+
+bool PRISMVSTAudioProcessor::resetCarveNode(int root,int slot)
+{
+    if(root<0||root>=surgery::kRoots||slot<0||slot>=surgery::kSlots)return false;
+    // Center the neutral node inside its currently edited territory.
+    // The global 1 kHz factory value would land outside most ROOTS.
+    const float a=read(apvts,rootsNodeId(root*2,"hz"));
+    const float b=read(apvts,rootsNodeId(root*2+1,"hz"));
+    const float frequency=juce::jlimit(20.0f,20000.0f,
+        std::sqrt(juce::jmax(20.0f,a)*juce::jmax(20.0f,b)));
+    const auto assign=[this,root,slot](const char* suffix,float value) {
+        if(auto* parameter=apvts.getParameter(carveId(root,slot,suffix))) {
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
+            parameter->endChangeGesture();
+        }
+    };
+    assign("hz",frequency);
+    assign("depth",0.0f);
+    assign("q",2.0f);
+    assign("threshold",-24.0f);
+    assign("dynamic",0.0f);
+    assign("domain",0.0f);
+    // ON stays unchanged so the selected node does not disappear on reset.
+    return true;
+}
+
 juce::String PRISMVSTAudioProcessor::rootsNodeId(int node,const juce::String& suffix)
 {
     return "roots_node" + juce::String(node + 1) + "_" + suffix;
