@@ -280,8 +280,14 @@ void RootsGraph::paint(juce::Graphics& g){
         juce::Colour(0xffa8c6ff),r.getRight(),r.getY(),false);
     edge.addColour(0.34,juce::Colour(0xffe4a7d4));
     edge.addColour(0.66,juce::Colour(0xffff9bbb));
-    g.setGradientFill(edge);
-    // Soft iridescent rim above the true energy curve; no false FFT peaks.
+    // Broad low-opacity pearlescent edge glow, then one crisp live contour.
+    juce::ColourGradient glow(
+        juce::Colour(0xffc2fff5).withAlpha(0.13f),
+        r.getX(),r.getY(),
+        juce::Colour(0xfff6c8ff).withAlpha(0.14f),
+        r.getRight(),r.getY(),false);
+    glow.addColour(0.48,juce::Colour(0xffddedff).withAlpha(0.19f));
+    g.setGradientFill(glow);
     g.strokePath(spectrumPath,juce::PathStrokeType(3.5f,
         juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
     g.setGradientFill(edge);
