@@ -19,6 +19,7 @@ struct Config {
     Domain domain=Domain::stereo;
     Compressor comp=Compressor::off;
     Detector detector=Detector::linked;
+    double sparkle=0.0,shine=0.0,smooth=0.0,tape=0.0;
     bool enabled=true,solo=false;
 };
 struct Meter { double correlation=1.0,midRms=0.0,sideRms=0.0,spaceApplied=1.0,largestGrDb=0.0; };
@@ -86,6 +87,7 @@ public:
             node.midEq.reset();node.sideEq.reset();
             node.midTap.reset();node.sideTap.reset();
             node.e1=node.e2=node.sideEnergy=node.midEnergy=0.0;
+            node.onyxMid={};node.onyxSide={};
             updateFilters(i);
         }
         haveConfig_=true;
@@ -185,7 +187,8 @@ public:
                 if(!c.enabled)continue;
                 const bool wantsEffects=c.comp!=Compressor::off ||
                                         rootMono_[(size_t)root] ||
-                                        std::abs(c.space-50.0)>1e-5;
+                                        std::abs(c.space-50.0)>1e-5 || c.sparkle>0.0 ||
+                                        c.shine>0.0 || c.smooth>0.0 || c.tape>0.0;
                 if(!wantsEffects)continue;
                 auto& tap=rootFxBands_[(size_t)root].filters;
                 // Keep both components measurable for phase-safe SPACE,
@@ -210,6 +213,13 @@ public:
                            std::sqrt(0.98*node.midEnergy/node.sideEnergy)));
                     // Only the SIDE content in this ROOT is changed.
                     s+=(allowed-1.0)*bandSide;
+                }
+                // Process spectral colour on the selected ROOT only, never master.
+                if(c.sparkle+c.shine+c.smooth+c.tape>0.0) {
+                    const double processedM=onyxSample(tapM,node.onyxMid,c);
+                    const double processedS=onyxSample(tapS,node.onyxSide,c);
+                    m+=processedM-tapM;
+                    s+=processedS-tapS;
                 }
                 if(c.comp!=Compressor::off) {
                     const double ratio=c.comp==Compressor::optical4 ||
@@ -307,10 +317,28 @@ public:
         meter_.largestGrDb=greatestGr;
     }
 private:
+    struct OnyxMemory { double air=0.0,presence=0.0,soft=0.0,dc=0.0; };
+    double onyxSample(double x,OnyxMemory& state,const Config& c) const noexcept {
+        const auto a=[this](double hz) {return 1.0-std::exp(-2.0*std::numbers::pi*hz/sr_);};
+        state.air+=a(4200.0)*(x-state.air);
+        double y=x+c.sparkle*0.20*std::tanh((x-state.air)*(1.0+c.sparkle));
+        state.presence+=a(1600.0)*(y-state.presence);
+        y+=c.shine*0.30*(y-state.presence);
+        state.soft+=a(16000.0-13400.0*c.smooth)*(y-state.soft);
+        y+=c.smooth*0.88*(state.soft-y);
+        if(c.tape>0.0) {
+            const double drive=1.0+3.5*c.tape;
+            y+=c.tape*(std::tanh(drive*y)/std::tanh(drive)-y);
+            state.dc+=a(8.0)*(y-state.dc);
+            y-=state.dc;
+        }
+        return y;
+    }
     struct Node {
         Config config{};
         Filter midEq,sideEq,midTap,sideTap;
         double e1=0.0,e2=0.0,midEnergy=0.0,sideEnergy=0.0;
+        OnyxMemory onyxMid{},onyxSide{};
     };
     // Each root's two boundary handles determine the exact frequency
     // interval for BOTH the palette and the audible bandpass.
