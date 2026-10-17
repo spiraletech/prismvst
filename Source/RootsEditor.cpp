@@ -83,6 +83,7 @@ void RootsGraph::updateAnalyzer(
     const std::array<float,PRISMVSTAudioProcessor::labBars>& pk){
     bands_=values;peaks_=pk;
     heat_.update(values,1.0/30.0,pval(processor_.apvts,"aura_memory"));
+    assist_.observe(values);
     repaint();
 }
 void RootsGraph::selectNode(int i){
@@ -487,6 +488,32 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         b->setClickingTogglesState(true);
         addAndMakeVisible(*b);
     }
+    addAndMakeVisible(assistApply_);
+    assistApply_.onClick=[this]{
+        const auto suggestion=graph_.finding();
+        if(!suggestion.ready)return;
+        const int root=node_/2;
+        const float low=pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(root*2,"hz"));
+        const float high=pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(root*2+1,"hz"));
+        if(suggestion.hz<std::min(low,high)||suggestion.hz>std::max(low,high))return;
+        // Explicit user-approved parameter edit, no autonomous audio changes.
+        int target=0;
+        for(int slot=0;slot<4;++slot)
+            if(pval(processor_.apvts,PRISMVSTAudioProcessor::carveId(root,slot,"on"))<0.5f){
+                target=slot;break;
+            }
+        carveSlot_=target;
+        const auto id=[root,target](const char* s){
+            return PRISMVSTAudioProcessor::carveId(root,target,s);
+        };
+        change(processor_,id("hz"),suggestion.hz);
+        change(processor_,id("depth"),suggestion.suggestedDepthDb);
+        change(processor_,id("q"),5.0f);
+        change(processor_,id("on"),1.0f);
+        bindCarve();
+        setMode(1);
+    };
+    assistApply_.setTooltip("Manually approve a SONAR-evidenced corrective CARVE on selected ROOT");
     addAndMakeVisible(dynButton_);
     dynButton_.onClick=[this]{
         const auto id=PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp");
@@ -569,6 +596,7 @@ void RootsEditor::setMode(int next){
     for(auto* l:{&carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_,&carveThresholdLabel_})l->setVisible(carve);
     for(auto& b:carveSlotButtons_)b.setVisible(carve);
     carveOn_.setVisible(carve);carveDynamic_.setVisible(carve);
+    assistApply_.setVisible(mode_==4);
     gain_.setVisible(mode_==0);gainLabel_.setVisible(mode_==0);
     bandSpace_.setVisible(mode_==0||mode_==2);
     bandSpaceLabel_.setVisible(mode_==0||mode_==2);
@@ -616,7 +644,19 @@ void RootsEditor::timerCallback(){
         juce::String(processor_.getPeakDb(),1)+" dBFS  /  CORR "+
         juce::String(state.correlation,2)+"  /  GR "+
         juce::String(state.largestGrDb,1)+" dB";
-    status_.setText(status,juce::dontSendNotification);
+    if(mode_==4){
+        const auto finding=graph_.finding();
+        const int root=node_/2;
+        const float low=pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(root*2,"hz"));
+        const float high=pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(root*2+1,"hz"));
+        assistApply_.setEnabled(finding.ready &&
+            finding.hz>=std::min(low,high) && finding.hz<=std::max(low,high));
+        if(finding.ready)
+            status_.setText("ASSIST  "+hzText(finding.hz)+" Hz  /  "+
+                juce::String(finding.prominenceDb,1)+" dB PROMINENCE  /  VERIFY BY EAR",
+                juce::dontSendNotification);
+        else status_.setText("ASSIST  /  NO STABLE NARROWBAND TARGET",juce::dontSendNotification);
+    } else status_.setText(status,juce::dontSendNotification);
 }
 void RootsEditor::paint(juce::Graphics& g){
     const auto bounds=getLocalBounds().toFloat();
@@ -690,5 +730,6 @@ void RootsEditor::resized(){
     }
     carveOn_.setBounds(left,panelY+38,cw-2,25);
     carveDynamic_.setBounds(left,panelY+69,cw-2,25);
+    assistApply_.setBounds(260,panelY+51,220,34);
     dynButton_.setBounds(left+6*cw,panelY+36,cw-2,26);
 }

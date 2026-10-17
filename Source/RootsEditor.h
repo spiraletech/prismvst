@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "SurgerySonar.h"
+#include "SurgeryAssist.h"
 #include <array>
 #include <functional>
 #include <memory>
@@ -35,6 +36,7 @@ public:
     int selectedNode() const noexcept{return selected_;}
     void selectNode(int node);
     void showRootMenu(int root);
+    surgery::Finding finding() const noexcept {return assist_.finding();}
     void setPresentation(int theme,int mode,int slot) {
         theme_=theme;mode_=mode;slot_=slot;repaint();
     }
@@ -44,6 +46,7 @@ private:
     int selected_=0,dragging_=-1;
     int theme_=0,mode_=0,slot_=0;
     surgery::SonarField<PRISMVSTAudioProcessor::labBars> heat_;
+    surgery::AssistScanner<PRISMVSTAudioProcessor::labBars> assist_;
     bool hover_=false;
     juce::Point<float> mouse_;
     juce::Rectangle<float> area() const;
@@ -70,7 +73,7 @@ private:
     std::array<RootSelectorButton,7> rootButtons_;
     juce::Slider gain_,bandSpace_,space_,threshold_;
     juce::TextButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};
-    juce::TextButton themeButton_{"THEME"},dynButton_{"DYN OFF"};
+    juce::TextButton themeButton_{"THEME"},dynButton_{"DYN OFF"},assistApply_{"APPLY SUGGESTION"};
     int themeIndex_=0,mode_=0,carveSlot_=0;
     std::array<juce::TextButton,5> modeButtons_;
     std::array<juce::TextButton,4> carveSlotButtons_;
