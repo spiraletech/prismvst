@@ -6,6 +6,8 @@
 #include "SurgeryLookAndFeel.h"
 #include "SurgeryHeaderLayout.h"
 #include "SurgeryNodeFocus.h"
+#include "SurgeryResponse.h"
+#include "SurgeryAnalysis.h"
 #include <array>
 #include <functional>
 #include <memory>
@@ -41,6 +43,11 @@ public:
     void selectNode(int node);
     void showRootMenu(int root);
     surgery::Finding finding() const noexcept {return assist_.finding();}
+    surgery::SpectralSnapshot spectralMetrics() const noexcept {
+        return surgery::summarizeSpectrum(bands_);
+    }
+    void setFrozen(bool frozen) noexcept {frozen_=frozen;repaint();}
+    bool isFrozen() const noexcept {return frozen_;}
     void setPresentation(int theme,int mode,int slot) {
         theme_=theme;mode_=mode;slot_=slot;repaint();
     }
@@ -51,7 +58,7 @@ private:
     int theme_=0,mode_=0,slot_=0;
     surgery::SonarField<PRISMVSTAudioProcessor::labBars> heat_;
     surgery::AssistScanner<PRISMVSTAudioProcessor::labBars> assist_;
-    bool hover_=false;
+    bool hover_=false,frozen_=false;
     juce::Point<float> mouse_;
     juce::Rectangle<float> area() const;
     float freqToX(float f) const;
