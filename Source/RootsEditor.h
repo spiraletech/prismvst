@@ -62,6 +62,11 @@ private:
     surgery::SonarField<PRISMVSTAudioProcessor::labBars> heat_;
     surgery::AssistScanner<PRISMVSTAudioProcessor::labBars> assist_;
     bool hover_=false,frozen_=false;
+    static constexpr int waterfallWidth=PRISMVSTAudioProcessor::labBars;
+    static constexpr int waterfallRows=256;
+    juce::Image waterfall_{juce::Image::ARGB,waterfallWidth,waterfallRows,true};
+    int waterfallFrames_=0;
+    void appendWaterfallFrame(const std::array<float,waterfallWidth>& frame);
     juce::Point<float> mouse_;
     juce::Rectangle<float> area() const;
     float freqToX(float f) const;

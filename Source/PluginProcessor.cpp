@@ -659,6 +659,7 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     }
 
     analyzerFifo.reset();
+    spectrogramFrames.resetWhenStopped();
     analyzerQueue.fill(0.0f);
     fftWritePos = 0;
     fftHopCounter = 0;
@@ -936,11 +937,16 @@ void PRISMVSTAudioProcessor::renderSpectrumFrame()
     labAnalyzer.processMagnitudes(fftData.data(), fftSize / 2 + 1,
                                   fftSize, currentSampleRate);
     const auto& labFrame = labAnalyzer.frame();
+    std::array<float,labBars> spectrogramRow {};
     for (int i = 0; i < labBars; ++i)
     {
-        labDb[(size_t)i].store(labFrame[(size_t)i].db);
+        const auto db=labFrame[(size_t)i].db;
+        labDb[(size_t)i].store(db);
         labPeakDb[(size_t)i].store(labFrame[(size_t)i].peakDb);
+        spectrogramRow[(size_t)i]=db;
     }
+    // Worker-thread only; drop old visual detail on overflow, never audio.
+    spectrogramFrames.push(spectrogramRow);
 
     const int maxBin = fftSize / 2;
     const double sr = juce::jmax(1.0, currentSampleRate);
