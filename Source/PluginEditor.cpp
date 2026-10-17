@@ -16,8 +16,9 @@ constexpr std::array<const char*, PRISMVSTAudioProcessor::numEqBands> kBandNames
 };
 
 constexpr std::array<const char*, 6> kControlNames {
-    "FREQ", "GAIN", "DYN", "ATTACK", "RELEASE", "ONYX"
+    "FREQ", "GAIN", "THRESHOLD", "ATTACK", "RELEASE", "ONYX"
 };
+constexpr std::array<const char*, 4> kOnyxNames { "SPARKLE", "SHINE", "SMOOTHENING", "VINTAGE TAPE" };
 
 float clamp01(float v)
 {
@@ -488,10 +489,15 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
 
     configureKnob(frequencySlider, " Hz", 60.0, 2);
     configureKnob(gainSlider, " dB", 0.0, 2);
-    configureKnob(dynamicSlider, " dB", 0.0, 2);
+    configureKnob(dynamicSlider, " dB", -18.0, 1);
     configureKnob(attackSlider, " ms", 10.0, 2);
     configureKnob(releaseSlider, " ms", 120.0, 1);
     configureKnob(onyxSlider, " %", 0.0, 1);
+    for (auto* s : { &sparkleSlider, &shineSlider, &smoothSlider, &tapeSlider })
+    {
+        configureKnob(*s, " %", 0.0, 1);
+        addAndMakeVisible(*s);
+    }
 
     addAndMakeVisible(frequencySlider);
     addAndMakeVisible(gainSlider);
@@ -524,6 +530,10 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
     addAndMakeVisible(spectrumDisplay);
 
     onyxA = std::make_unique<SliderAttachment>(processor.apvts, "onyx", onyxSlider);
+    sparkleA = std::make_unique<SliderAttachment>(processor.apvts, "onyx_sparkle", sparkleSlider);
+    shineA = std::make_unique<SliderAttachment>(processor.apvts, "onyx_shine", shineSlider);
+    smoothA = std::make_unique<SliderAttachment>(processor.apvts, "onyx_smooth", smoothSlider);
+    tapeA = std::make_unique<SliderAttachment>(processor.apvts, "onyx_tape", tapeSlider);
     bypassA = std::make_unique<ButtonAttachment>(processor.apvts, "master_bypass", bypassButton);
 
     bindSelectedBand(0);
@@ -579,7 +589,7 @@ void PRISMVSTAudioProcessorEditor::bindSelectedBand(int band)
     gainA = std::make_unique<SliderAttachment>(
         processor.apvts, bandId(selectedBand, "gain"), gainSlider);
     dynamicA = std::make_unique<SliderAttachment>(
-        processor.apvts, bandId(selectedBand, "dyn_range"), dynamicSlider);
+        processor.apvts, bandId(selectedBand, "threshold"), dynamicSlider);
     attackA = std::make_unique<SliderAttachment>(
         processor.apvts, bandId(selectedBand, "attack"), attackSlider);
     releaseA = std::make_unique<SliderAttachment>(
@@ -598,7 +608,8 @@ void PRISMVSTAudioProcessorEditor::updatePrecisionSensitivity()
 
     for (auto* slider : {
              &frequencySlider, &gainSlider, &dynamicSlider,
-             &attackSlider, &releaseSlider, &onyxSlider })
+             &attackSlider, &releaseSlider, &onyxSlider,
+             &sparkleSlider, &shineSlider, &smoothSlider, &tapeSlider })
     {
         slider->setMouseDragSensitivity(pixels);
     }
@@ -677,13 +688,13 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
 
     g.setColour(kText);
     g.setFont(juce::Font(juce::FontOptions(26.0f, juce::Font::bold)));
-    g.drawText("PRISM",
-               header.withTrimmedLeft(18.0f).withWidth(145.0f).toNearestInt(),
+    g.drawText("SURGERY EQ",
+               header.withTrimmedLeft(18.0f).withWidth(175.0f).toNearestInt(),
                juce::Justification::centredLeft);
 
     g.setColour(kCyan);
     g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-    g.drawText("RECOVERY 001   v0.3.4",
+    g.drawText("ONYX ENGINE   v0.4",
                header.withTrimmedLeft(178.0f).withWidth(175.0f).toNearestInt(),
                juce::Justification::centredLeft);
 
@@ -698,20 +709,20 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
     paintMetalPanel(g, tabsPanel, false);
 
     const auto graphPanel = juce::Rectangle<float>(
-        12.0f, 114.0f, bounds.getWidth() - 98.0f, bounds.getHeight() - 362.0f);
+        12.0f, 114.0f, bounds.getWidth() - 98.0f, bounds.getHeight() - 495.0f);
     paintMetalPanel(g, graphPanel, false);
 
     const auto meterPanel = juce::Rectangle<float>(
-        bounds.getWidth() - 78.0f, 114.0f, 66.0f, bounds.getHeight() - 362.0f);
+        bounds.getWidth() - 78.0f, 114.0f, 66.0f, bounds.getHeight() - 495.0f);
     paintMetalPanel(g, meterPanel, false);
     paintMeter(g, meterPanel.reduced(18.0f, 34.0f), processor.getPeakDb());
 
     const auto infoPanel = juce::Rectangle<float>(
-        12.0f, bounds.getHeight() - 240.0f, bounds.getWidth() - 24.0f, 34.0f);
+        12.0f, bounds.getHeight() - 373.0f, bounds.getWidth() - 24.0f, 34.0f);
     paintMetalPanel(g, infoPanel, false);
 
     const auto controlPanel = juce::Rectangle<float>(
-        12.0f, bounds.getHeight() - 200.0f, bounds.getWidth() - 24.0f, 188.0f);
+        12.0f, bounds.getHeight() - 333.0f, bounds.getWidth() - 24.0f, 321.0f);
     paintMetalPanel(g, controlPanel, true);
 
     for (auto p : {
@@ -727,6 +738,13 @@ void PRISMVSTAudioProcessorEditor::paint(juce::Graphics& g)
         g.drawLine(p.x - 2.5f, p.y, p.x + 2.5f, p.y, 1.0f);
     }
 
+    const int onyxY = getHeight() - 327;
+    g.setColour(kCyan);
+    g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+    g.drawText("ONYX  /  HARMONIC FINISH", 30, onyxY, 280, 22, juce::Justification::centredLeft);
+    for (int i = 0; i < 4; ++i)
+        g.drawText(kOnyxNames[(size_t)i], 260 + i * ((getWidth() - 320) / 4), onyxY,
+                   (getWidth() - 320) / 4 - 8, 22, juce::Justification::centred);
     const int controlY = getHeight() - 188;
     const int availableWidth = getWidth() - 170;
     const int cellWidth = availableWidth / 6;
@@ -781,12 +799,12 @@ void PRISMVSTAudioProcessorEditor::resized()
             30);
     }
 
-    spectrumDisplay.setBounds(18, 120, w - 110, h - 374);
+    spectrumDisplay.setBounds(18, 120, w - 110, h - 507);
 
-    selectedBandLabel.setBounds(28, h - 235, 90, 26);
-    statusLabel.setBounds(112, h - 235, w - 390, 26);
-    enabledButton.setBounds(w - 176, h - 232, 72, 24);
-    bypassButton.setBounds(w - 98, h - 232, 70, 24);
+    selectedBandLabel.setBounds(28, h - 368, 90, 26);
+    statusLabel.setBounds(112, h - 368, w - 390, 26);
+    enabledButton.setBounds(w - 176, h - 365, 72, 24);
+    bypassButton.setBounds(w - 98, h - 365, 70, 24);
 
     const int controlTop = h - 174;
     const int availableWidth = w - 170;
@@ -804,5 +822,9 @@ void PRISMVSTAudioProcessorEditor::resized()
         sliders[(size_t)i]->setBounds(x, controlTop, knobSize, 142);
     }
 
+    std::array<juce::Slider*, 4> onyxControls { &sparkleSlider, &shineSlider, &smoothSlider, &tapeSlider };
+    const int onyxCell = (w - 320) / 4;
+    for (int i = 0; i < 4; ++i)
+        onyxControls[(size_t)i]->setBounds(260 + i * onyxCell + (onyxCell - 100) / 2, h - 303, 100, 115);
     precisionLever.setBounds(w - 126, controlTop + 8, 72, 126);
 }
