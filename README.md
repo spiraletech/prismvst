@@ -1,5 +1,11 @@
 # SURGERY EQ v1.0 — Spiral Ether Tech
 
+## 1.0.2 control and ONYX revision
+
+See [SURGERY_1_0_2.md](SURGERY_1_0_2.md) for ROOT compression OFF / 0 dBFS defaults, removal of the visible CARVE trigger, compatible state recall, and the measured ONYX colour revision. The 1.0.1 quality repairs below remain included.
+
+This branch starts from the exact `6615d36` build matched to the supplied SURGERY EQ ZIP. See [SURGERY_QUALITY_PASS.md](SURGERY_QUALITY_PASS.md) for repairs, comparison/preset/output controls, validation and release limits. The original seven ROOTS, 28 CARVEs and four interface modes are retained. Historical notes below describe earlier engineering stages.
+
 Original Windows-first surgical equalization VST3 developed in C++20/JUCE.
 
 **Development branch:** `surgery-eq-v1.0`. This is an engineering build and is not declared production-ready until Windows CI and actual FL Studio verification pass.

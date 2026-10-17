@@ -41,5 +41,17 @@ int main(){
     l.fill(2.0f);r.fill(-2.0f);
     e.process(l.data(),r.data(),l.size());
     for(float x:l)if(!std::isfinite(x)){std::cerr<<"nonfinite\n";return 6;}
+    // Hidden legacy threshold still deterministically controls explicitly enabled dynamics.
+    auto dynamicRms=[&](double threshold,bool dynamic){
+        CarveEngine instance;instance.prepare(48000);instance.bounds(4,500,2000);
+        surgery::CarveConfig d;d.enabled=true;d.hz=1000;d.depthDb=18;d.q=5;
+        d.dynamic=dynamic;d.thresholdDb=threshold;instance.configure(4,0,d);
+        return toneRms(1000,instance,true);
+    };
+    const auto low=dynamicRms(-48,true),high=dynamicRms(-6,true);
+    if(!(low<unity*.25&&high>unity*.95)){std::cerr<<"legacy dynamic threshold response\n";return 7;}
+    if(std::abs(dynamicRms(-48,false)-dynamicRms(-6,false))>1e-6){
+        std::cerr<<"hidden threshold changed static CARVE\n";return 8;
+    }
     std::cout<<"Surgery CARVE four proof groups passed\n";return 0;
 }

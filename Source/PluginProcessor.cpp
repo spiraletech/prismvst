@@ -2,6 +2,7 @@
 #include "RootsEditor.h"
 #include "PluginEditor.h"
 #include <cmath>
+#include <charconv>
 
 namespace
 {
@@ -16,6 +17,21 @@ inline float toGain(float d) { return juce::Decibels::decibelsToGain(d); }
 inline float safeFrequency(double sampleRate, float frequency)
 {
     return juce::jlimit(20.0f, (float)(sampleRate * 0.45), frequency);
+}
+
+bool finiteParameterState(const juce::XmlElement& xml,
+                          const juce::AudioProcessorValueTreeState& parameters)
+{
+    for(auto* child=xml.getFirstChildElement();child!=nullptr;child=child->getNextElement()) {
+        if(parameters.getParameter(child->getStringAttribute("id"))==nullptr)continue;
+        const auto text=child->getStringAttribute("value").trim();
+        const auto* begin=text.toRawUTF8();
+        const auto* end=begin+text.getNumBytesAsUTF8();
+        double value=0;
+        const auto parsed=std::from_chars(begin,end,value);
+        if(parsed.ec!=std::errc{}||parsed.ptr!=end||!std::isfinite(value)||!std::isfinite((float)value))return false;
+    }
+    return true;
 }
 }
 
@@ -233,6 +249,23 @@ PRISMVSTAudioProcessor::PRISMVSTAudioProcessor()
         .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "PARAMETERS", createParameterLayout())
 {
+    const char* rootNames[] = { "gain_db", "mono", "on", "domain", "comp", "detector", "threshold",
+        "onyx_sparkle", "onyx_shine", "onyx_smooth", "onyx_tape", "solo" };
+    for (int root = 0; root < numSections; ++root)
+        for (int field = 0; field < 12; ++field)
+            rootParameters[(size_t)root].values[(size_t)field] = apvts.getRawParameterValue(rootsRootControlId(root, rootNames[field]));
+    for (int node = 0; node < 14; ++node)
+        for (int field = 0; field < 2; ++field)
+            nodeParameters[(size_t)node][(size_t)field] = apvts.getRawParameterValue(rootsNodeId(node, field == 0 ? "hz" : "q"));
+    const char* carveNames[] = { "on", "hz", "depth", "q", "threshold", "dynamic", "domain" };
+    for (int root = 0; root < 7; ++root)
+        for (int slot = 0; slot < 4; ++slot)
+            for (int field = 0; field < 7; ++field)
+                carveParameters[(size_t)(root * 4 + slot)][(size_t)field] = apvts.getRawParameterValue(carveId(root, slot, carveNames[field]));
+    engineMode = apvts.getRawParameterValue("roots_engine_mode");
+    bypassValue = apvts.getRawParameterValue("surgery_bypass");
+    trimValue = apvts.getRawParameterValue("surgery_output_db");
+
     for (auto& v : spectrum)
         v.store(kFloorDb);
 
@@ -280,10 +313,10 @@ int PRISMVSTAudioProcessor::getActiveRootsSolo() const noexcept
 {
     const int recent=latestRootsSolo.load();
     if(recent>=0&&recent<numSections
-       &&read(apvts,rootsSoloParameterIds[(size_t)recent])>=0.5f)
+       &&rootParameters[(size_t)recent].values[11]->load()>=0.5f)
         return recent;
     for(int root=0;root<numSections;++root)
-        if(read(apvts,rootsSoloParameterIds[(size_t)root])>=0.5f)
+        if(rootParameters[(size_t)root].values[11]->load()>=0.5f)
             return root;
     return -1;
 }
@@ -488,10 +521,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             juce::NormalisableRange<float>(0.0f,100.0f,0.1f),50.0f));
         p.push_back(std::make_unique<juce::AudioParameterFloat>(
             juce::ParameterID{id("threshold"),1},label+"Compression Threshold",
-            juce::NormalisableRange<float>(-60.0f,0.0f,0.1f),-18.0f));
+            juce::NormalisableRange<float>(-60.0f,0.0f,0.1f),0.0f));
         p.push_back(std::make_unique<juce::AudioParameterChoice>(
             juce::ParameterID{id("comp"),1},label+"Compression Profile",
-            juce::StringArray{"OFF","OPTICAL 3:1","OPTICAL 4:1","CLB1 TUBE 3:1","FET 4:1"},4));
+            juce::StringArray{"OFF","OPTICAL 3:1","OPTICAL 4:1","CLB1 TUBE 3:1","FET 4:1"},0));
         p.push_back(std::make_unique<juce::AudioParameterChoice>(
             juce::ParameterID{id("domain"),1},label+"EQ Domain",
             juce::StringArray{"STEREO","MID","SIDE"},0));
@@ -608,6 +641,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
         p.push_back(std::make_unique<juce::AudioParameterInt>(
             juce::ParameterID{"surgery_root"+juce::String(root+1)+"_rgb",1},
             "ROOT "+juce::String(root+1)+" Colour",0,16777215,(int)colours[root]));
+    // Append new IDs so every historical parameter and its ordering stays intact.
+    p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID { "surgery_bypass", 1 }, "Surgery Bypass", false));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "surgery_output_db", 1 }, "Surgery Output Trim",
+        juce::NormalisableRange<float>(-24.0f, 12.0f, 0.01f), 0.0f));
     return { p.begin(), p.end() };
 }
 
@@ -621,6 +658,14 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     analyzerWorker.stopThread(1000);
 
     currentSampleRate = sampleRate;
+    dryScratch.setSize(2, juce::jmax(1, samplesPerBlock));
+    outputTrimSmoother.reset(sampleRate, 0.02);
+    outputTrimSmoother.setCurrentAndTargetValue(toGain(trimValue->load()));
+    bypassMix.reset(sampleRate, 0.005);
+    bypassMix.setCurrentAndTargetValue(bypassValue->load() >= 0.5f ? 1.0f : 0.0f);
+    inputPeakDb.store(kFloorDb); peakDb.store(kFloorDb); peakHoldDb.store(kFloorDb); gainReductionDb.store(0);
+    lufsShort.store(kFloorDb); lufsIntegrated.store(kFloorDb);
+    rootMeters[0].store(1); rootMeters[1].store(0); rootMeters[2].store(0); rootMeters[3].store(1); rootMeters[4].store(0);
     rootsEngine.prepare(sampleRate);
     for(auto& state:onyxFinish)state={};
     carveEngine.prepare(sampleRate);
@@ -667,18 +712,18 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     for (int c = 0; c < 2; ++c)
     {
         loudHp[(size_t)c].reset();
-        loudHp[(size_t)c].prepare(monoSpec);
         loudShelf[(size_t)c].reset();
-        loudShelf[(size_t)c].prepare(monoSpec);
         *loudHp[(size_t)c].coefficients = *hpC;
         *loudShelf[(size_t)c].coefficients = *shC;
+        loudHp[(size_t)c].prepare(monoSpec);
+        loudShelf[(size_t)c].prepare(monoSpec);
     }
 
     analyzerFifo.reset();
-    analyzerQueue.fill(0.0f);
+    analyzerQueue.fill(0.0f);analyzerRightQueue.fill(0.0f);
     fftWritePos = 0;
     fftHopCounter = 0;
-    fftFifo.fill(0.0f);
+    fftFifo.fill(0.0f);fftRightFifo.fill(0.0f);leftSpectralPower.fill(0.0f);
     fftData.fill(0.0f);
     for (auto& v : spectrum)
         v.store(kFloorDb);
@@ -879,13 +924,16 @@ void PRISMVSTAudioProcessor::pushAnalyzerSamples(const juce::AudioBuffer<float>&
     int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
     analyzerFifo.prepareToWrite(requested, start1, size1, start2, size2);
 
-    for (int i = 0; i < size1; ++i)
-        analyzerQueue[(size_t)(start1 + i)] = 0.5f * (left[i] + right[i]);
+    for (int i = 0; i < size1; ++i){
+        analyzerQueue[(size_t)(start1 + i)] = left[i];
+        analyzerRightQueue[(size_t)(start1 + i)] = right[i];
+    }
 
     for (int i = 0; i < size2; ++i)
     {
         const int source = size1 + i;
-        analyzerQueue[(size_t)(start2 + i)] = 0.5f * (left[source] + right[source]);
+        analyzerQueue[(size_t)(start2 + i)] = left[source];
+        analyzerRightQueue[(size_t)(start2 + i)] = right[source];
     }
 
     const int written = size1 + size2;
@@ -910,9 +958,9 @@ void PRISMVSTAudioProcessor::runAnalyzerThread()
             analyzerFifo.prepareToRead(amount, start1, size1, start2, size2);
 
             for (int i = 0; i < size1; ++i)
-                consumeAnalyzerSample(analyzerQueue[(size_t)(start1 + i)]);
+                consumeAnalyzerSample(analyzerQueue[(size_t)(start1 + i)],analyzerRightQueue[(size_t)(start1 + i)]);
             for (int i = 0; i < size2; ++i)
-                consumeAnalyzerSample(analyzerQueue[(size_t)(start2 + i)]);
+                consumeAnalyzerSample(analyzerQueue[(size_t)(start2 + i)],analyzerRightQueue[(size_t)(start2 + i)]);
 
             analyzerFifo.finishedRead(size1 + size2);
             if (analyzerWorker.threadShouldExit())
@@ -921,9 +969,10 @@ void PRISMVSTAudioProcessor::runAnalyzerThread()
     }
 }
 
-void PRISMVSTAudioProcessor::consumeAnalyzerSample(float sample)
+void PRISMVSTAudioProcessor::consumeAnalyzerSample(float left, float right)
 {
-    fftFifo[(size_t)fftWritePos] = sample;
+    fftFifo[(size_t)fftWritePos] = left;
+    fftRightFifo[(size_t)fftWritePos] = right;
     fftWritePos = (fftWritePos + 1) % fftSize;
 
     if (++fftHopCounter >= fftHopSize)
@@ -946,11 +995,22 @@ void PRISMVSTAudioProcessor::renderSpectrumFrame()
 
     fftWindow.multiplyWithWindowingTable(fftData.data(), fftSize);
     fft.performFrequencyOnlyForwardTransform(fftData.data());
+    for (int bin = 0; bin <= fftSize / 2; ++bin)
+        leftSpectralPower[(size_t)bin] = fftData[(size_t)bin] * fftData[(size_t)bin];
+    for (int i = 0; i < fftSize; ++i)
+        fftData[(size_t)i] = fftRightFifo[(size_t)((fftWritePos + i) % fftSize)];
+    std::fill(fftData.begin() + fftSize, fftData.end(), 0.0f);
+    fftWindow.multiplyWithWindowingTable(fftData.data(), fftSize);
+    fft.performFrequencyOnlyForwardTransform(fftData.data());
+    // Stereo power average preserves mono calibration and cannot phase-cancel.
+    for (int bin = 0; bin <= fftSize / 2; ++bin)
+        fftData[(size_t)bin] = std::sqrt(0.5f * (leftSpectralPower[(size_t)bin]
+                                             + fftData[(size_t)bin] * fftData[(size_t)bin]));
 
     // PRISM Analysis 256-bar field, Hann-coherent-gain calibrated.
     // Kept exclusively on the analyzer worker; no audio DSP interaction.
     labAnalyzer.processMagnitudes(fftData.data(), fftSize / 2 + 1,
-                                  fftSize, currentSampleRate);
+                                  fftSize, currentSampleRate, (double)fftSize);
     const auto& labFrame = labAnalyzer.frame();
     for (int i = 0; i < labBars; ++i)
     {
@@ -997,12 +1057,12 @@ void PRISMVSTAudioProcessor::copySpectrum(std::array<float, spectrumBins>& desti
 
 void PRISMVSTAudioProcessor::copyPrismLabBars(
     std::array<float, labBars>& db,
-    std::array<float, labBars>& peakDb) const noexcept
+    std::array<float, labBars>& peakValues) const noexcept
 {
     for (int i = 0; i < labBars; ++i)
     {
         db[(size_t)i] = labDb[(size_t)i].load();
-        peakDb[(size_t)i] = labPeakDb[(size_t)i].load();
+        peakValues[(size_t)i] = labPeakDb[(size_t)i].load();
     }
 }
 
@@ -1025,6 +1085,19 @@ void PRISMVSTAudioProcessor::updateMeters(const juce::AudioBuffer<float>& buffer
     }
 
     peakDb.store(toDb(peak + 1.0e-9f));
+    auto held=peakHoldDb.load();
+    const float measured=peakDb.load();
+    while(measured>held&&!peakHoldDb.compare_exchange_weak(held,measured)) {}
+    double leftPower=0,rightPower=0,cross=0,midPower=0,sidePower=0;
+    const auto* left=buffer.getReadPointer(0);const auto* right=buffer.getReadPointer(1);
+    for(int i=0;i<n;++i){
+        const double l=left[i],r=right[i],m=0.5*(l+r),s=0.5*(l-r);
+        leftPower+=l*l;rightPower+=r*r;cross+=l*r;midPower+=m*m;sidePower+=s*s;
+    }
+    rootMeters[0].store(leftPower>1e-20&&rightPower>1e-20?
+        std::clamp(cross/std::sqrt(leftPower*rightPower),-1.0,1.0):1.0);
+    rootMeters[1].store(std::sqrt(midPower/n));rootMeters[2].store(std::sqrt(sidePower/n));
+    if(bypassMix.getCurrentValue()>=1.0f){gainReductionDb.store(0);rootMeters[4].store(0);}
 
     const auto count = (uint64_t)n * 2u;
     integratedEnergy += weightedEnergy;
@@ -1048,30 +1121,28 @@ void PRISMVSTAudioProcessor::processRootsEngine(juce::AudioBuffer<float>& buffer
     rootsEngine.setMono(false);
     rootsEngine.setSoloRoot(getActiveRootsSolo());
     for(int root=0;root<numSections;++root){
-        rootsEngine.setRootGain(root,read(apvts,rootsRootGainId(root)));
+        rootsEngine.setRootGain(root,rootParameters[(size_t)root].values[0]->load());
         rootsEngine.setRootMono(root,
-            read(apvts,rootsRootControlId(root,"mono"))>=0.5f);
+            rootParameters[(size_t)root].values[1]->load()>=0.5f);
     }
     for(int i=0;i<kNodes;++i)
     {
-        const auto id=[i](const char* s){return rootsNodeId(i,s);};
         Config c;
-        c.hz=read(apvts,id("hz"));
+        c.hz=nodeParameters[(size_t)i][0]->load();
         c.gainDb=0.0; // retained obsolete host parameter is ignored
-        c.q=read(apvts,id("q"));
+        c.q=nodeParameters[(size_t)i][1]->load();
         const int root=i/2;
-        const auto parent=[root](const char* suffix){return rootsRootControlId(root,suffix);};
-        c.enabled=read(apvts,parent("on"))>=0.5f;
+        c.enabled=rootParameters[(size_t)root].values[2]->load()>=0.5f;
         c.solo=false; // only root-level SOLO is authoritative
-        c.domain=(Domain)juce::roundToInt(read(apvts,parent("domain")));
+        c.domain=(Domain)juce::roundToInt(rootParameters[(size_t)root].values[3]->load());
         c.space=50.0; // deprecated invisible ROOT SPACE neutralized
-        c.comp=(Compressor)juce::roundToInt(read(apvts,parent("comp")));
-        c.detector=(Detector)juce::roundToInt(read(apvts,parent("detector")));
-        c.thresholdDb=read(apvts,parent("threshold"));
-        c.sparkle=juce::jlimit(0.0f,1.0f,read(apvts,parent("onyx_sparkle"))*0.01f);
-        c.shine=juce::jlimit(0.0f,1.0f,read(apvts,parent("onyx_shine"))*0.01f);
-        c.smooth=juce::jlimit(0.0f,1.0f,read(apvts,parent("onyx_smooth"))*0.01f);
-        c.tape=juce::jlimit(0.0f,1.0f,read(apvts,parent("onyx_tape"))*0.01f);
+        c.comp=(Compressor)juce::roundToInt(rootParameters[(size_t)root].values[4]->load());
+        c.detector=(Detector)juce::roundToInt(rootParameters[(size_t)root].values[5]->load());
+        c.thresholdDb=rootParameters[(size_t)root].values[6]->load();
+        c.sparkle=juce::jlimit(0.0f,1.0f,rootParameters[(size_t)root].values[7]->load()*0.01f);
+        c.shine=juce::jlimit(0.0f,1.0f,rootParameters[(size_t)root].values[8]->load()*0.01f);
+        c.smooth=juce::jlimit(0.0f,1.0f,rootParameters[(size_t)root].values[9]->load()*0.01f);
+        c.tape=juce::jlimit(0.0f,1.0f,rootParameters[(size_t)root].values[10]->load()*0.01f);
         rootsEngine.config(i,c);
     }
     if(buffer.getNumChannels()>=2)
@@ -1080,30 +1151,34 @@ void PRISMVSTAudioProcessor::processRootsEngine(juce::AudioBuffer<float>& buffer
                             (size_t)buffer.getNumSamples());
     // Bounds come from actual ROOT handle positions, with smooth acoustic tails.
     for(int root=0;root<surgery::kRoots;++root) {
-        const float lo=read(apvts,rootsNodeId(root*2,"hz"));
-        const float hi=read(apvts,rootsNodeId(root*2+1,"hz"));
+        const float lo=nodeParameters[(size_t)(root*2)][0]->load();
+        const float hi=nodeParameters[(size_t)(root*2+1)][0]->load();
         carveEngine.bounds(root,lo,hi);
         carveEngine.rootEnabled(root,
-            read(apvts,rootsRootControlId(root,"on"))>=0.5f);
+            rootParameters[(size_t)root].values[2]->load()>=0.5f);
         carveEngine.rootDomain(root,(surgery::Channel)juce::roundToInt(
-            read(apvts,rootsRootControlId(root,"domain"))));
+            rootParameters[(size_t)root].values[3]->load()));
         for(int slot=0;slot<surgery::kSlots;++slot) {
-            const auto id=[root,slot](const char* suffix){return carveId(root,slot,suffix);};
+            const auto& values = carveParameters[(size_t)(root*4+slot)];
             surgery::CarveConfig c;
-            c.enabled=read(apvts,id("on"))>=0.5f;
-            c.hz=read(apvts,id("hz"));
-            c.depthDb=read(apvts,id("depth"));
-            c.q=read(apvts,id("q"));
-            c.thresholdDb=read(apvts,id("threshold"));
-            c.dynamic=read(apvts,id("dynamic"))>=0.5f;
-            c.channel=(surgery::Channel)juce::roundToInt(read(apvts,id("domain")));
+            c.enabled=values[0]->load()>=0.5f;
+            c.hz=values[1]->load();
+            c.depthDb=values[2]->load();
+            c.q=values[3]->load();
+            c.thresholdDb=values[4]->load();
+            c.dynamic=values[5]->load()>=0.5f;
+            c.channel=(surgery::Channel)juce::roundToInt(values[6]->load());
             carveEngine.configure(root,slot,c);
         }
     }
     if(buffer.getNumChannels()>=2)
         carveEngine.process(buffer.getWritePointer(0),buffer.getWritePointer(1),
                             (size_t)buffer.getNumSamples(),getActiveRootsSolo());
-    gainReductionDb.store((float)rootsEngine.meter().largestGrDb);
+    const auto meters = rootsEngine.meter();
+    rootMeters[0].store(meters.correlation); rootMeters[1].store(meters.midRms);
+    rootMeters[2].store(meters.sideRms); rootMeters[3].store(meters.spaceApplied);
+    rootMeters[4].store(meters.largestGrDb);
+    gainReductionDb.store((float)meters.largestGrDb);
 }
 
 void PRISMVSTAudioProcessor::processOnyxFinish(juce::AudioBuffer<float>& b) noexcept
@@ -1138,6 +1213,12 @@ void PRISMVSTAudioProcessor::processOnyxFinish(juce::AudioBuffer<float>& b) noex
 void PRISMVSTAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
+    if (buffer.getNumSamples() == 0 || buffer.getNumChannels() < 2) return;
+    for(int c=0;c<2;++c){
+        auto* samples=buffer.getWritePointer(c);
+        for(int i=0;i<buffer.getNumSamples();++i)
+            if(!std::isfinite(samples[i]))samples[i]=0.0f;
+    }
 
     for (int c = getTotalNumInputChannels(); c < getTotalNumOutputChannels(); ++c)
         buffer.clear(c, 0, buffer.getNumSamples());
@@ -1147,10 +1228,31 @@ void PRISMVSTAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         inputPeak = juce::jmax(inputPeak, buffer.getMagnitude(c, 0, buffer.getNumSamples()));
     inputPeakDb.store(toDb(inputPeak + 1.0e-9f));
 
-    if(read(apvts,"roots_engine_mode")>=0.5f)
-        processRootsEngine(buffer);
-    else
-        processSevenSectionEngine(buffer);
+    outputTrimSmoother.setTargetValue(toGain(trimValue->load()));
+    bypassMix.setTargetValue(bypassValue->load() >= 0.5f ? 1.0f : 0.0f);
+    const int capacity = dryScratch.getNumSamples();
+    if (capacity <= 0) return;
+    for (int offset = 0; offset < buffer.getNumSamples(); offset += capacity)
+    {
+        const int count = juce::jmin(capacity, buffer.getNumSamples() - offset);
+        for (int c = 0; c < 2; ++c)
+            dryScratch.copyFrom(c, 0, buffer, c, offset, count);
+        float* channels[] = { buffer.getWritePointer(0, offset), buffer.getWritePointer(1, offset) };
+        juce::AudioBuffer<float> chunk(channels, 2, count);
+        if (engineMode->load() >= 0.5f) processRootsEngine(chunk);
+        else processSevenSectionEngine(chunk);
+        for (int i = 0; i < count; ++i)
+        {
+            const float gain = outputTrimSmoother.getNextValue();
+            const float bypass = bypassMix.getNextValue();
+            for (int c = 0; c < 2; ++c)
+            {
+                const float dry = dryScratch.getSample(c, i);
+                const float wet = channels[c][i] * gain;
+                channels[c][i] = bypass >= 1.0f ? dry : wet + bypass * (dry - wet);
+            }
+        }
+    }
     pushAnalyzerSamples(buffer);
     updateMeters(buffer);
 }
@@ -1164,13 +1266,57 @@ void PRISMVSTAudioProcessor::getStateInformation(juce::MemoryBlock& dest)
 void PRISMVSTAudioProcessor::setStateInformation(const void* data, int size)
 {
     if (auto xml = getXmlFromBinary(data, size))
-        if (xml->hasTagName(apvts.state.getType()))
+        if (xml->hasTagName(apvts.state.getType())&&finiteParameterState(*xml,apvts))
         {
+            // Legacy states always recall at unity, with processing engaged.
+            for(const auto* id:{"surgery_bypass","surgery_output_db"})
+                if(xml->getChildByAttribute("id",id)==nullptr){
+                    auto* parameter=xml->createNewChildElement("PARAM");
+                    parameter->setAttribute("id",id);parameter->setAttribute("value",0.0);
+                }
             apvts.replaceState(juce::ValueTree::fromXml(*xml));
             sanitizeCrossovers();
             // Resolve old sessions that persisted more than one SOLO flag.
             triggerAsyncUpdate();
         }
+}
+
+bool PRISMVSTAudioProcessor::savePreset(const juce::File& file)
+{
+    if (auto xml = apvts.copyState().createXml()) {
+        juce::TemporaryFile temporary(file);
+        return xml->writeTo(temporary.getFile())&&temporary.overwriteTargetFileWithTemporary();
+    }
+    return false;
+}
+
+bool PRISMVSTAudioProcessor::loadPreset(const juce::File& file)
+{
+    if (!file.existsAsFile() || file.getSize() > 2 * 1024 * 1024) return false;
+    auto xml = juce::XmlDocument::parse(file);
+    if (!xml || !xml->hasTagName(apvts.state.getType())||!finiteParameterState(*xml,apvts)) return false;
+    // Reject arbitrary/empty XML, rather than silently pretending it is a preset.
+    if (!xml->getChildByAttribute("id", rootsNodeId(0, "hz"))) return false;
+    juce::MemoryBlock data;
+    copyXmlToBinary(*xml, data);
+    setStateInformation(data.getData(), (int)data.getSize());
+    return true;
+}
+
+void PRISMVSTAudioProcessor::switchComparison()
+{
+    getStateInformation(comparisonStates[(size_t)comparisonSlot_]);
+    const int next = 1 - comparisonSlot_;
+    if (comparisonStates[(size_t)next].isEmpty())
+        comparisonStates[(size_t)next] = comparisonStates[(size_t)comparisonSlot_];
+    const auto& state = comparisonStates[(size_t)next];
+    setStateInformation(state.getData(), (int)state.getSize());
+    comparisonSlot_ = next;
+}
+
+void PRISMVSTAudioProcessor::copyComparison()
+{
+    getStateInformation(comparisonStates[(size_t)(1 - comparisonSlot_)]);
 }
 
 juce::AudioProcessorEditor* PRISMVSTAudioProcessor::createEditor()

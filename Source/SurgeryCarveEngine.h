@@ -56,7 +56,8 @@ public:
         release_=std::exp(-1.0/(0.065*sr_));
         blendAlpha_=std::exp(-1.0/(0.004*sr_));
         for(auto& n:nodes_){
-            n.env=0.0;n.mix=0.0;
+            n.env=0.0;n.mix=0.0;n.countdown=0;
+            n.hz=n.config.hz;n.q=n.config.q;n.depth=n.config.depthDb;
             for(auto& f:n.eq)f.reset();
             for(auto& f:n.detector)f.reset();
             update(n);
@@ -85,7 +86,7 @@ public:
         auto& n=nodes_[(size_t)(root*kSlots+slot)];
         const bool changed=n.config.hz!=c.hz||n.config.q!=c.q||n.config.depthDb!=c.depthDb;
         n.config=c;
-        if(changed)update(n);
+        if(changed)n.countdown=0;
     }
     CarveConfig get(int root,int slot) const noexcept {
         return nodes_[(size_t)(std::clamp(root,0,kRoots-1)*kSlots+std::clamp(slot,0,kSlots-1))].config;
@@ -101,16 +102,30 @@ public:
     void process(float* left,float* right,std::size_t samples,int soloRoot=-1) noexcept {
         if(!left||!right)return;
         for(int root=0;root<kRoots;++root){
-            if(!enabled_[(size_t)root]||(soloRoot>=0&&root!=soloRoot))continue;
+            const bool rootActive=enabled_[(size_t)root]&&(soloRoot<0||root==soloRoot);
             for(int slot=0;slot<kSlots;++slot){
                 auto& n=nodes_[(size_t)(root*kSlots+slot)];
                 const auto& c=n.config;
                 const Channel channel=domain_[(size_t)root]==Channel::stereo?
                     c.channel:domain_[(size_t)root];
-                if(!c.enabled||c.depthDb<0.001)continue;
+                const bool active=rootActive&&c.enabled&&c.depthDb>=0.001;
+                if(!active&&n.mix<1e-8){
+                    // Fully dry nodes cannot replay stale ringing or detector state.
+                    n.mix=0;n.env=0;
+                    for(auto& f:n.eq)f.reset();
+                    for(auto& f:n.detector)f.reset();
+                    n.hz=c.hz;n.q=c.q;n.depth=c.depthDb;
+                    update(n);continue;
+                }
                 const double weight=boundaryWeight(c.hz,low_[(size_t)root],high_[(size_t)root]);
-                if(weight<1e-7)continue;
+
                 for(std::size_t i=0;i<samples;++i){
+                    if(n.countdown--<=0){
+                        const double alpha=1.0-std::exp(-32.0/(0.008*sr_));
+                        n.hz+=alpha*(c.hz-n.hz);n.q+=alpha*(c.q-n.q);
+                        n.depth+=alpha*(c.depthDb-n.depth);
+                        update(n);n.countdown=31;
+                    }
                     const double l=left[i],r=right[i],mid=0.5*(l+r),side=0.5*(l-r);
                     const double dl=channel==Channel::mid?mid:channel==Channel::side?side:l;
                     const double dr=channel==Channel::stereo?r:dl;
@@ -121,7 +136,7 @@ public:
                         n.env=a*n.env+(1.0-a)*detected;
                     }
                     const double levelDb=20.0*std::log10(std::max(1e-12,n.env));
-                    const double target=weight*(c.dynamic?std::clamp((levelDb-c.thresholdDb)/12.0,0.0,1.0):1.0);
+                    const double target=active?weight*(c.dynamic?std::clamp((levelDb-c.thresholdDb)/12.0,0.0,1.0):1.0):0.0;
                     n.mix=blendAlpha_*n.mix+(1.0-blendAlpha_)*target;
                     const double y1=dl+n.mix*(n.eq[0].sample(dl)-dl);
                     const double y2=channel==Channel::stereo?
@@ -141,11 +156,12 @@ private:
     struct Node {
         CarveConfig config{};
         std::array<Biquad,2> eq,detector;
-        double env=0,mix=0;
+        double env=0,mix=0,hz=1000,q=2,depth=0;
+        int countdown=0;
     };
     void update(Node& n) noexcept {
-        for(auto& f:n.eq)f.notch(sr_,n.config.hz,n.config.q,-n.config.depthDb);
-        for(auto& f:n.detector)f.bandpass(sr_,n.config.hz,n.config.q);
+        for(auto& f:n.eq)f.notch(sr_,n.hz,n.q,-n.depth);
+        for(auto& f:n.detector)f.bandpass(sr_,n.hz,n.q);
     }
     std::array<Node,kCarves> nodes_{};
     std::array<double,kRoots> low_{20,60,120,250,500,2000,6000};

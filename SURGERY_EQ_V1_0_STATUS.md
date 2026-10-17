@@ -1,5 +1,7 @@
 # SURGERY EQ v1.0 — Engineering acceptance status
 
+Historical baseline notes. The 1.0.1 quality candidate and its current validation scope are described in [SURGERY_QUALITY_PASS.md](SURGERY_QUALITY_PASS.md); delivered logs record the executed results.
+
 **In source (not yet proof of runtime correctness)**
 - [x] Product name updated and Windows VST3 packaging renamed
 - [x] Seven ROOTS with independent boundary handles based on ROOTS v2 baseline

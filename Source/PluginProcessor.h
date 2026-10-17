@@ -26,6 +26,7 @@ public:
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
+    juce::AudioProcessorParameter* getBypassParameter() const override { return apvts.getParameter("surgery_bypass"); }
 
     const juce::String getName() const override { return "SURGERY EQ v1.0"; }
     bool acceptsMidi() const override { return false; }
@@ -42,11 +43,18 @@ public:
     void getStateInformation(juce::MemoryBlock&) override;
     void setStateInformation(const void*, int) override;
 
+    bool savePreset(const juce::File&);
+    bool loadPreset(const juce::File&);
+    void switchComparison();
+    void copyComparison();
+    int comparisonSlot() const noexcept { return comparisonSlot_; }
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     juce::AudioProcessorValueTreeState apvts;
 
     float getInputPeakDb() const noexcept { return inputPeakDb.load(); }
     float getPeakDb() const noexcept { return peakDb.load(); }
+    float getPeakHoldDb() const noexcept { return peakHoldDb.load(); }
+    void resetPeakHold() noexcept { peakHoldDb.store(-144.0f); }
     float getGainReductionDb() const noexcept { return gainReductionDb.load(); }
     float getLufsShort() const noexcept { return lufsShort.load(); }
     float getLufsIntegrated() const noexcept { return lufsIntegrated.load(); }
@@ -72,7 +80,10 @@ public:
     static juce::String rootsRootSoloId(int root);
     static juce::String rootsRootGainId(int root);
     static juce::String rootsRootControlId(int root, const juce::String& suffix);
-    prism::roots::v2::Meter getRootsMeter() const noexcept { return rootsEngine.meter(); }
+    prism::roots::v2::Meter getRootsMeter() const noexcept {
+        return { rootMeters[0].load(), rootMeters[1].load(), rootMeters[2].load(),
+                 rootMeters[3].load(), rootMeters[4].load() };
+    }
     static const char* sectionName(int section) noexcept;
 
 private:
@@ -131,6 +142,20 @@ private:
     struct OnyxState { float air=0.0f,presence=0.0f,smooth=0.0f,dc=0.0f; };
     std::array<OnyxState,2> onyxFinish {};
     void processOnyxFinish(juce::AudioBuffer<float>&) noexcept;
+    std::array<juce::MemoryBlock, 2> comparisonStates;
+    int comparisonSlot_ = 0;
+    struct RootParameters {
+        std::array<std::atomic<float>*, 12> values {};
+    };
+    std::array<RootParameters, numSections> rootParameters;
+    std::array<std::array<std::atomic<float>*, 2>, 14> nodeParameters {};
+    std::array<std::array<std::atomic<float>*, 7>, 28> carveParameters {};
+    std::atomic<float>* engineMode = nullptr;
+    std::atomic<float>* bypassValue = nullptr;
+    std::atomic<float>* trimValue = nullptr;
+    std::array<std::atomic<double>, 5> rootMeters { 1.0, 0.0, 0.0, 1.0, 0.0 };
+    juce::SmoothedValue<float> outputTrimSmoother, bypassMix;
+    juce::AudioBuffer<float> dryScratch;
     prism::roots::v2::Engine rootsEngine;
     surgery::CarveEngine carveEngine;
     std::array<std::atomic<float>, numSections> stereoActivity {};
@@ -162,11 +187,12 @@ private:
     };
 
     juce::AbstractFifo analyzerFifo { analyzerQueueSize };
-    std::array<float, analyzerQueueSize> analyzerQueue {};
+    std::array<float, analyzerQueueSize> analyzerQueue {}, analyzerRightQueue {};
     juce::WaitableEvent analyzerEvent;
     AnalyzerWorker analyzerWorker { *this };
 
-    std::array<float, fftSize> fftFifo {};
+    std::array<float, fftSize> fftFifo {}, fftRightFifo {};
+    std::array<float, fftSize / 2 + 1> leftSpectralPower {};
     std::array<float, fftSize * 2> fftData {};
     int fftWritePos = 0;
     int fftHopCounter = 0;
@@ -182,6 +208,7 @@ private:
 
     std::atomic<float> inputPeakDb { -144.0f };
     std::atomic<float> peakDb { -144.0f };
+    std::atomic<float> peakHoldDb { -144.0f };
     std::atomic<float> gainReductionDb { 0.0f };
     std::atomic<float> lufsShort { -144.0f };
     std::atomic<float> lufsIntegrated { -144.0f };
@@ -197,7 +224,7 @@ private:
     void updateMeters(const juce::AudioBuffer<float>& buffer);
     void pushAnalyzerSamples(const juce::AudioBuffer<float>& buffer);
     void runAnalyzerThread();
-    void consumeAnalyzerSample(float sample);
+    void consumeAnalyzerSample(float left, float right);
     void renderSpectrumFrame();
 
     static float read(const juce::AudioProcessorValueTreeState& state, const juce::String& id);
