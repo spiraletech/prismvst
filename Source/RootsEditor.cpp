@@ -797,7 +797,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         b->setColour(juce::TextButton::textColourOnId,juce::Colours::white);
         addAndMakeVisible(*b);
     }
-    static constexpr const char* labels[]{"ROOT","CARVE","DYN","ANALYZE"};
+    static constexpr const char* labels[]{"ROOT","CARVE","ONYX","ANALYZE"};
     for(int i=0;i<4;++i){
         auto& b=modeButtons_[(size_t)i];
         b.setButtonText(labels[i]);
@@ -829,14 +829,21 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         b->setClickingTogglesState(true);
         addAndMakeVisible(*b);
     }
-    addAndMakeVisible(dynButton_);
-    dynButton_.onClick=[this]{
-        const auto id=PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp");
-        const bool active=pval(processor_.apvts,id)>=0.5f;
-        change(processor_,id,active?0.0f:4.0f);
-        timerCallback();
-    };
-    dynButton_.setTooltip("Enable surgical fast-response ROOT compression (internal FET-style response)");
+    const std::array<const char*,4> names{"SPARKLE","SHINE","SMOOTHENING","VINTAGE TAPE"};
+    const std::array<const char*,4> ids{
+        "surgery_onyx_sparkle","surgery_onyx_shine","surgery_onyx_smooth","surgery_onyx_tape"};
+    for(int i=0;i<4;++i){
+        auto& s=onyxSliders_[(size_t)i];
+        rotary(s," %",0.0);s.setRange(0.0,100.0,0.1);
+        s.setMouseDragSensitivity(600);
+        s.setDoubleClickReturnValue(true,0.0);
+        addAndMakeVisible(s);
+        onyxLabels_[(size_t)i].setText(names[(size_t)i],juce::dontSendNotification);
+        onyxLabels_[(size_t)i].setJustificationType(juce::Justification::centred);
+        onyxLabels_[(size_t)i].setColour(juce::Label::textColourId,juce::Colours::white);
+        addAndMakeVisible(onyxLabels_[(size_t)i]);
+        onyxAttachments_[(size_t)i]=std::make_unique<SliderA>(processor_.apvts,ids[(size_t)i],s);
+    }
     addAndMakeVisible(themeButton_);
     themeButton_.onClick=[this]{
         themeIndex_=(themeIndex_+1)%4;
@@ -956,11 +963,14 @@ void RootsEditor::setMode(int next){
     carveOn_.setVisible(carve);carveDynamic_.setVisible(carve);
     analyzerLegend_.setVisible(mode_==3);
     gain_.setVisible(mode_==0);gainLabel_.setVisible(mode_==0);
-    threshold_.setVisible(mode_==0||mode_==2);
-    thresholdLabel_.setVisible(mode_==0||mode_==2);
-    dynButton_.setVisible(mode_==0||mode_==2);
-    on_.setVisible(mode_==0||mode_==2);
-    solo_.setVisible(mode_==0||mode_==2);
+    threshold_.setVisible(mode_==0);
+    thresholdLabel_.setVisible(mode_==0);
+    for(int i=0;i<4;++i){
+        onyxSliders_[(size_t)i].setVisible(mode_==2);
+        onyxLabels_[(size_t)i].setVisible(mode_==2);
+    }
+    on_.setVisible(mode_==0);
+    solo_.setVisible(mode_==0);
     mono_.setVisible(mode_==0);
     const bool analyze=mode_==3;
     analyzerDepth_.setVisible(analyze);
@@ -995,10 +1005,7 @@ void RootsEditor::timerCallback(){
     const int comp=juce::roundToInt(pval(processor_.apvts,
          PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp")));
     threshold_.setEnabled(comp!=0);
-    dynButton_.setButtonText(comp==0?"DYN OFF":"DYN ON");
-    dynButton_.setColour(juce::TextButton::buttonColourId,
-                         comp==0?juce::Colour(0xff1d2c36):juce::Colour(0xff187a83));
-    thresholdLabel_.setText(comp==0?"THRESHOLD (COMP OFF)":"COMP THRESHOLD",
+thresholdLabel_.setText(comp==0?"THRESHOLD (COMP OFF)":"COMP THRESHOLD",
                             juce::dontSendNotification);
     updateRootButtons();
     const float factor=pval(processor_.apvts,
@@ -1079,7 +1086,7 @@ void RootsEditor::paint(juce::Graphics& g){
                juce::Justification::centredRight,1);
     g.setColour(label.withAlpha(.85f));
     g.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::plain)));
-    g.drawText("SURGERY ENGINE / ROOTS / CARVE / DYN / ANALYZE",
+    g.drawText("SURGERY ENGINE / ROOTS / CARVE / ONYX / ANALYZE",
                24,getHeight()-27,getWidth()-48,18,juce::Justification::centredLeft);
 }
 void RootsEditor::resized(){
@@ -1132,7 +1139,11 @@ void RootsEditor::resized(){
     carveOn_.setBounds(left,panelY+38,cw-2,25);
     carveDynamic_.setBounds(left,panelY+69,cw-2,25);
     analyzerLegend_.setBounds(left+12,panelY+40,2*cw-12,38);
-    dynButton_.setBounds(left+6*cw,panelY+36,cw-2,26);
+    for(int i=0;i<4;++i){
+        const int x=left+(i+1)*cw;
+        onyxLabels_[(size_t)i].setBounds(x,panelY+24,cw,18);
+        onyxSliders_[(size_t)i].setBounds(x,panelY+40,cw,74);
+    }
     analyzerDepthLabel_.setBounds(left+2*cw,panelY+27,cw,18);
     analyzerDepth_.setBounds(left+2*cw,panelY+50,cw,28);
     analyzerSlopeLabel_.setBounds(left+3*cw,panelY+23,cw,18);
