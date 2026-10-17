@@ -51,7 +51,7 @@ int main(){
     if(!(rms(a,b,false)>rms(c,d,false)*1.40 &&
          rms(c,d,true)>rms(a,b,true)*1.40))return 3;
     // C: CARVE respects the selected ROOT's channel, not just per-CARVE state.
-    surgery::CarveEngine carve(sr);
+    surgery::CarveEngine carve;carve.prepare(sr);
     surgery::CarveConfig cfg;cfg.enabled=true;cfg.hz=900;cfg.depthDb=26;cfg.q=4;
     carve.configure(0,0,cfg);carve.bounds(0,500,2200);
     carve.rootDomain(0,surgery::Channel::side);
