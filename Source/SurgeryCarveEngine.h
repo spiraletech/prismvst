@@ -76,6 +76,9 @@ public:
     void configure(int root,int slot,CarveConfig c) noexcept {
         if(root<0||root>=kRoots||slot<0||slot>=kSlots)return;
         c.hz=std::clamp(c.hz,20.0,std::min(20000.0,sr_*0.45));
+        const double lower=std::clamp(low_[(size_t)root],20.0,std::min(20000.0,sr_*0.45));
+        const double upper=std::clamp(high_[(size_t)root],lower,std::min(20000.0,sr_*0.45));
+        c.hz=std::clamp(c.hz,lower,upper);
         c.depthDb=std::clamp(c.depthDb,0.0,36.0);
         c.q=std::clamp(c.q,0.3,24.0);
         c.thresholdDb=std::clamp(c.thresholdDb,-60.0,0.0);

@@ -248,7 +248,8 @@ void RootsGraph::paint(juce::Graphics& g){
             return PRISMVSTAudioProcessor::carveId(selectedRoot,slot,suffix);
         };
         if(pval(processor_.apvts,id("on"))<0.5f)continue;
-        const double fc=pval(processor_.apvts,id("hz"));
+        const double fc=surgery::precision::boundedFrequency(
+            pval(processor_.apvts,id("hz")),lowHz,highHz);
         const double q=pval(processor_.apvts,id("q"));
         const double depth=pval(processor_.apvts,id("depth"));
         if(depth<0.001)continue;
@@ -328,7 +329,9 @@ void RootsGraph::paint(juce::Graphics& g){
         };
         const bool enabled=pval(processor_.apvts,id("on"))>=0.5f;
         if(!enabled)continue; // Disabled CARVEs are genuinely invisible on the graph.
-        const float x=freqToX(pval(processor_.apvts,id("hz")));
+        const float x=freqToX(surgery::precision::boundedFrequency(
+            pval(processor_.apvts,id("hz")),
+            param(selectedRoot*2,"hz"),param(selectedRoot*2+1,"hz")));
         const float depth=pval(processor_.apvts,id("depth"));
         const float y=surgery::ui::carveY(r.getCentreY(),depth);
         const auto outline=focusedColor.brighter(0.35f);
@@ -419,7 +422,9 @@ int RootsGraph::hitCarveNode(juce::Point<float> point) const {
             return PRISMVSTAudioProcessor::carveId(root,slot,suffix);
         };
         if(pval(processor_.apvts,id("on"))<0.5f)continue; // Invisible means not hit-testable.
-        const float x=freqToX(pval(processor_.apvts,id("hz")));
+        const float x=freqToX(surgery::precision::boundedFrequency(
+            pval(processor_.apvts,id("hz")),
+            param(root*2,"hz"),param(root*2+1,"hz")));
         const float y=surgery::ui::carveY(area().getCentreY(),
                                           pval(processor_.apvts,id("depth")));
         const float distance=point.getDistanceFrom({x,y});
@@ -443,8 +448,12 @@ void RootsGraph::mouseDown(const juce::MouseEvent& e){
         if(slot>=0){
             // Dragging only moves an explicitly enabled, visible CARVE.
             draggingCarve_=slot;
-            if(onSelectCarve)onSelectCarve(slot);
             const int root=selected_/2;
+            dragStartX_=e.position.x;
+            dragStartHz_=pval(processor_.apvts,
+                PRISMVSTAudioProcessor::carveId(root,slot,"hz"));
+            fineDragging_=e.mods.isCtrlDown();
+            if(onSelectCarve)onSelectCarve(slot);
             for(const auto* suffix:{"hz","depth"})
                 if(auto* parameter=processor_.apvts.getParameter(
                        PRISMVSTAudioProcessor::carveId(root,slot,suffix)))
@@ -481,11 +490,20 @@ void RootsGraph::mouseDrag(const juce::MouseEvent& e){
             return PRISMVSTAudioProcessor::carveId(root,slot,s);
         };
         const float a=param(root*2,"hz"),b=param(root*2+1,"hz");
-        const float lower=juce::jmax(20.0f,std::min(a,b)*0.79f);
-        const float upper=juce::jmin(20000.0f,std::max(a,b)*1.26f);
-        change(processor_,id("hz"),juce::jlimit(lower,upper,xToFreq(e.position.x)));
-        change(processor_,id("depth"),surgery::ui::depthFromY(
-            area().getCentreY(),e.position.y));
+        const bool fine=e.mods.isCtrlDown();
+        if(fine&&!fineDragging_){
+            // Ctrl may be pressed in the middle of a drag: anchor current value.
+            dragStartX_=e.position.x;
+            dragStartHz_=pval(processor_.apvts,id("hz"));
+        }
+        fineDragging_=fine;
+        const float next=surgery::precision::scrubFrequency(
+            dragStartHz_,e.position.x-dragStartX_,xToFreq(e.position.x),
+            fine,a,b);
+        change(processor_,id("hz"),next);
+        if(!fine)
+            change(processor_,id("depth"),surgery::ui::depthFromY(
+                area().getCentreY(),e.position.y));
         repaint();return;
     }
     if(dragging_<0)return;
@@ -502,12 +520,14 @@ void RootsGraph::mouseUp(const juce::MouseEvent&){
                 PRISMVSTAudioProcessor::carveId(root,slot,name)))
                 p->endChangeGesture();
         draggingCarve_=-1;
+        fineDragging_=false;
     }
     if(dragging_>=0){
         if(auto* p=processor_.apvts.getParameter(
              PRISMVSTAudioProcessor::rootsNodeId(dragging_,"hz")))
             p->endChangeGesture();
     }
+    if(dragging_>=0)clampCarvesToRoot(dragging_/2);
     dragging_=-1;
 }
 void RootsGraph::mouseMove(const juce::MouseEvent& e){mouse_=e.position;hover_=true;repaint();}
@@ -533,11 +553,42 @@ void RootsGraph::mouseDoubleClick(const juce::MouseEvent& e){
     if(boundary>=0){
         selectNode(boundary);
         processor_.resetRootBoundary(boundary);
+        clampCarvesToRoot(boundary/2);
         repaint();
     }
 }
-void RootsGraph::mouseWheelMove(const juce::MouseEvent&,const juce::MouseWheelDetails&){
-    // Frequency boundaries cannot secretly change Q or gain via the wheel.
+void RootsGraph::mouseWheelMove(const juce::MouseEvent& e,
+                                const juce::MouseWheelDetails& wheel){
+    const int slot=hitCarveNode(e.position);
+    if(slot<0)return; // wheel over ROOT boundary never changes another parameter
+    const int root=selected_/2;
+    const auto id=[root,slot](const char* suffix){
+        return PRISMVSTAudioProcessor::carveId(root,slot,suffix);
+    };
+    if(onSelectCarve)onSelectCarve(slot);
+    if(e.mods.isCtrlDown()){
+        const float a=param(root*2,"hz"),b=param(root*2+1,"hz");
+        const auto frequency=surgery::precision::scrubWheelFrequency(
+            pval(processor_.apvts,id("hz")),wheel.deltaY*10.0f,a,b);
+        change(processor_,id("hz"),frequency);
+    }else{
+        // Wheel changes mathematical quality factor; Shift grants finer steps.
+        const float q=surgery::precision::adjustQ(
+            pval(processor_.apvts,id("q")),wheel.deltaY*10.0f,
+            e.mods.isShiftDown());
+        change(processor_,id("q"),q);
+    }
+    repaint();
+}
+void RootsGraph::clampCarvesToRoot(int root){
+    if(root<0||root>=7)return;
+    const auto a=param(root*2,"hz"),b=param(root*2+1,"hz");
+    for(int slot=0;slot<4;++slot){
+        const auto id=PRISMVSTAudioProcessor::carveId(root,slot,"hz");
+        const float raw=pval(processor_.apvts,id);
+        const auto bound=surgery::precision::boundedFrequency(raw,a,b);
+        if(std::abs(raw-bound)>0.005f)change(processor_,id,bound);
+    }
 }
 void RootsGraph::popup(){
     const int root=selected_/2;
@@ -697,6 +748,10 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     carveDepth_.setDoubleClickReturnValue(true,0.0);
     carveQ_.setDoubleClickReturnValue(true,2.0);
     carveThreshold_.setDoubleClickReturnValue(true,-24.0);
+    carveFrequency_.setMouseDragSensitivity(2000);
+    carveQ_.setMouseDragSensitivity(1400);
+    carveFrequency_.setTooltip("Exact Hz value: type in the field. CTRL+drag a CARVE node for fine frequency scrubbing.");
+    carveQ_.setTooltip("True Q factor (0.300–24.000). Wheel on a node adjusts Q; SHIFT+wheel adjusts finely.");
     carveFrequencyLabel_.setText("FREQUENCY Hz",juce::dontSendNotification);
     carveDepthLabel_.setText("CUT DEPTH dB",juce::dontSendNotification);
     carveQLabel_.setText("Q / PRECISION",juce::dontSendNotification);
@@ -714,11 +769,12 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         const float high=pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(root*2+1,"hz"));
         if(suggestion.hz<std::min(low,high)||suggestion.hz>std::max(low,high))return;
         // Explicit user-approved parameter edit, no autonomous audio changes.
-        int target=0;
+        int target=-1;
         for(int slot=0;slot<4;++slot)
             if(pval(processor_.apvts,PRISMVSTAudioProcessor::carveId(root,slot,"on"))<0.5f){
                 target=slot;break;
             }
+        if(target<0)return; // NEVER overwrite an engineer's four active corrections.
         carveSlot_=target;
         const auto id=[root,target](const char* s){
             return PRISMVSTAudioProcessor::carveId(root,target,s);
@@ -768,6 +824,11 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     heatToggle_.setClickingTogglesState(true);
     addAndMakeVisible(heatToggle_);
     heatA_=std::make_unique<ButtonA>(processor_.apvts,"aura_color",heatToggle_);
+    heatViewButton_.setClickingTogglesState(true);
+    heatViewButton_.setTooltip("Switch between calibrated spectrum and dedicated SONAR persistence heatmap");
+    addAndMakeVisible(heatViewButton_);
+    heatViewA_=std::make_unique<ButtonA>(processor_.apvts,
+        "surgery_heat_view",heatViewButton_);
     freezeButton_.setClickingTogglesState(true);
     freezeButton_.setTooltip("Freeze measured spectrum and SONAR history; DSP remains live");
     freezeButton_.onClick=[this]{
@@ -813,6 +874,17 @@ void RootsEditor::bindCarve(){
         std::exp(std::log(low)+(slot+1.0)/5.0*std::log(high/low)));
     const auto id=[root,slot](const char* s){
         return PRISMVSTAudioProcessor::carveId(root,slot,s);
+    };
+    carveFrequency_.onValueChange=[this]{
+        const int root=node_/2;
+        const auto a=pval(processor_.apvts,
+            PRISMVSTAudioProcessor::rootsNodeId(root*2,"hz"));
+        const auto b=pval(processor_.apvts,
+            PRISMVSTAudioProcessor::rootsNodeId(root*2+1,"hz"));
+        const double value=carveFrequency_.getValue();
+        const auto limited=surgery::precision::boundedFrequency((float)value,a,b);
+        if(std::abs(value-limited)>0.001)
+            carveFrequency_.setValue(limited,juce::sendNotificationSync);
     };
     carveFrequencyA_=std::make_unique<SliderA>(processor_.apvts,id("hz"),carveFrequency_);
     carveDepthA_=std::make_unique<SliderA>(processor_.apvts,id("depth"),carveDepth_);
@@ -861,6 +933,7 @@ void RootsEditor::setMode(int next){
     analyzerMemory_.setVisible(analyze);
     analyzerMemoryLabel_.setVisible(analyze);
     heatToggle_.setVisible(analyze);
+    heatViewButton_.setVisible(analyze);
     freezeButton_.setVisible(analyze);
     graph_.setPresentation(themeIndex_,mode_,carveSlot_);
     resized();
@@ -897,6 +970,9 @@ void RootsEditor::timerCallback(){
        "CARVE ON":"CARVE OFF");
     heatToggle_.setButtonText(pval(processor_.apvts,"aura_color")>=0.5f?
                               "SONAR ON":"SONAR OFF");
+    heatViewButton_.setButtonText(
+        pval(processor_.apvts,"surgery_heat_view")>=0.5f?
+        "VIEW / HEATMAP":"VIEW / SPECTRUM");
     graph_.setPresentation(themeIndex_,mode_,carveSlot_);
     std::array<float,PRISMVSTAudioProcessor::labBars> bars{},peaks{};
     processor_.copyPrismLabBars(bars,peaks);
@@ -912,7 +988,11 @@ void RootsEditor::timerCallback(){
         const int root=node_/2;
         const float low=pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(root*2,"hz"));
         const float high=pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(root*2+1,"hz"));
-        assistApply_.setEnabled(finding.ready &&
+        bool available=false;
+        for(int slot=0;slot<4;++slot)
+            available|=pval(processor_.apvts,
+                 PRISMVSTAudioProcessor::carveId(root,slot,"on"))<0.5f;
+        assistApply_.setEnabled(finding.ready && available &&
             finding.hz>=std::min(low,high) && finding.hz<=std::max(low,high));
         const auto metrics=graph_.spectralMetrics();
         const juce::String line=metrics.signalPresent?
@@ -932,7 +1012,8 @@ void RootsEditor::timerCallback(){
                 "CANDIDATE "+hzText(finding.hz)+"Hz  /  "+
                     juce::String(finding.prominenceDb,1)+"dB EXCESS":
                 finding.observedFrames>0?
-                    "SCANNING "+juce::String(finding.observedFrames)+"/8 FRAMES":
+                    "VALIDATING "+juce::String(finding.observedFrames)+"/"+
+                    juce::String(surgery::Finding::minimumStableFrames)+" FRAMES":
                     "ASSIST  /  NO PERSISTENT PEAK",
             juce::dontSendNotification);
     } else status_.setText(status,juce::dontSendNotification);
@@ -1047,5 +1128,6 @@ void RootsEditor::resized(){
     analyzerMemoryLabel_.setBounds(left+4*cw,panelY+23,cw,18);
     analyzerMemory_.setBounds(left+4*cw,panelY+42,cw,75);
     heatToggle_.setBounds(left+6*cw,panelY+41,cw-2,28);
+    heatViewButton_.setBounds(left+5*cw,panelY+41,cw-2,28);
     freezeButton_.setBounds(left+6*cw,panelY+76,cw-2,28);
 }

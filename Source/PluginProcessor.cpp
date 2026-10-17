@@ -555,6 +555,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
 
     p.push_back(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID { "aura_color", 1 }, "Frequency Color Heat", true));
+    p.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID { "surgery_heat_view", 1 }, "SONAR Dedicated Heatmap View", false));
 
     // Four original surgically controllable EQ nodes in each of seven ROOTS.
     for(int root=0;root<surgery::kRoots;++root)
@@ -571,7 +573,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             p.push_back(std::make_unique<juce::AudioParameterFloat>(
                 juce::ParameterID{id("depth"),1},name+"Cut Depth",
                 juce::NormalisableRange<float>(0.0f,36.0f,0.01f),0.0f));
-            juce::NormalisableRange<float> q(0.3f,24.0f,0.01f);q.setSkewForCentre(2.0f);
+            juce::NormalisableRange<float> q(0.3f,24.0f,0.001f);q.setSkewForCentre(2.0f);
             p.push_back(std::make_unique<juce::AudioParameterFloat>(
                 juce::ParameterID{id("q"),1},name+"Q",q,2.0f));
             p.push_back(std::make_unique<juce::AudioParameterFloat>(

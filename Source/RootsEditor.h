@@ -6,6 +6,7 @@
 #include "SurgeryLookAndFeel.h"
 #include "SurgeryHeaderLayout.h"
 #include "SurgeryNodeFocus.h"
+#include "SurgeryPrecision.h"
 #include "SurgeryResponse.h"
 #include "SurgeryAnalysis.h"
 #include <array>
@@ -55,6 +56,8 @@ private:
     PRISMVSTAudioProcessor& processor_;
     std::array<float,PRISMVSTAudioProcessor::labBars> bands_{},peaks_{};
     int selected_=0,dragging_=-1,draggingCarve_=-1;
+    float dragStartX_=0.0f,dragStartHz_=0.0f;
+    bool fineDragging_=false;
     int theme_=0,mode_=0,slot_=0;
     surgery::SonarField<PRISMVSTAudioProcessor::labBars> heat_;
     surgery::AssistScanner<PRISMVSTAudioProcessor::labBars> assist_;
@@ -69,6 +72,7 @@ private:
     int hitCarveNode(juce::Point<float>) const;
     int hitCarveTab(juce::Point<float>) const;
     void popup();
+    void clampCarvesToRoot(int root);
     juce::Colour colour(int territory) const;
 };
 
@@ -87,7 +91,8 @@ private:
     std::array<RootSelectorButton,7> rootButtons_;
     juce::Slider gain_,threshold_,analyzerSlope_,analyzerMemory_;
     juce::ComboBox analyzerDepth_;
-    juce::TextButton heatToggle_{"SONAR ON"},freezeButton_{"FREEZE"};
+    juce::TextButton heatToggle_{"SONAR ON"},freezeButton_{"FREEZE"},
+                     heatViewButton_{"VIEW / SPECTRUM"};
     juce::TextButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};
     juce::TextButton themeButton_{"THEME"},dynButton_{"DYN OFF"},assistApply_{"APPLY SUGGESTION"};
     int themeIndex_=0,mode_=0,carveSlot_=0;
@@ -103,7 +108,7 @@ private:
     using ComboA=juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     std::unique_ptr<SliderA> gainA_,thresholdA_,analyzerSlopeA_,analyzerMemoryA_;
     std::unique_ptr<ComboA> analyzerDepthA_;
-    std::unique_ptr<ButtonA> heatA_;
+    std::unique_ptr<ButtonA> heatA_,heatViewA_;
     std::unique_ptr<ButtonA> monoA_,onA_,soloA_;
     int node_=0;
     void bindNode(int n);
