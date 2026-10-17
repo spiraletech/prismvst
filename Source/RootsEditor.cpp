@@ -528,7 +528,7 @@ void RootsGraph::popup(){
                 change(graph.processor_,key,on?0.0f:1.0f);
             }
             if(id>=10&&id<=12)set("domain",(float)(id-10));
-            if(id==15)set("mono",current("mono")>=0.5f?0.0f:1.0f);
+            if(id==15)set("mono",value("mono")>=0.5f?0.0f:1.0f);
             if(id>=30&&id<=33)set("detector",(float)(id-30));
 
             const auto colorId="surgery_root"+juce::String(root+1)+"_rgb";
