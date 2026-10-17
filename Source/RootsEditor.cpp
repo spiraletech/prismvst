@@ -118,7 +118,7 @@ void RootsGraph::paint(juce::Graphics& g){
     g.drawRoundedRectangle(full.reduced(1.0f),10.0f,1.0f);
     g.setFont(juce::Font(juce::FontOptions(10.0f,juce::Font::bold)));
     g.setColour(juce::Colour::fromRGB(145,172,182));
-    g.drawText("CUBE GRID   /   7 ROOT TERRITORIES  /  2 BOUNDARY HANDLES EACH",r.getX(),
+    g.drawText("SURGERY EQ  /  SEVEN ROOTS  /  FOUR CARVE NODES PER ROOT",r.getX(),
                7.0f,r.getWidth(),15.0f,juce::Justification::centredLeft);
     // Frequency and calibrated dBFS dimensions.
     static constexpr std::array<float,11> freqs{
@@ -137,7 +137,9 @@ void RootsGraph::paint(juce::Graphics& g){
         g.setColour(juce::Colour::fromRGB(53,67,84).withAlpha(i==4?0.74f:0.34f));
         g.drawHorizontalLine(juce::roundToInt(y),r.getX(),r.getRight());
         g.setColour(juce::Colour::fromRGB(131,155,169));
-        g.drawText(juce::String(-12*i),juce::roundToInt(r.getRight()+5),
+        const int choice=juce::roundToInt(pval(processor_.apvts,"analyzer_depth"));
+        const int rangeDb=choice==0?96:choice==1?120:144;
+        g.drawText(juce::String(-rangeDb*i/8),juce::roundToInt(r.getRight()+5),
                    juce::roundToInt(y-8),34,16,juce::Justification::centredLeft);
     }
     // ROOT handle height is constant; vertical axis is exclusively dBFS.
@@ -176,13 +178,19 @@ void RootsGraph::paint(juce::Graphics& g){
             const float w=(float)weights.weight[(size_t)root];
             red+=w*c.getFloatRed();green+=w*c.getFloatGreen();blue+=w*c.getFloatBlue();
         }
-        const auto barColour=weights.strongest>=0
+        const bool heatOn=pval(processor_.apvts,"aura_color")>=0.5f;
+        const auto barColour=heatOn&&weights.strongest>=0
             ? juce::Colour::fromFloatRGBA(red,green,blue,1.0f)
-            : juce::Colour::fromRGB(96,112,121);
-        const float db=juce::jlimit(-96.0f,0.0f,bands_[(size_t)i]);
-        const float peak=juce::jlimit(-96.0f,0.0f,peaks_[(size_t)i]);
-        const float y=r.getY()+(0.0f-db)*r.getHeight()/96.0f;
-        const float peakY=r.getY()+(0.0f-peak)*r.getHeight()/96.0f;
+            : juce::Colour::fromRGB(120,174,192);
+        // Visual-only 1 kHz pivot slope. Crosshair remains RAW dBFS.
+        const int choice=juce::roundToInt(pval(processor_.apvts,"analyzer_depth"));
+        const float rangeDb=choice==0?96.0f:choice==1?120.0f:144.0f;
+        const float slope=pval(processor_.apvts,"analyzer_slope");
+        const float compensation=slope*std::log2(juce::jmax(20.0f,frequency)/1000.0f);
+        const float db=juce::jlimit(-rangeDb,0.0f,bands_[(size_t)i]+compensation);
+        const float peak=juce::jlimit(-rangeDb,0.0f,peaks_[(size_t)i]+compensation);
+        const float y=r.getY()+(0.0f-db)*r.getHeight()/rangeDb;
+        const float peakY=r.getY()+(0.0f-peak)*r.getHeight()/rangeDb;
         if(y<r.getBottom()-1.0f){
             g.setColour(barColour.withAlpha(0.38f));
             g.drawVerticalLine(juce::roundToInt(x),y,r.getBottom());
@@ -195,6 +203,7 @@ void RootsGraph::paint(juce::Graphics& g){
     // SONAR FIELD: measured stationary heat/persistence under the spectrum.
     // It is display-only; raw spectral dB values remain untouched above.
     const float sonarTop=r.getY()+r.getHeight()*0.79f;
+    if(pval(processor_.apvts,"aura_color")>=0.5f){
     g.setColour(juce::Colour(0xff081617).withAlpha(0.68f));
     g.fillRect(r.getX(),sonarTop,r.getWidth(),r.getBottom()-sonarTop);
     for(int i=0;i<PRISMVSTAudioProcessor::labBars;++i) {
@@ -211,6 +220,7 @@ void RootsGraph::paint(juce::Graphics& g){
     g.setFont(juce::Font(juce::FontOptions(9.0f,juce::Font::bold)));
     g.drawText("SONAR  /  ENERGY PERSISTENCE",r.getX()+8,sonarTop+3,210,14,
                juce::Justification::centredLeft);
+    }
     // Both boundary handles always live on one horizontal rail.
     g.setColour(juce::Colour::fromRGB(159,182,191).withAlpha(0.14f));
     g.drawHorizontalLine(juce::roundToInt(r.getCentreY()),r.getX(),r.getRight());
@@ -267,19 +277,23 @@ void RootsGraph::paint(juce::Graphics& g){
             return PRISMVSTAudioProcessor::carveId(selectedRoot,slot,suffix);
         };
         const bool enabled=pval(processor_.apvts,id("on"))>=0.5f;
-        if(!enabled)continue;
+        // An OFF slot still has a distinct selectable ghost position.
         const float x=freqToX(pval(processor_.apvts,id("hz")));
         const float depth=pval(processor_.apvts,id("depth"));
         const float y=surgery::ui::carveY(r.getCentreY(),depth);
         const auto outline=focusedColor.brighter(0.35f);
-        g.setColour(focusedColor.withAlpha(0.42f));
-        g.drawVerticalLine(juce::roundToInt(x),y,r.getBottom());
+        if(enabled) {
+            g.setColour(focusedColor.withAlpha(0.42f));
+            g.drawVerticalLine(juce::roundToInt(x),y,r.getBottom());
+        }
         g.setColour(juce::Colour(0xff0c1820));
         g.fillEllipse(x-10.5f,y-10.5f,21.0f,21.0f);
-        g.setColour(outline);
+        g.setColour(enabled?outline:juce::Colour(0xff788b93));
         g.drawEllipse(x-10.5f,y-10.5f,21.0f,21.0f,slot==slot_?2.8f:1.8f);
-        g.setColour(slot==slot_?juce::Colours::white:focusedColor);
-        g.fillEllipse(x-6.0f,y-6.0f,12.0f,12.0f);
+        if(enabled) {
+            g.setColour(slot==slot_?juce::Colours::white:focusedColor);
+            g.fillEllipse(x-6.0f,y-6.0f,12.0f,12.0f);
+        }
         // The marker centre stays at the measured host parameter position.
         // Small nearby identification plates may overlap, not the node data.
         const int labelX=juce::jlimit((int)r.getX(),(int)r.getRight()-30,
@@ -343,7 +357,7 @@ int RootsGraph::hitCarveNode(juce::Point<float> point) const {
         const auto id=[root,slot](const char* suffix){
             return PRISMVSTAudioProcessor::carveId(root,slot,suffix);
         };
-        if(pval(processor_.apvts,id("on"))<0.5f)continue;
+        // Any of the four slots can be targeted, even when currently off.
         const float x=freqToX(pval(processor_.apvts,id("hz")));
         const float y=surgery::ui::carveY(area().getCentreY(),
                                           pval(processor_.apvts,id("depth")));
@@ -366,6 +380,9 @@ void RootsGraph::mouseDown(const juce::MouseEvent& e){
         }
         const int slot=hitCarveNode(e.position);
         if(slot>=0){
+            const auto enabledId=PRISMVSTAudioProcessor::carveId(selected_/2,slot,"on");
+            if(pval(processor_.apvts,enabledId)<0.5f)
+                change(processor_,enabledId,1.0f);
             draggingCarve_=slot;
             if(onSelectCarve)onSelectCarve(slot);
             const int root=selected_/2;
