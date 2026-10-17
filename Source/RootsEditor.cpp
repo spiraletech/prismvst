@@ -754,6 +754,13 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     heatToggle_.setClickingTogglesState(true);
     addAndMakeVisible(heatToggle_);
     heatA_=std::make_unique<ButtonA>(processor_.apvts,"aura_color",heatToggle_);
+    freezeButton_.setClickingTogglesState(true);
+    freezeButton_.setTooltip("Freeze measured spectrum and SONAR history; DSP remains live");
+    freezeButton_.onClick=[this]{
+        graph_.setFrozen(freezeButton_.getToggleState());
+        freezeButton_.setButtonText(graph_.isFrozen()?"RESUME":"FREEZE");
+    };
+    addAndMakeVisible(freezeButton_);
     bindNode(0);
     setMode(0);
     startTimerHz(30);
@@ -839,6 +846,7 @@ void RootsEditor::setMode(int next){
     analyzerMemory_.setVisible(analyze);
     analyzerMemoryLabel_.setVisible(analyze);
     heatToggle_.setVisible(analyze);
+    freezeButton_.setVisible(analyze);
     graph_.setPresentation(themeIndex_,mode_,carveSlot_);
     resized();
     repaint();
@@ -891,11 +899,19 @@ void RootsEditor::timerCallback(){
         const float high=pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(root*2+1,"hz"));
         assistApply_.setEnabled(finding.ready &&
             finding.hz>=std::min(low,high) && finding.hz<=std::max(low,high));
-        if(finding.ready)
-            status_.setText("ASSIST  "+hzText(finding.hz)+" Hz  /  "+
-                juce::String(finding.prominenceDb,1)+" dB PROMINENCE  /  VERIFY BY EAR",
-                juce::dontSendNotification);
-        else status_.setText("ASSIST  /  NO STABLE NARROWBAND TARGET",juce::dontSendNotification);
+        const auto metrics=graph_.spectralMetrics();
+        const juce::String line=metrics.signalPresent?
+            "POST FFT  /  PEAK "+hzText(metrics.loudestHz)+"Hz  "+
+            juce::String(metrics.loudestDb,1)+" dBFS  /  CENTROID ~"+
+            hzText(metrics.approximateCentroidHz)+"Hz":
+            "POST FFT  /  SILENCE OR BELOW DISPLAY FLOOR";
+        status_.setText(line,juce::dontSendNotification);
+        const juce::String detail=finding.ready?
+            "ASSIST / REVIEW "+hzText(finding.hz)+"Hz  +"+
+            juce::String(finding.prominenceDb,1)+"dB LOCAL PEAK  /  "+
+            juce::String(finding.observedFrames)+" FRAMES":
+            "ASSIST / NO PERSISTENT NARROW PEAK IN ROOT";
+        assistApply_.setTooltip(detail+" (heuristic; not ML)");
     } else status_.setText(status,juce::dontSendNotification);
 }
 void RootsEditor::paint(juce::Graphics& g){
@@ -1009,5 +1025,6 @@ void RootsEditor::resized(){
     analyzerSlope_.setBounds(left+3*cw,panelY+42,cw,75);
     analyzerMemoryLabel_.setBounds(left+4*cw,panelY+23,cw,18);
     analyzerMemory_.setBounds(left+4*cw,panelY+42,cw,75);
-    heatToggle_.setBounds(left+6*cw,panelY+53,cw-2,28);
+    heatToggle_.setBounds(left+6*cw,panelY+41,cw-2,28);
+    freezeButton_.setBounds(left+6*cw,panelY+76,cw-2,28);
 }
