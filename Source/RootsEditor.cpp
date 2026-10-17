@@ -291,11 +291,38 @@ void RootsGraph::paint(juce::Graphics& g){
         const double q=pval(processor_.apvts,id("q"));
         const double depth=pval(processor_.apvts,id("depth"));
         if(depth<0.001)continue;
+        if(heatView){
+            // Time is the Y axis here. Visualize Q as a frequency-width region,
+            // NEVER draw a dB cut curve against time.
+            const double bwOct=surgery::precision::bandwidthOctaves((float)q);
+            const float minHz=std::min(lowHz,highHz);
+            const float maxHz=std::max(lowHz,highHz);
+            const float lo=(float)std::clamp(
+                fc*std::exp2(-bwOct/2.0),double(minHz),double(maxHz));
+            const float hi=(float)std::clamp(
+                fc*std::exp2(bwOct/2.0),double(minHz),double(maxHz));
+            const float cx=freqToX((float)fc);
+            const float x1=freqToX(lo),x2=freqToX(hi);
+            const auto tint=colour(selectedRoot).brighter(slot==slot_?0.68f:0.17f);
+            const float width=std::max(1.8f,x2-x1);
+            const float left=std::max(r.getX(),cx-width/2.0f);
+            g.setColour(tint.withAlpha(slot==slot_?0.16f:0.075f));
+            g.fillRect(left,r.getY(),width,r.getHeight());
+            g.setColour(tint.withAlpha(slot==slot_?0.80f:0.37f));
+            g.drawVerticalLine(juce::roundToInt(cx),r.getY(),r.getBottom());
+            // Band edges only inside this ROOT visualization; IIR skirts remain.
+            g.setColour(tint.withAlpha(slot==slot_?0.38f:0.17f));
+            g.drawVerticalLine(juce::roundToInt(x1),r.getY(),r.getBottom());
+            g.drawVerticalLine(juce::roundToInt(x2),r.getY(),r.getBottom());
+            continue;
+        }
         juce::Path contour,footprint;
         const float firstX=freqToX(20.0f);
         footprint.startNewSubPath(firstX,baseY);
-        for(int i=0;i<=256;++i){
-            const float f=20.0f*std::pow(1000.0f,(float)i/256.0f);
+        // High Q requires sub-pixel-aware sampling; old 256 samples across
+        // 10 octaves could miss the entire ultra-narrow notch!
+        for(int i=0;i<=2048;++i){
+            const float f=20.0f*std::pow(1000.0f,(float)i/2048.0f);
             const float x=freqToX(f);
             const double scale=surgery::CarveEngine::boundaryWeight(fc,
                 std::min(lowHz,highHz),std::max(lowHz,highHz));
@@ -317,7 +344,7 @@ void RootsGraph::paint(juce::Graphics& g){
     }
     g.setColour(juce::Colour(0xffacc3cf));
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
-    g.drawText(heatView?"SONAR / FFT TIME HISTORY     CARVE / Q BANDWIDTH":
+    g.drawText(heatView?"SONAR / FFT HISTORY  (NEWEST TOP)     CARVE / Q CORE":
                "SONAR / SPECTRUM     CARVE / MAX STATIC RESPONSE",
                r.getX(),r.getBottom()+23.0f,r.getWidth(),16.0f,
                juce::Justification::centredLeft);
