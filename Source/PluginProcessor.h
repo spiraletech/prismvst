@@ -4,6 +4,7 @@
 #include <atomic>
 #include "PrismLabAnalyzer.h"
 #include "RootsAudioEngine.h"
+#include "SurgeryCarveEngine.h"
 
 class PRISMVSTAudioProcessor final : public juce::AudioProcessor,
                                     private juce::AudioProcessorValueTreeState::Listener,
@@ -64,6 +65,7 @@ public:
     static juce::String sectionId(int section, const juce::String& suffix);
     static juce::String crossoverId(int crossover);
     static juce::String rootsNodeId(int node, const juce::String& suffix);
+    static juce::String carveId(int root, int slot, const juce::String& suffix);
     static juce::String rootsRootSoloId(int root);
     static juce::String rootsRootGainId(int root);
     static juce::String rootsRootControlId(int root, const juce::String& suffix);
@@ -124,6 +126,7 @@ private:
     std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative>, numCrossovers> crossoverSmoothers;
     std::array<SectionState, numSections> sectionStates;
     prism::roots::v2::Engine rootsEngine;
+    surgery::CarveEngine carveEngine;
     std::array<std::atomic<float>, numSections> stereoActivity {};
     std::array<juce::String, numSections> soloParameterIds {};
     std::array<juce::String, numSections> rootsSoloParameterIds {};

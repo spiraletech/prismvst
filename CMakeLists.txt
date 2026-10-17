@@ -76,6 +76,7 @@ if(PRISMVST_BUILD_TESTS)
     Source/RootsEditor.cpp
     Source/RootsEditor.h
     Source/RootsAudioEngine.h
+    Source/SurgeryCarveEngine.h
   )
   juce_generate_juce_header(prismvst_tests)
   target_compile_definitions(prismvst_tests PRIVATE
@@ -104,4 +105,7 @@ if(PRISMVST_BUILD_TESTS)
   add_executable(prism_roots_parent_controls_tests Tests/RootsParentControlsTests.cpp Source/RootsAudioEngine.h)
   target_compile_features(prism_roots_parent_controls_tests PRIVATE cxx_std_20)
   add_test(NAME prism_roots_parent_controls_four_proofs COMMAND prism_roots_parent_controls_tests)
+  add_executable(surgery_carve_tests Tests/SurgeryCarveTests.cpp Source/SurgeryCarveEngine.h)
+  target_compile_features(surgery_carve_tests PRIVATE cxx_std_20)
+  add_test(NAME surgery_carve_four_proofs COMMAND surgery_carve_tests)
 endif()

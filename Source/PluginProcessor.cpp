@@ -47,6 +47,11 @@ juce::String PRISMVSTAudioProcessor::rootsRootSoloId(int root)
     return "roots_root" + juce::String(root + 1) + "_solo";
 }
 
+juce::String PRISMVSTAudioProcessor::carveId(int root,int slot,const juce::String& suffix)
+{
+    return "surgery_carve_r"+juce::String(root+1)+"_c"+juce::String(slot+1)+"_"+suffix;
+}
+
 juce::String PRISMVSTAudioProcessor::rootsNodeId(int node,const juce::String& suffix)
 {
     return "roots_node" + juce::String(node + 1) + "_" + suffix;
@@ -506,6 +511,32 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
     p.push_back(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID { "aura_color", 1 }, "Frequency Color Heat", true));
 
+    // Four original surgically controllable EQ nodes in each of seven ROOTS.
+    for(int root=0;root<surgery::kRoots;++root)
+        for(int slot=0;slot<surgery::kSlots;++slot) {
+            const auto id=[root,slot](const char* s){return carveId(root,slot,s);};
+            const auto name=juce::String("CARVE ")+juce::String(root+1)+"/"+juce::String(slot+1)+" ";
+            p.push_back(std::make_unique<juce::AudioParameterBool>(
+                juce::ParameterID{id("on"),1},name+"Enabled",false));
+            juce::NormalisableRange<float> range(20.0f,20000.0f,0.01f);
+            range.setSkewForCentre(1000.0f);
+            p.push_back(std::make_unique<juce::AudioParameterFloat>(
+                juce::ParameterID{id("hz"),1},name+"Frequency",range,1000.0f));
+            p.push_back(std::make_unique<juce::AudioParameterFloat>(
+                juce::ParameterID{id("depth"),1},name+"Cut Depth",
+                juce::NormalisableRange<float>(0.0f,36.0f,0.01f),0.0f));
+            juce::NormalisableRange<float> q(0.3f,24.0f,0.01f);q.setSkewForCentre(2.0f);
+            p.push_back(std::make_unique<juce::AudioParameterFloat>(
+                juce::ParameterID{id("q"),1},name+"Q",q,2.0f));
+            p.push_back(std::make_unique<juce::AudioParameterFloat>(
+                juce::ParameterID{id("threshold"),1},name+"Threshold",
+                juce::NormalisableRange<float>(-60.0f,0.0f,0.1f),-24.0f));
+            p.push_back(std::make_unique<juce::AudioParameterBool>(
+                juce::ParameterID{id("dynamic"),1},name+"Dynamic",false));
+            p.push_back(std::make_unique<juce::AudioParameterChoice>(
+                juce::ParameterID{id("domain"),1},name+"Channel",
+                juce::StringArray{"STEREO","MID","SIDE"},0));
+        }
     return { p.begin(), p.end() };
 }
 
@@ -520,6 +551,7 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
 
     currentSampleRate = sampleRate;
     rootsEngine.prepare(sampleRate);
+    carveEngine.prepare(sampleRate);
     sanitizeCrossovers();
 
     for (auto& section : sectionStates)
@@ -965,6 +997,29 @@ void PRISMVSTAudioProcessor::processRootsEngine(juce::AudioBuffer<float>& buffer
         rootsEngine.process(buffer.getWritePointer(0),
                             buffer.getWritePointer(1),
                             (size_t)buffer.getNumSamples());
+    // Bounds come from actual ROOT handle positions, with smooth acoustic tails.
+    for(int root=0;root<surgery::kRoots;++root) {
+        const float lo=read(apvts,rootsNodeId(root*2,"hz"));
+        const float hi=read(apvts,rootsNodeId(root*2+1,"hz"));
+        carveEngine.bounds(root,lo,hi);
+        carveEngine.rootEnabled(root,
+            read(apvts,rootsRootControlId(root,"on"))>=0.5f);
+        for(int slot=0;slot<surgery::kSlots;++slot) {
+            const auto id=[root,slot](const char* suffix){return carveId(root,slot,suffix);};
+            surgery::CarveConfig c;
+            c.enabled=read(apvts,id("on"))>=0.5f;
+            c.hz=read(apvts,id("hz"));
+            c.depthDb=read(apvts,id("depth"));
+            c.q=read(apvts,id("q"));
+            c.thresholdDb=read(apvts,id("threshold"));
+            c.dynamic=read(apvts,id("dynamic"))>=0.5f;
+            c.channel=(surgery::Channel)juce::roundToInt(read(apvts,id("domain")));
+            carveEngine.configure(root,slot,c);
+        }
+    }
+    if(buffer.getNumChannels()>=2)
+        carveEngine.process(buffer.getWritePointer(0),buffer.getWritePointer(1),
+                            (size_t)buffer.getNumSamples(),getActiveRootsSolo());
     gainReductionDb.store((float)rootsEngine.meter().largestGrDb);
 }
 
