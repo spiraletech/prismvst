@@ -36,7 +36,8 @@ RootsGraph::RootsGraph(PRISMVSTAudioProcessor& owner):processor_(owner) {
     setMouseCursor(juce::MouseCursor::CrosshairCursor);
 }
 juce::Rectangle<float> RootsGraph::area() const {
-    return getLocalBounds().toFloat().reduced(46.0f,34.0f);
+    // Reserve a header rail for ROOT-specific C1-C4 foreground selectors.
+    return getLocalBounds().toFloat().reduced(46.0f,46.0f);
 }
 float RootsGraph::freqToX(float f) const {
     const auto r=area();
@@ -210,33 +211,14 @@ void RootsGraph::paint(juce::Graphics& g){
     g.setFont(juce::Font(juce::FontOptions(9.0f,juce::Font::bold)));
     g.drawText("SONAR  /  ENERGY PERSISTENCE",r.getX()+8,sonarTop+3,210,14,
                juce::Justification::centredLeft);
-    // CARVE nodes are measured frequency-domain corrections (not ROOT boundaries).
-    if(mode_==1) {
-        for(int slot=0;slot<4;++slot){
-            const int root=selected_/2;
-            const auto id=[root,slot](const char* s){
-                return PRISMVSTAudioProcessor::carveId(root,slot,s);
-            };
-            if(pval(processor_.apvts,id("on"))<0.5f)continue;
-            const float frequency=pval(processor_.apvts,id("hz"));
-            const float depth=pval(processor_.apvts,id("depth"));
-            const float x=freqToX(frequency);
-            const float y=r.getCentreY()+depth*1.35f;
-            const auto c=colour(root);
-            g.setColour(c.withAlpha(0.38f));
-            g.drawVerticalLine(juce::roundToInt(x),y,r.getBottom());
-            g.setColour(c);
-            g.fillEllipse(x-5.5f,y-5.5f,11.0f,11.0f);
-            if(slot==slot_){
-                g.setColour(juce::Colours::white);
-                g.drawEllipse(x-9,y-9,18.0f,18.0f,2.0f);
-            }
-        }
-    }
     // Both boundary handles always live on one horizontal rail.
     g.setColour(juce::Colour::fromRGB(159,182,191).withAlpha(0.14f));
     g.drawHorizontalLine(juce::roundToInt(r.getCentreY()),r.getX(),r.getRight());
+    // Two-pass z-order keeps the selected ROOT boundary pair above neighbors.
+    const int selectedRoot=selected_/2;
+    for(int pass=0;pass<2;++pass)
     for(int i=0;i<prism::roots::v2::kNodes;++i){
+        if((i/2==selectedRoot)!=(pass==1))continue;
         const float hz=param(i,"hz");
         const float x=freqToX(hz),y=r.getCentreY();
         const bool enabled=pval(processor_.apvts,
@@ -245,15 +227,16 @@ void RootsGraph::paint(juce::Graphics& g){
              PRISMVSTAudioProcessor::rootsRootSoloId(i/2))>=0.5f;
         const auto col=colour(i/2);
         // Vertical guides represent frequency boundaries, not gain movements.
-        g.setColour(col.withAlpha(enabled?0.23f:0.06f));
+        const bool focused=i/2==selectedRoot;
+        g.setColour(col.withAlpha(enabled?(focused?0.55f:0.15f):0.045f));
         g.drawVerticalLine(juce::roundToInt(x),r.getY(),r.getBottom());
-        g.setColour(col.withAlpha(enabled?0.10f:0.025f));
+        g.setColour(col.withAlpha(enabled?(focused?0.19f:0.045f):0.025f));
         g.fillEllipse(x-10,y-10,20,20);
         g.setColour(enabled?col:juce::Colour::fromRGB(79,90,97));
         g.fillEllipse(x-5.5f,y-5.5f,11,11);
-        if(i==selected_||solo){
+        if(i==selected_||solo||focused){
             g.setColour(solo?juce::Colours::white:col.brighter(0.65f));
-            g.drawEllipse(x-9,y-9,18,18,i==selected_?1.9f:1.2f);
+            g.drawEllipse(x-9,y-9,18,18,i==selected_?2.0f:1.2f);
         }
         if(i==selected_){
             g.setColour(juce::Colours::white);
@@ -264,6 +247,69 @@ void RootsGraph::paint(juce::Graphics& g){
                        juce::roundToInt(juce::jlimit(r.getY(),r.getBottom()-20,y-30)),
                        125,19,juce::Justification::centredLeft);
         }
+    }
+    // Focused ROOT foreground rail: all four slots remain identifiable.
+    // OFF slots are selectable but never represented as active audio filters.
+    const auto focusedColor=colour(selectedRoot);
+    g.setColour(focusedColor.withAlpha(0.18f));
+    g.fillRoundedRectangle(r.getX(),24.0f,171.0f,20.0f,4.0f);
+    g.setColour(focusedColor.brighter(0.45f));
+    g.setFont(juce::Font(juce::FontOptions(10.0f,juce::Font::bold)));
+    g.drawFittedText("ROOT "+juce::String(selectedRoot+1)+" / "+
+        PRISMVSTAudioProcessor::sectionName(selectedRoot)+"  CARVE",
+        juce::Rectangle<int>((int)r.getX()+6,25,160,18),
+        juce::Justification::centredLeft,1);
+
+    // Selected ROOT CARVE markers always render AFTER boundary handles and heat.
+    // Active cuts use their actual host frequency and depth; inactive slots
+    // exist only as OFF selectors in the top rail (no fabricated filter plot).
+    for(int slot=0;slot<surgery::ui::kSlotsPerRoot;++slot){
+        const auto id=[selectedRoot,slot](const char* suffix){
+            return PRISMVSTAudioProcessor::carveId(selectedRoot,slot,suffix);
+        };
+        const bool enabled=pval(processor_.apvts,id("on"))>=0.5f;
+        if(!enabled)continue;
+        const float x=freqToX(pval(processor_.apvts,id("hz")));
+        const float depth=pval(processor_.apvts,id("depth"));
+        const float y=surgery::ui::carveY(r.getCentreY(),depth);
+        const auto outline=focusedColor.brighter(0.35f);
+        g.setColour(focusedColor.withAlpha(0.42f));
+        g.drawVerticalLine(juce::roundToInt(x),y,r.getBottom());
+        g.setColour(juce::Colour(0xff0c1820));
+        g.fillEllipse(x-10.5f,y-10.5f,21.0f,21.0f);
+        g.setColour(outline);
+        g.drawEllipse(x-10.5f,y-10.5f,21.0f,21.0f,slot==slot_?2.8f:1.8f);
+        g.setColour(slot==slot_?juce::Colours::white:focusedColor);
+        g.fillEllipse(x-6.0f,y-6.0f,12.0f,12.0f);
+        // The marker centre stays at the measured host parameter position.
+        // Small nearby identification plates may overlap, not the node data.
+        const int labelX=juce::jlimit((int)r.getX(),(int)r.getRight()-30,
+                                    juce::roundToInt(x)+9+(slot%2)*2);
+        const int labelY=juce::jlimit((int)r.getY(),(int)r.getBottom()-17,
+                                    juce::roundToInt(y)-25-(slot%2)*17);
+        g.setColour(juce::Colour(0xff07151c).withAlpha(0.94f));
+        g.fillRoundedRectangle((float)labelX,(float)labelY,29.0f,17.0f,4.0f);
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(juce::FontOptions(10.0f,juce::Font::bold)));
+        g.drawText("C"+juce::String(slot+1),labelX,labelY,29,17,
+                   juce::Justification::centred);
+    }
+    for(int slot=0;slot<surgery::ui::kSlotsPerRoot;++slot){
+        const auto bounds=surgery::ui::carveTabBounds((float)getWidth(),slot);
+        const auto id=PRISMVSTAudioProcessor::carveId(selectedRoot,slot,"on");
+        const bool enabled=pval(processor_.apvts,id)>=0.5f;
+        const bool chosen=slot==slot_;
+        g.setColour(juce::Colour(0xff09151b).withAlpha(0.95f));
+        g.fillRoundedRectangle(bounds.x,bounds.y,bounds.w,bounds.h,4.0f);
+        g.setColour(enabled?focusedColor.withAlpha(chosen?1.0f:0.75f):
+                             juce::Colour(0xff68838a).withAlpha(chosen?0.95f:0.55f));
+        g.drawRoundedRectangle(bounds.x,bounds.y,bounds.w,bounds.h,4.0f,chosen?2.0f:1.0f);
+        g.setColour(enabled?juce::Colours::white:juce::Colour(0xff9bb0b6));
+        g.setFont(juce::Font(juce::FontOptions(10.0f,juce::Font::bold)));
+        const auto label="C"+juce::String(slot+1)+(enabled?"  ON":"  OFF");
+        g.drawText(label,juce::roundToInt(bounds.x),juce::roundToInt(bounds.y),
+                   juce::roundToInt(bounds.w),juce::roundToInt(bounds.h),
+                   juce::Justification::centred);
     }
     if(hover_&&r.contains(mouse_)){
         const int bar=prism::analysis::LabBands::indexForFrequency(xToFreq(mouse_.x));
@@ -284,20 +330,26 @@ void RootsGraph::paint(juce::Graphics& g){
                          juce::Justification::centredLeft,1);
     }
 }
+int RootsGraph::hitCarveTab(juce::Point<float> point) const {
+    for(int slot=0;slot<surgery::ui::kSlotsPerRoot;++slot)
+        if(surgery::ui::carveTabBounds((float)getWidth(),slot).contains(point.x,point.y))
+            return slot;
+    return -1;
+}
 int RootsGraph::hitCarveNode(juce::Point<float> point) const {
-    if(mode_!=1)return -1;
     const int root=selected_/2;
-    float nearest=14.0f;
+    float nearest=15.0f;
     int target=-1;
-    for(int slot=0;slot<4;++slot){
+    for(int slot=0;slot<surgery::ui::kSlotsPerRoot;++slot){
         const auto id=[root,slot](const char* suffix){
             return PRISMVSTAudioProcessor::carveId(root,slot,suffix);
         };
         if(pval(processor_.apvts,id("on"))<0.5f)continue;
         const float x=freqToX(pval(processor_.apvts,id("hz")));
-        const float y=area().getCentreY()+1.35f*pval(processor_.apvts,id("depth"));
+        const float y=surgery::ui::carveY(area().getCentreY(),
+                                          pval(processor_.apvts,id("depth")));
         const float distance=point.getDistanceFrom({x,y});
-        // Prefer the selected slot for overlapping neutral nodes.
+        // Prefer the selected slot for overlapping real audio nodes.
         if(distance<nearest-0.5f || (slot==slot_&&distance<=nearest+0.5f)){
             nearest=distance;target=slot;
         }
@@ -307,6 +359,12 @@ int RootsGraph::hitCarveNode(juce::Point<float> point) const {
 void RootsGraph::mouseDown(const juce::MouseEvent& e){
     mouse_=e.position;hover_=true;
     if(!e.mods.isPopupMenu()){
+        const int tab=hitCarveTab(e.position);
+        if(tab>=0){
+            if(onSelectCarve)onSelectCarve(tab);
+            repaint();
+            return;
+        }
         const int slot=hitCarveNode(e.position);
         if(slot>=0){
             draggingCarve_=slot;
@@ -351,8 +409,8 @@ void RootsGraph::mouseDrag(const juce::MouseEvent& e){
         const float lower=juce::jmax(20.0f,std::min(a,b)*0.79f);
         const float upper=juce::jmin(20000.0f,std::max(a,b)*1.26f);
         change(processor_,id("hz"),juce::jlimit(lower,upper,xToFreq(e.position.x)));
-        change(processor_,id("depth"),juce::jlimit(0.0f,36.0f,
-            (e.position.y-area().getCentreY())/1.35f));
+        change(processor_,id("depth"),surgery::ui::depthFromY(
+            area().getCentreY(),e.position.y));
         repaint();return;
     }
     if(dragging_<0)return;
@@ -382,7 +440,8 @@ void RootsGraph::mouseExit(const juce::MouseEvent&){hover_=false;repaint();}
 void RootsGraph::mouseDoubleClick(const juce::MouseEvent& e){
     if(e.mods.isPopupMenu())return;
     // Finish any gesture opened by the second mouse-down before resetting.
-    const int carve=hitCarveNode(e.position);
+    const int tab=hitCarveTab(e.position);
+    const int carve=tab>=0?tab:hitCarveNode(e.position);
     const int boundary=carve<0?hitNode(e.position):-1;
     if(draggingCarve_>=0||dragging_>=0)mouseUp(e);
     if(carve>=0){
@@ -491,7 +550,11 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     setResizeLimits(840,610,1800,1100);
     addAndMakeVisible(graph_);
     graph_.onSelectNode=[this](int n){bindNode(n);};
-    graph_.onSelectCarve=[this](int slot){carveSlot_=slot;bindCarve();};
+    graph_.onSelectCarve=[this](int slot){
+        carveSlot_=juce::jlimit(0,3,slot);
+        bindCarve();
+        if(mode_!=1)setMode(1); // Foreground slot selection opens its real controls.
+    };
     for(int root=0;root<7;++root){
         auto& b=rootButtons_[(size_t)root];
         b.setButtonText("ROOT "+juce::String(root+1)+"  "+

@@ -5,6 +5,7 @@
 #include "SurgeryAssist.h"
 #include "SurgeryLookAndFeel.h"
 #include "SurgeryHeaderLayout.h"
+#include "SurgeryNodeFocus.h"
 #include <array>
 #include <functional>
 #include <memory>
@@ -59,6 +60,7 @@ private:
     void write(int i,const char* suffix,float value);
     int hitNode(juce::Point<float>) const;
     int hitCarveNode(juce::Point<float>) const;
+    int hitCarveTab(juce::Point<float>) const;
     void popup();
     juce::Colour colour(int territory) const;
 };
