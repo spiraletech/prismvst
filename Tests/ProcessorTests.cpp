@@ -70,6 +70,18 @@ int main()
             return 1;
         }
     }
+    // Q parameter has milli-Q resolution and a recalled heatmap switch.
+    {
+        PRISMVSTAudioProcessor p;
+        const auto id=PRISMVSTAudioProcessor::carveId(0,0,"q");
+        const auto* q=p.apvts.getParameter(id);
+        if(q==nullptr)return 26;
+        setActual(p,id,1.234f);
+        const auto* raw=p.apvts.getRawParameterValue(id);
+        if(raw==nullptr||std::abs(raw->load()-1.234f)>0.0011f)return 27;
+        const auto* view=p.apvts.getRawParameterValue("surgery_heat_view");
+        if(view==nullptr||view->load()>=0.5f)return 28;
+    }
     // SURGERY CARVE: a new instance owns 28 distinct but initially OFF slots.
     // Host IDs and parameter defaults must agree; selecting a ROOT is not activation.
     {

@@ -287,8 +287,8 @@ void RootsGraph::paint(juce::Graphics& g){
     }
     g.setColour(juce::Colour(0xffacc3cf));
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
-    g.drawText(heatView?"SONAR / HEATMAP VIEW     CARVE / FILTER RESPONSE":
-               "SONAR / SPECTRUM     CARVE / FILTER RESPONSE",
+    g.drawText(heatView?"SONAR / HEATMAP     CARVE / MAX STATIC RESPONSE":
+               "SONAR / SPECTRUM     CARVE / MAX STATIC RESPONSE",
                r.getX(),r.getBottom()+23.0f,r.getWidth(),16.0f,
                juce::Justification::centredLeft);
     // Both boundary handles always live on one horizontal rail.

@@ -23,7 +23,7 @@ int main(){
     if(CarveEngine::boundaryWeight(1000,500,2000)<0.999) return 1;
     if(CarveEngine::boundaryWeight(200,500,2000)>0.001) return 2;
     auto c=surgery::CarveConfig{};c.enabled=true;c.hz=1000;c.depthDb=24;c.q=5;
-    e.configure(4,0,c);e.bounds(4,500,2000);
+    e.bounds(4,500,2000);e.configure(4,0,c);
     const double unity=toneRms(1000,e,false);
     const double removed=toneRms(1000,e,true);
     if(!(removed<unity*0.24)){std::cerr<<"notch not attenuating "<<removed<<" "<<unity<<"\n";return 3;}
