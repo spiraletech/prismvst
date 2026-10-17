@@ -789,6 +789,11 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     gain_.setTooltip("Entire ROOT frequency range gain: -60 to +60 dB");
 
     thresholdLabel_.setText("COMP THRESHOLD",juce::dontSendNotification);
+    // Touching the threshold activates the root compressor in old OFF presets.
+    threshold_.onDragStart=[this] {
+        const auto id=PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp");
+        if(pval(processor_.apvts,id)<0.5f)change(processor_,id,4.0f);
+    };
     for(auto* b:{&mono_,&on_,&solo_}){
         b->setClickingTogglesState(true);
         b->setColour(juce::TextButton::buttonColourId,juce::Colour::fromRGB(24,38,47));
@@ -830,8 +835,6 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         addAndMakeVisible(*b);
     }
     const std::array<const char*,4> names{"SPARKLE","SHINE","SMOOTHENING","VINTAGE TAPE"};
-    const std::array<const char*,4> ids{
-        "surgery_onyx_sparkle","surgery_onyx_shine","surgery_onyx_smooth","surgery_onyx_tape"};
     for(int i=0;i<4;++i){
         auto& s=onyxSliders_[(size_t)i];
         rotary(s," %",0.0);s.setRange(0.0,100.0,0.1);
@@ -842,7 +845,6 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         onyxLabels_[(size_t)i].setJustificationType(juce::Justification::centred);
         onyxLabels_[(size_t)i].setColour(juce::Label::textColourId,juce::Colours::white);
         addAndMakeVisible(onyxLabels_[(size_t)i]);
-        onyxAttachments_[(size_t)i]=std::make_unique<SliderA>(processor_.apvts,ids[(size_t)i],s);
     }
     addAndMakeVisible(themeButton_);
     themeButton_.onClick=[this]{
@@ -888,6 +890,13 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
 RootsEditor::~RootsEditor(){stopTimer();setLookAndFeel(nullptr);}
 void RootsEditor::bindNode(int n){
     node_=juce::jlimit(0,prism::roots::v2::kNodes-1,n);
+    for(auto& a:onyxAttachments_)a.reset();
+    const std::array<const char*,4> names{"onyx_sparkle","onyx_shine","onyx_smooth","onyx_tape"};
+    for(int i=0;i<4;++i)
+        onyxAttachments_[(size_t)i]=std::make_unique<SliderA>(
+            processor_.apvts,
+            PRISMVSTAudioProcessor::rootsRootControlId(node_/2,names[(size_t)i]),
+            onyxSliders_[(size_t)i]);
     gainA_.reset();thresholdA_.reset();monoA_.reset();
     onA_.reset();soloA_.reset();
     const auto rid=[this](const char* suffix){
@@ -1004,8 +1013,8 @@ void RootsEditor::timerCallback(){
     // Show when compression is disabled; never present inactive controls as working.
     const int comp=juce::roundToInt(pval(processor_.apvts,
          PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp")));
-    threshold_.setEnabled(comp!=0);
-thresholdLabel_.setText(comp==0?"THRESHOLD (COMP OFF)":"COMP THRESHOLD",
+    threshold_.setEnabled(true);
+thresholdLabel_.setText(comp==0?"THRESHOLD (DRAG TO ENABLE)":"COMP THRESHOLD",
                             juce::dontSendNotification);
     updateRootButtons();
     const float factor=pval(processor_.apvts,
