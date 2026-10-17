@@ -562,7 +562,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             const auto id=[root,slot](const char* s){return carveId(root,slot,s);};
             const auto name=juce::String("CARVE ")+juce::String(root+1)+"/"+juce::String(slot+1)+" ";
             p.push_back(std::make_unique<juce::AudioParameterBool>(
-                juce::ParameterID{id("on"),1},name+"Enabled",true));
+                juce::ParameterID{id("on"),1},name+"Enabled",false));
             juce::NormalisableRange<float> range(20.0f,20000.0f,0.01f);
             range.setSkewForCentre(1000.0f);
             p.push_back(std::make_unique<juce::AudioParameterFloat>(

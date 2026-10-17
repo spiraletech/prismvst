@@ -70,6 +70,33 @@ int main()
             return 1;
         }
     }
+    // SURGERY CARVE: a new instance owns 28 distinct but initially OFF slots.
+    // Host IDs and parameter defaults must agree; selecting a ROOT is not activation.
+    {
+        PRISMVSTAudioProcessor p;
+        int off=0;
+        for(int root=0;root<surgery::kRoots;++root){
+            for(int slot=0;slot<surgery::kSlots;++slot){
+                const auto id=PRISMVSTAudioProcessor::carveId(root,slot,"on");
+                auto* parameter=p.apvts.getParameter(id);
+                const auto* raw=p.apvts.getRawParameterValue(id);
+                if(parameter==nullptr||raw==nullptr||
+                   raw->load()>=0.5f||parameter->getDefaultValue()>=0.5f){
+                    std::cerr<<"CARVE must start OFF: ROOT "<<root+1
+                             <<" C"<<slot+1<<"\n";return 23;
+                }
+                ++off;
+            }
+        }
+        if(off!=28)return 24;
+        const auto target=PRISMVSTAudioProcessor::carveId(2,3,"on");
+        const auto neighbor=PRISMVSTAudioProcessor::carveId(2,2,"on");
+        if(!setActual(p,target,1.0f) ||
+           p.apvts.getRawParameterValue(target)->load()<0.5f ||
+           p.apvts.getRawParameterValue(neighbor)->load()>=0.5f)
+            return 25;
+        std::cerr<<"SURGERY 28 CARVEs default OFF; C4 enables independently\n";
+    }
     // ROOTS parent/child test: node selection is not SOLO activation.
     {
         PRISMVSTAudioProcessor p;

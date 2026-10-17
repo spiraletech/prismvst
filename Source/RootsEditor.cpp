@@ -277,7 +277,7 @@ void RootsGraph::paint(juce::Graphics& g){
             return PRISMVSTAudioProcessor::carveId(selectedRoot,slot,suffix);
         };
         const bool enabled=pval(processor_.apvts,id("on"))>=0.5f;
-        // An OFF slot still has a distinct selectable ghost position.
+        if(!enabled)continue; // Disabled CARVEs are genuinely invisible on the graph.
         const float x=freqToX(pval(processor_.apvts,id("hz")));
         const float depth=pval(processor_.apvts,id("depth"));
         const float y=surgery::ui::carveY(r.getCentreY(),depth);
@@ -357,7 +357,7 @@ int RootsGraph::hitCarveNode(juce::Point<float> point) const {
         const auto id=[root,slot](const char* suffix){
             return PRISMVSTAudioProcessor::carveId(root,slot,suffix);
         };
-        // Any of the four slots can be targeted, even when currently off.
+        if(pval(processor_.apvts,id("on"))<0.5f)continue; // Invisible means not hit-testable.
         const float x=freqToX(pval(processor_.apvts,id("hz")));
         const float y=surgery::ui::carveY(area().getCentreY(),
                                           pval(processor_.apvts,id("depth")));
@@ -380,9 +380,7 @@ void RootsGraph::mouseDown(const juce::MouseEvent& e){
         }
         const int slot=hitCarveNode(e.position);
         if(slot>=0){
-            const auto enabledId=PRISMVSTAudioProcessor::carveId(selected_/2,slot,"on");
-            if(pval(processor_.apvts,enabledId)<0.5f)
-                change(processor_,enabledId,1.0f);
+            // Dragging only moves an explicitly enabled, visible CARVE.
             draggingCarve_=slot;
             if(onSelectCarve)onSelectCarve(slot);
             const int root=selected_/2;
@@ -460,6 +458,11 @@ void RootsGraph::mouseDoubleClick(const juce::MouseEvent& e){
     const int carve=tab>=0?tab:hitCarveNode(e.position);
     const int boundary=carve<0?hitNode(e.position):-1;
     if(draggingCarve_>=0||dragging_>=0)mouseUp(e);
+    if(tab>=0&&pval(processor_.apvts,
+        PRISMVSTAudioProcessor::carveId(selected_/2,tab,"on"))<0.5f){
+        if(onSelectCarve)onSelectCarve(tab);
+        return; // An OFF selector cannot resurrect its invisible node.
+    }
     if(carve>=0){
         if(onSelectCarve)onSelectCarve(carve);
         processor_.resetCarveNode(selected_/2,carve);
@@ -742,6 +745,8 @@ void RootsEditor::bindCarve(){
     carveThresholdA_=std::make_unique<SliderA>(processor_.apvts,id("threshold"),carveThreshold_);
     carveOnA_=std::make_unique<ButtonA>(processor_.apvts,id("on"),carveOn_);
     carveDynamicA_=std::make_unique<ButtonA>(processor_.apvts,id("dynamic"),carveDynamic_);
+    carveOn_.setButtonText(pval(processor_.apvts,id("on"))>=0.5f?
+                           "CARVE ON":"CARVE OFF");
     for(int i=0;i<4;++i){
         carveSlotButtons_[(size_t)i].setToggleState(i==slot,juce::dontSendNotification);
         carveSlotButtons_[(size_t)i].setColour(juce::TextButton::buttonOnColourId,
@@ -810,6 +815,9 @@ void RootsEditor::timerCallback(){
     thresholdLabel_.setText(comp==0?"THRESHOLD (COMP OFF)":"COMP THRESHOLD",
                             juce::dontSendNotification);
     updateRootButtons();
+    carveOn_.setButtonText(pval(processor_.apvts,
+       PRISMVSTAudioProcessor::carveId(node_/2,carveSlot_,"on"))>=0.5f?
+       "CARVE ON":"CARVE OFF");
     heatToggle_.setButtonText(pval(processor_.apvts,"aura_color")>=0.5f?
                               "SONAR ON":"SONAR OFF");
     graph_.setPresentation(themeIndex_,mode_,carveSlot_);
