@@ -249,7 +249,9 @@ void PRISMVSTAudioProcessor::processDynamicEq(juce::AudioBuffer<float>& buffer)
         const float compressedDb = overDb * (1.0f - 1.0f / ratio);
         const float targetDynamicDb = -juce::jmin(dynamicRange, compressedDb);
 
-        band.smoothedGainDb += 0.35f * (targetDynamicDb - band.smoothedGainDb);
+        // Use a time-based coefficient rather than a fixed amount per DAW block.
+        const float smoothing = 1.0f - std::exp(-(float)n / (0.020f * (float)currentSampleRate));
+        band.smoothedGainDb += smoothing * (targetDynamicDb - band.smoothedGainDb);
         updateBandCoefficients(b);
 
         for (int c = 0; c < 2; ++c)
