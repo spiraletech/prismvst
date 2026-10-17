@@ -27,10 +27,10 @@ inline float scrubWheelFrequency(float hz,float turns,float left,float right) no
 }
 inline float adjustQ(float q,float wheelTurns,bool fine) noexcept {
     const float step=fine?0.025f:0.25f;
-    return std::clamp(q+wheelTurns*step,0.3f,24.0f);
+    return std::clamp(q+wheelTurns*step,0.3f,96.0f);
 }
 inline float bandwidthOctaves(float q) noexcept {
-    return 2.0f*std::asinh(1.0f/(2.0f*std::clamp(q,0.3f,24.0f)))/
+    return 2.0f*std::asinh(1.0f/(2.0f*std::clamp(q,0.3f,96.0f)))/
            std::log(2.0f);
 }
 }

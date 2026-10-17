@@ -1,5 +1,6 @@
 #include "RootsEditor.h"
 #include "RootsSpectrumColours.h"
+#include "SurgerySpectrogram.h"
 #include <cmath>
 #include <numbers>
 
@@ -760,9 +761,10 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     carveQ_.setDoubleClickReturnValue(true,2.0);
     carveThreshold_.setDoubleClickReturnValue(true,-24.0);
     carveFrequency_.setMouseDragSensitivity(2000);
-    carveQ_.setMouseDragSensitivity(1400);
+    carveQ_.setMouseDragSensitivity(2800);
+    carveQ_.setNumDecimalPlacesToDisplay(3);
     carveFrequency_.setTooltip("Exact Hz value: type in the field. CTRL+drag a CARVE node for fine frequency scrubbing.");
-    carveQ_.setTooltip("True Q factor (0.300–24.000). Wheel on a node adjusts Q; SHIFT+wheel adjusts finely.");
+    carveQ_.setTooltip("Ultra-surgical Q 0.300 to 96.000. Higher = tighter notch; 0–100% tightness shown above knob. SHIFT+wheel = fine Q.");
     carveFrequencyLabel_.setText("FREQUENCY Hz",juce::dontSendNotification);
     carveDepthLabel_.setText("CUT DEPTH dB",juce::dontSendNotification);
     carveQLabel_.setText("Q / PRECISION",juce::dontSendNotification);
@@ -976,6 +978,11 @@ void RootsEditor::timerCallback(){
     thresholdLabel_.setText(comp==0?"THRESHOLD (COMP OFF)":"COMP THRESHOLD",
                             juce::dontSendNotification);
     updateRootButtons();
+    const float factor=pval(processor_.apvts,
+        PRISMVSTAudioProcessor::carveId(node_/2,carveSlot_,"q"));
+    const float tight=surgery::tightnessPercent(factor);
+    carveQLabel_.setText("Q / "+juce::String(tight,1)+"% TIGHT",
+                         juce::dontSendNotification);
     carveOn_.setButtonText(pval(processor_.apvts,
        PRISMVSTAudioProcessor::carveId(node_/2,carveSlot_,"on"))>=0.5f?
        "CARVE ON":"CARVE OFF");

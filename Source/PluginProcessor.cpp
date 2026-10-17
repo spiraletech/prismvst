@@ -573,7 +573,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             p.push_back(std::make_unique<juce::AudioParameterFloat>(
                 juce::ParameterID{id("depth"),1},name+"Cut Depth",
                 juce::NormalisableRange<float>(0.0f,36.0f,0.01f),0.0f));
-            juce::NormalisableRange<float> q(0.3f,24.0f,0.001f);q.setSkewForCentre(2.0f);
+            juce::NormalisableRange<float> q(0.3f,96.0f,0.001f);q.setSkewForCentre(4.0f);
             p.push_back(std::make_unique<juce::AudioParameterFloat>(
                 juce::ParameterID{id("q"),1},name+"Q",q,2.0f));
             p.push_back(std::make_unique<juce::AudioParameterFloat>(

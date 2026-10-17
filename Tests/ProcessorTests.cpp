@@ -70,6 +70,14 @@ int main()
             return 1;
         }
     }
+    // Ultra Q must be host-editable, not just an extended rotary visual.
+    {
+        PRISMVSTAudioProcessor p;
+        const auto id=PRISMVSTAudioProcessor::carveId(3,0,"q");
+        if(!setActual(p,id,95.333f))return 29;
+        const auto* v=p.apvts.getRawParameterValue(id);
+        if(v==nullptr||std::abs(v->load()-95.333f)>0.0011f)return 30;
+    }
     // Q parameter has milli-Q resolution and a recalled heatmap switch.
     {
         PRISMVSTAudioProcessor p;

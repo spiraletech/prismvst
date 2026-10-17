@@ -11,7 +11,7 @@ inline double carveMagnitudeDb(double sampleRate,double centerHz,double q,
     const double sr=std::max(8000.0,sampleRate);
     const double fc=std::clamp(centerHz,20.0,sr*0.45);
     const double hz=std::clamp(probeHz,10.0,sr*0.49);
-    const double qq=std::clamp(q,0.3,24.0);
+    const double qq=std::clamp(q,0.3,96.0);
     const double gain=-std::clamp(cutDb,0.0,36.0);
     if(gain==0.0)return 0.0;
     const double w=2.0*std::numbers::pi*fc/sr;

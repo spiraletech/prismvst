@@ -80,7 +80,7 @@ public:
         const double upper=std::clamp(high_[(size_t)root],lower,std::min(20000.0,sr_*0.45));
         c.hz=std::clamp(c.hz,lower,upper);
         c.depthDb=std::clamp(c.depthDb,0.0,36.0);
-        c.q=std::clamp(c.q,0.3,24.0);
+        c.q=std::clamp(c.q,0.3,96.0);
         c.thresholdDb=std::clamp(c.thresholdDb,-60.0,0.0);
         auto& n=nodes_[(size_t)(root*kSlots+slot)];
         const bool changed=n.config.hz!=c.hz||n.config.q!=c.q||n.config.depthDb!=c.depthDb;
