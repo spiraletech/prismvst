@@ -500,6 +500,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             juce::StringArray{"STEREO LINK","DUAL MID/SIDE","MID ONLY","SIDE ONLY"},0));
     }
 
+    // The v1.0 global ONYX IDs remain registered for session compatibility;
+    // they no longer alter the master bus.
+    for (int root=0;root<numSections;++root)
+        for(const auto& fx:std::array<std::pair<const char*,const char*>,4> {{
+            {"sparkle","Sparkle"},{"shine","Shine"},{"smooth","Smoothening"},{"tape","Vintage Tape"} }})
+            p.push_back(std::make_unique<juce::AudioParameterFloat>(
+                juce::ParameterID { rootsRootControlId(root,juce::String("onyx_")+fx.first), 1 },
+                juce::String(sectionName(root))+" ONYX "+fx.second,
+                juce::NormalisableRange<float>(0.0f,100.0f,0.1f),0.0f));
     for (const auto& effect : std::array<std::pair<const char*, const char*>,4> {{
         {"surgery_onyx_sparkle","ONYX Sparkle"}, {"surgery_onyx_shine","ONYX Shine"},
         {"surgery_onyx_smooth","ONYX Smoothening"}, {"surgery_onyx_tape","ONYX Vintage Tape"} }})
@@ -1059,6 +1068,10 @@ void PRISMVSTAudioProcessor::processRootsEngine(juce::AudioBuffer<float>& buffer
         c.comp=(Compressor)juce::roundToInt(read(apvts,parent("comp")));
         c.detector=(Detector)juce::roundToInt(read(apvts,parent("detector")));
         c.thresholdDb=read(apvts,parent("threshold"));
+        c.sparkle=juce::jlimit(0.0f,1.0f,read(apvts,parent("onyx_sparkle"))*0.01f);
+        c.shine=juce::jlimit(0.0f,1.0f,read(apvts,parent("onyx_shine"))*0.01f);
+        c.smooth=juce::jlimit(0.0f,1.0f,read(apvts,parent("onyx_smooth"))*0.01f);
+        c.tape=juce::jlimit(0.0f,1.0f,read(apvts,parent("onyx_tape"))*0.01f);
         rootsEngine.config(i,c);
     }
     if(buffer.getNumChannels()>=2)
@@ -1138,7 +1151,6 @@ void PRISMVSTAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         processRootsEngine(buffer);
     else
         processSevenSectionEngine(buffer);
-    if(read(apvts,"roots_engine_mode")>=0.5f)processOnyxFinish(buffer);
     pushAnalyzerSamples(buffer);
     updateMeters(buffer);
 }
