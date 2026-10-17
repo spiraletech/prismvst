@@ -491,7 +491,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             juce::NormalisableRange<float>(-60.0f,0.0f,0.1f),-18.0f));
         p.push_back(std::make_unique<juce::AudioParameterChoice>(
             juce::ParameterID{id("comp"),1},label+"Compression Profile",
-            juce::StringArray{"OFF","OPTICAL 3:1","OPTICAL 4:1","CLB1 TUBE 3:1","FET 4:1"},0));
+            juce::StringArray{"OFF","OPTICAL 3:1","OPTICAL 4:1","CLB1 TUBE 3:1","FET 4:1"},4));
         p.push_back(std::make_unique<juce::AudioParameterChoice>(
             juce::ParameterID{id("domain"),1},label+"EQ Domain",
             juce::StringArray{"STEREO","MID","SIDE"},0));
@@ -500,6 +500,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             juce::StringArray{"STEREO LINK","DUAL MID/SIDE","MID ONLY","SIDE ONLY"},0));
     }
 
+    for (const auto& effect : std::array<std::pair<const char*, const char*>,4> {{
+        {"surgery_onyx_sparkle","ONYX Sparkle"}, {"surgery_onyx_shine","ONYX Shine"},
+        {"surgery_onyx_smooth","ONYX Smoothening"}, {"surgery_onyx_tape","ONYX Vintage Tape"} }})
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { effect.first, 1 }, effect.second,
+            juce::NormalisableRange<float>(0.0f,100.0f,0.1f),0.0f));
     // Deprecated per-handle effect IDs are retained for old presets, but ignored
     // by the ROOTS engine. Only the two Hz handles remain active.
     for (int i=0;i<prism::roots::v2::kNodes;++i)
@@ -607,6 +613,7 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
 
     currentSampleRate = sampleRate;
     rootsEngine.prepare(sampleRate);
+    for(auto& state:onyxFinish)state={};
     carveEngine.prepare(sampleRate);
     sanitizeCrossovers();
 
@@ -1086,6 +1093,35 @@ void PRISMVSTAudioProcessor::processRootsEngine(juce::AudioBuffer<float>& buffer
     gainReductionDb.store((float)rootsEngine.meter().largestGrDb);
 }
 
+void PRISMVSTAudioProcessor::processOnyxFinish(juce::AudioBuffer<float>& b) noexcept
+{
+    const float sparkle=juce::jlimit(0.0f,1.0f,read(apvts,"surgery_onyx_sparkle")*0.01f);
+    const float shine=juce::jlimit(0.0f,1.0f,read(apvts,"surgery_onyx_shine")*0.01f);
+    const float smooth=juce::jlimit(0.0f,1.0f,read(apvts,"surgery_onyx_smooth")*0.01f);
+    const float tape=juce::jlimit(0.0f,1.0f,read(apvts,"surgery_onyx_tape")*0.01f);
+    if(sparkle+shine+smooth+tape<0.00001f)return;
+    const float sr=(float)juce::jmax(8000.0,currentSampleRate);
+    const auto alpha=[sr](float hz){return 1.0f-std::exp(-2.0f*juce::MathConstants<float>::pi*hz/sr);};
+    const float a1=alpha(4200.0f),a2=alpha(1600.0f),a3=alpha(juce::jmap(smooth,16000.0f,2600.0f)),a4=alpha(8.0f);
+    for(int c=0;c<juce::jmin(2,b.getNumChannels());++c){
+        auto& s=onyxFinish[(size_t)c];auto* x=b.getWritePointer(c);
+        for(int i=0;i<b.getNumSamples();++i){
+            float y=x[i];
+            s.air+=a1*(y-s.air);
+            if(sparkle>0)y+=0.20f*sparkle*std::tanh((y-s.air)*(1.0f+sparkle));
+            s.presence+=a2*(y-s.presence);
+            if(shine>0)y+=0.30f*shine*(y-s.presence);
+            s.smooth+=a3*(y-s.smooth);
+            if(smooth>0)y+=0.88f*smooth*(s.smooth-y);
+            if(tape>0){
+                const float d=1.0f+3.5f*tape;
+                y+=tape*(std::tanh(d*y)/std::tanh(d)-y);
+                s.dc+=a4*(y-s.dc);y-=s.dc;
+            }
+            x[i]=y;
+        }
+    }
+}
 void PRISMVSTAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -1102,6 +1138,7 @@ void PRISMVSTAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce
         processRootsEngine(buffer);
     else
         processSevenSectionEngine(buffer);
+    if(read(apvts,"roots_engine_mode")>=0.5f)processOnyxFinish(buffer);
     pushAnalyzerSamples(buffer);
     updateMeters(buffer);
 }
