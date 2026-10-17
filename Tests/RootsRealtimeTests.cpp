@@ -143,6 +143,39 @@ int main(){
         }
         std::cout<<"D PASS compressor gain reduction and mono/phase\n";
     }
+    // PROOF E: ONYX changes only the selected spectral ROOT, and threshold
+    // produces measurably more gain reduction at a lower setting.
+    {
+        auto render=[](double frequency,double sparkle,double threshold,bool comp) {
+            Engine engine(sr);
+            Config c=engine.get(0);
+            c.hz=500.0;c.comp=comp?Compressor::fet4:Compressor::off;
+            c.thresholdDb=threshold;c.sparkle=sparkle;
+            engine.config(0,c);
+            auto upper=engine.get(1);upper.hz=1800.0;engine.config(1,upper);
+            std::vector<float> l(n),r(n);
+            sine(l,r,frequency,0.35);
+            engine.process(l.data(),r.data(),n);
+            return rms(l);
+        };
+        const double dryIn=render(1000.0,0.0,-30.0,false);
+        const double wetIn=render(1000.0,1.0,-30.0,false);
+        const double dryOut=render(8000.0,0.0,-30.0,false);
+        const double wetOut=render(8000.0,1.0,-30.0,false);
+        const double deltaIn=std::abs(wetIn-dryIn);
+        const double deltaOut=std::abs(wetOut-dryOut);
+        if(!(deltaIn>0.0001 && deltaIn>deltaOut*2.0)){
+            std::cerr<<"E FAIL ONYX territory isolation "<<deltaIn<<","<<deltaOut<<"\n";
+            return 5;
+        }
+        const double light=render(1000.0,0.0,-5.0,true);
+        const double heavy=render(1000.0,0.0,-40.0,true);
+        if(!(heavy<light*0.96)){
+            std::cerr<<"E FAIL threshold ineffective "<<heavy<<","<<light<<"\n";
+            return 6;
+        }
+        std::cout<<"E PASS per-ROOT ONYX isolation and threshold reduction\n";
+    }
     std::cout<<"FOUR ROOTS v2 AUDIO PROOFS PASSED\n";
     return 0;
 }
