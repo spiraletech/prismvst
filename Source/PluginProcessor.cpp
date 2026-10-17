@@ -78,7 +78,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
 
         p.push_back(std::make_unique<juce::AudioParameterFloat>(
             juce::ParameterID { bandId(i, "dyn_range"), 2 }, prefix + "Dynamic Range",
-            juce::NormalisableRange<float>(0.0f, 18.0f, 0.01f), 0.0f));
+            juce::NormalisableRange<float>(0.0f, 18.0f, 0.01f), 12.0f));
 
         p.push_back(std::make_unique<juce::AudioParameterFloat>(
             juce::ParameterID { bandId(i, "threshold"), 2 }, prefix + "Threshold",
@@ -99,7 +99,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
 
     p.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "onyx", 2 }, "ONYX",
-        juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.0f));
+        juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f));
+
+    for (const auto& spec : std::array<std::pair<const char*, const char*>, 4> {{
+             { "onyx_sparkle", "Sparkle" }, { "onyx_shine", "Shine" },
+             { "onyx_smooth", "Smoothening" }, { "onyx_tape", "Vintage Tape" } }})
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { spec.first, 1 }, spec.second,
+            juce::NormalisableRange<float>(0.0f, 100.0f, 0.1f), 0.0f));
 
     p.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "onyx_drive", 2 }, "ONYX Drive",
@@ -175,6 +182,7 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
 
     integratedEnergy = 0.0;
     integratedSamples = 0;
+    for (auto& ch : onyxStates) ch = {};
 }
 
 void PRISMVSTAudioProcessor::updateBandCoefficients(int bandIndex)
@@ -213,7 +221,9 @@ void PRISMVSTAudioProcessor::processDynamicEq(juce::AudioBuffer<float>& buffer)
         auto& band = bands[(size_t)b];
 
         const float threshold = read(apvts, bandId(b, "threshold"));
-        const float dynamicRange = read(apvts, bandId(b, "dyn_range"));
+        const float configuredRange = read(apvts, bandId(b, "dyn_range"));
+        // Legacy 0 dB settings previously disabled the threshold entirely.
+        const float dynamicRange = configuredRange <= 0.0f ? 12.0f : configuredRange;
         const float ratio = juce::jmax(1.0f, read(apvts, bandId(b, "ratio")));
         const float attackMs = juce::jmax(0.10f, read(apvts, bandId(b, "attack")));
         const float releaseMs = juce::jmax(5.0f, read(apvts, bandId(b, "release")));
@@ -239,7 +249,9 @@ void PRISMVSTAudioProcessor::processDynamicEq(juce::AudioBuffer<float>& buffer)
         const float compressedDb = overDb * (1.0f - 1.0f / ratio);
         const float targetDynamicDb = -juce::jmin(dynamicRange, compressedDb);
 
-        band.smoothedGainDb += 0.35f * (targetDynamicDb - band.smoothedGainDb);
+        // Use a time-based coefficient rather than a fixed amount per DAW block.
+        const float smoothing = 1.0f - std::exp(-(float)n / (0.020f * (float)currentSampleRate));
+        band.smoothedGainDb += smoothing * (targetDynamicDb - band.smoothedGainDb);
         updateBandCoefficients(b);
 
         for (int c = 0; c < 2; ++c)
@@ -255,29 +267,65 @@ void PRISMVSTAudioProcessor::processDynamicEq(juce::AudioBuffer<float>& buffer)
 
 void PRISMVSTAudioProcessor::processOnyx(juce::AudioBuffer<float>& buffer)
 {
-    const float amount = read(apvts, "onyx");
-    if (amount <= 0.0001f)
-        return;
+    const float amount = juce::jlimit(0.0f, 1.0f, read(apvts, "onyx") * 0.01f);
+    const float sparkle = juce::jlimit(0.0f, 1.0f, read(apvts, "onyx_sparkle") * 0.01f);
+    const float shine = juce::jlimit(0.0f, 1.0f, read(apvts, "onyx_shine") * 0.01f);
+    const float smooth = juce::jlimit(0.0f, 1.0f, read(apvts, "onyx_smooth") * 0.01f);
+    const float tape = juce::jlimit(0.0f, 1.0f, read(apvts, "onyx_tape") * 0.01f);
 
-    const float driveDb = read(apvts, "onyx_drive");
-    const float drive = toGain(driveDb) * (1.0f + amount * 1.75f);
+    if (amount + sparkle + shine + smooth + tape < 0.0001f) return;
+
+    const float drive = toGain(read(apvts, "onyx_drive")) * (1.0f + 1.75f * amount);
     const float bias = read(apvts, "onyx_bias") * 0.18f * amount;
     const float density = read(apvts, "onyx_density");
-    const float wet = juce::jlimit(0.0f, 1.0f, amount * (0.55f + 0.45f * density));
-    const float norm = std::tanh(drive + std::abs(bias));
+    const float wet = amount * (0.55f + 0.45f * density);
+    const float norm = juce::jmax(0.001f, std::tanh(drive + std::abs(bias)));
+    const float sampleRate = (float)juce::jmax(8000.0, currentSampleRate);
+    const auto pole = [sampleRate](float cutoff) {
+        return 1.0f - std::exp(-juce::MathConstants<float>::twoPi * cutoff / sampleRate);
+    };
+    const float sparkleAlpha = pole(4000.0f);
+    const float shineAlpha = pole(1800.0f);
+    const float smoothAlpha = pole(juce::jmap(smooth, 17000.0f, 3000.0f));
+    const float dcAlpha = pole(12.0f);
 
     for (int c = 0; c < juce::jmin(2, buffer.getNumChannels()); ++c)
     {
+        auto& state = onyxStates[(size_t)c];
         float* x = buffer.getWritePointer(c);
-
         for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
             const float dry = x[i];
-            float shaped = std::tanh(dry * drive + bias) / juce::jmax(0.001f, norm);
-            shaped -= std::tanh(bias) / juce::jmax(0.001f, norm);
+            float y = dry;
+            if (amount > 0.0f)
+            {
+                float shaped = std::tanh(y * drive + bias) / norm - std::tanh(bias) / norm;
+                const float dense = 0.5f * (shaped + std::tanh(shaped * (1.0f + density * 2.5f)));
+                y += wet * (dense - y);
+            }
+            state.sparkleLow += sparkleAlpha * (y - state.sparkleLow);
+            const float air = y - state.sparkleLow;
+            // Broad high-frequency harmonic lift (level compensated, zero added latency).
+            if (sparkle > 0.0f)
+                y += 0.23f * sparkle * std::tanh(air * (1.0f + 2.0f * sparkle));
 
-            const float dense = 0.5f * (shaped + std::tanh(shaped * (1.0f + density * 2.5f)));
-            x[i] = dry + wet * (dense - dry);
+            state.shineLow += shineAlpha * (y - state.shineLow);
+            if (shine > 0.0f)
+                y += 0.40f * shine * (y - state.shineLow);
+
+            state.smoothLow += smoothAlpha * (y - state.smoothLow);
+            if (smooth > 0.0f)
+                y += smooth * 0.85f * (state.smoothLow - y);
+
+            if (tape > 0.0f)
+            {
+                const float tapeDrive = 1.0f + 5.0f * tape;
+                const float saturated = std::tanh(y * tapeDrive) / std::tanh(tapeDrive);
+                y += tape * (saturated - y);
+                state.tapeDc += dcAlpha * (y - state.tapeDc);
+                y -= state.tapeDc;
+            }
+            x[i] = y;
         }
     }
 }
