@@ -180,6 +180,7 @@ void RootsGraph::paint(juce::Graphics& g){
     const float rangeDb=depthMode==0?96.0f:depthMode==1?120.0f:144.0f;
     const float slope=pval(processor_.apvts,"analyzer_slope");
     const bool heatOn=pval(processor_.apvts,"aura_color")>=0.5f;
+    const bool heatView=pval(processor_.apvts,"surgery_heat_view")>=0.5f;
     juce::Path spectrumPath,filledPath,peakPath;
     const int N=PRISMVSTAudioProcessor::labBars;
     float initialX=0.0f;
@@ -207,31 +208,38 @@ void RootsGraph::paint(juce::Graphics& g){
     g.saveState();
     g.reduceClipRegion(r.toNearestInt());
     if(heatOn){
-        // One integrated spectral energy field, not a second histogram.
-        g.setGradientFill(juce::ColourGradient(
-            colour(selected_/2).withAlpha(0.20f),r.getCentreX(),r.getY(),
-            colour(selected_/2).withAlpha(0.015f),r.getCentreX(),r.getBottom(),false));
-        g.fillPath(filledPath);
-        for(int i=0;i<N;i+=5){
-            const float intensity=heat_.heat((size_t)i);
-            if(intensity<0.22f)continue;
-            const float frequency=prism::analysis::LabBands::centreFrequency(i);
-            const float x=freqToX(frequency);
-            const float db=surgery::displayDb(bands_[(size_t)i],frequency,slope,rangeDb);
-            const float y=r.getY()-db*r.getHeight()/rangeDb;
-            const float radius=10.0f+intensity*22.0f;
-            auto tint=colour(juce::jlimit(0,6,i*7/N));
-            if(heat_.transient((size_t)i)>0.14f)
-                tint=tint.interpolatedWith(juce::Colour(0xffeed08c),0.45f);
-            g.setGradientFill(juce::ColourGradient(tint.withAlpha(intensity*.18f),
-                x,y,tint.withAlpha(0.0f),x+radius,y,true));
-            g.fillEllipse(x-radius,y-radius,radius*2,radius*2);
+        if(heatView){
+            // Alternate calibrated frequency-versus-level persistence field:
+            // hotter regions are measured, NOT estimated Q response.
+            // Draw no duplicate bar histogram and no fabricated source stems.
+            for(int i=0;i<N;i+=3){
+                const float intensity=heat_.heat((size_t)i);
+                if(intensity<0.035f)continue;
+                const float frequency=prism::analysis::LabBands::centreFrequency(i);
+                const float x=freqToX(frequency);
+                const float db=surgery::displayDb(bands_[(size_t)i],frequency,slope,rangeDb);
+                const float y=r.getY()-db*r.getHeight()/rangeDb;
+                const float radiusX=7.0f+intensity*15.0f;
+                const float radiusY=20.0f+intensity*44.0f;
+                auto tint=colour(juce::jlimit(0,6,i*7/N));
+                if(heat_.transient((size_t)i)>0.14f)
+                    tint=tint.interpolatedWith(juce::Colour(0xffeed08c),0.42f);
+                g.setGradientFill(juce::ColourGradient(
+                    tint.withAlpha(intensity*0.42f),x,y,
+                    tint.withAlpha(0.0f),x+radiusX,y,true));
+                g.fillEllipse(x-radiusX,y-radiusY,2.0f*radiusX,2.0f*radiusY);
+            }
+        }else{
+            g.setGradientFill(juce::ColourGradient(
+                colour(selected_/2).withAlpha(0.15f),r.getCentreX(),r.getY(),
+                colour(selected_/2).withAlpha(0.01f),r.getCentreX(),r.getBottom(),false));
+            g.fillPath(filledPath);
         }
     }
-    g.setColour(juce::Colour(0xff91d9e1).withAlpha(0.86f));
-    g.strokePath(spectrumPath,juce::PathStrokeType(1.8f,
+    g.setColour(juce::Colour(0xff91d9e1).withAlpha(heatView?0.31f:0.88f));
+    g.strokePath(spectrumPath,juce::PathStrokeType(heatView?1.0f:1.8f,
         juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
-    g.setColour(juce::Colour(0xffe2f0f2).withAlpha(0.28f));
+    g.setColour(juce::Colour(0xffe2f0f2).withAlpha(heatView?0.10f:0.28f));
     g.strokePath(peakPath,juce::PathStrokeType(0.85f));
     g.restoreState();
 
@@ -259,8 +267,10 @@ void RootsGraph::paint(juce::Graphics& g){
         for(int i=0;i<=256;++i){
             const float f=20.0f*std::pow(1000.0f,(float)i/256.0f);
             const float x=freqToX(f);
-            const double scale=surgery::CarveEngine::boundaryWeight(f,
+            const double scale=surgery::CarveEngine::boundaryWeight(fc,
                 std::min(lowHz,highHz),std::max(lowHz,highHz));
+            // Static-response preview: approximate dB interpolation for dry/wet
+            // blend; exact RBJ biquad curve tested separately.
             const double response=surgery::carveMagnitudeDb(sr,fc,q,depth,f)*scale;
             const float y=baseY-(float)response*1.10f;
             if(i==0)contour.startNewSubPath(x,y);
@@ -277,7 +287,8 @@ void RootsGraph::paint(juce::Graphics& g){
     }
     g.setColour(juce::Colour(0xffacc3cf));
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
-    g.drawText("SONAR / MEASURED     CARVE / MODELED RESPONSE",
+    g.drawText(heatView?"SONAR / HEATMAP VIEW     CARVE / FILTER RESPONSE":
+               "SONAR / SPECTRUM     CARVE / FILTER RESPONSE",
                r.getX(),r.getBottom()+23.0f,r.getWidth(),16.0f,
                juce::Justification::centredLeft);
     // Both boundary handles always live on one horizontal rail.

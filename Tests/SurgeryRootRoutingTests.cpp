@@ -53,13 +53,21 @@ int main(){
     // C: CARVE respects the selected ROOT's channel, not just per-CARVE state.
     surgery::CarveEngine carve;carve.prepare(sr);
     surgery::CarveConfig cfg;cfg.enabled=true;cfg.hz=900;cfg.depthDb=26;cfg.q=4;
-    carve.configure(0,0,cfg);carve.bounds(0,500,2200);
+    carve.bounds(0,500,2200);carve.configure(0,0,cfg);
     carve.rootDomain(0,surgery::Channel::side);
     tone(a,b,900);tone(c,d,900);
     carve.process(a.data(),b.data(),N);
     if(!(rms(a,b,true)<rms(c,d,true)*0.36 &&
          rms(a,b,false)>rms(c,d,false)*0.95))return 4;
-    // D: Fresh each ROOT owns four distinct neutral CARVE defaults.
+    // D: every CARVE centre is genuinely clamped in the DSP to its ROOT.
+    surgery::CarveConfig outside;outside.enabled=true;
+    outside.hz=12000;outside.q=16.0;outside.depthDb=12.0;
+    carve.bounds(0,300,630);
+    carve.configure(0,1,outside);
+    if(std::abs(carve.get(0,1).hz-630.0)>0.01)return 6;
+    outside.hz=40.0;carve.configure(0,2,outside);
+    if(std::abs(carve.get(0,2).hz-300.0)>0.01)return 7;
+    // E: Fresh each ROOT owns four distinct neutral CARVE defaults.
     for(int root=0;root<7;++root){
         float prior=0;
         for(int slot=0;slot<4;++slot){
