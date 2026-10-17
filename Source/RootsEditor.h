@@ -33,6 +33,7 @@ public:
     void updateAnalyzer(const std::array<float,PRISMVSTAudioProcessor::labBars>&,
                         const std::array<float,PRISMVSTAudioProcessor::labBars>&);
     std::function<void(int)> onSelectNode;
+    std::function<void(int)> onSelectCarve;
     int selectedNode() const noexcept{return selected_;}
     void selectNode(int node);
     void showRootMenu(int root);
@@ -43,7 +44,7 @@ public:
 private:
     PRISMVSTAudioProcessor& processor_;
     std::array<float,PRISMVSTAudioProcessor::labBars> bands_{},peaks_{};
-    int selected_=0,dragging_=-1;
+    int selected_=0,dragging_=-1,draggingCarve_=-1;
     int theme_=0,mode_=0,slot_=0;
     surgery::SonarField<PRISMVSTAudioProcessor::labBars> heat_;
     surgery::AssistScanner<PRISMVSTAudioProcessor::labBars> assist_;

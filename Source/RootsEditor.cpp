@@ -221,7 +221,7 @@ void RootsGraph::paint(juce::Graphics& g){
             const float frequency=pval(processor_.apvts,id("hz"));
             const float depth=pval(processor_.apvts,id("depth"));
             const float x=freqToX(frequency);
-            const float y=r.getCentreY()-depth*2.0f;
+            const float y=r.getCentreY()+depth*1.35f;
             const auto c=colour(root);
             g.setColour(c.withAlpha(0.38f));
             g.drawVerticalLine(juce::roundToInt(x),y,r.getBottom());
@@ -286,6 +286,24 @@ void RootsGraph::paint(juce::Graphics& g){
 }
 void RootsGraph::mouseDown(const juce::MouseEvent& e){
     mouse_=e.position;hover_=true;
+    if(!e.mods.isPopupMenu()&&mode_==1){
+        const int root=selected_/2;
+        for(int slot=0;slot<4;++slot){
+            const auto id=[root,slot](const char* s){
+                return PRISMVSTAudioProcessor::carveId(root,slot,s);
+            };
+            if(pval(processor_.apvts,id("on"))<0.5f)continue;
+            const float x=freqToX(pval(processor_.apvts,id("hz")));
+            const float y=area().getCentreY()+1.35f*pval(processor_.apvts,id("depth"));
+            if(e.position.getDistanceFrom({x,y})<=13.0f){
+                draggingCarve_=slot;
+                if(onSelectCarve)onSelectCarve(slot);
+                for(const auto* name:{"hz","depth"})
+                    if(auto* p=processor_.apvts.getParameter(id(name)))p->beginChangeGesture();
+                return;
+            }
+        }
+    }
     const int hit=hitNode(e.position);
     if(hit>=0)selectNode(hit);
     if(e.mods.isPopupMenu()){
@@ -309,6 +327,19 @@ void RootsGraph::mouseDown(const juce::MouseEvent& e){
     }
 }
 void RootsGraph::mouseDrag(const juce::MouseEvent& e){
+    if(draggingCarve_>=0){
+        const int root=selected_/2,slot=draggingCarve_;
+        const auto id=[root,slot](const char* s){
+            return PRISMVSTAudioProcessor::carveId(root,slot,s);
+        };
+        const float a=param(root*2,"hz"),b=param(root*2+1,"hz");
+        const float lower=juce::jmax(20.0f,std::min(a,b)*0.79f);
+        const float upper=juce::jmin(20000.0f,std::max(a,b)*1.26f);
+        change(processor_,id("hz"),juce::jlimit(lower,upper,xToFreq(e.position.x)));
+        change(processor_,id("depth"),juce::jlimit(0.0f,36.0f,
+            (e.position.y-area().getCentreY())/1.35f));
+        repaint();return;
+    }
     if(dragging_<0)return;
     const float newHz=xToFreq(e.position.x);
     // Deliberately ignore e.position.y: frequency handles have no gain axis.
@@ -316,6 +347,14 @@ void RootsGraph::mouseDrag(const juce::MouseEvent& e){
     repaint();
 }
 void RootsGraph::mouseUp(const juce::MouseEvent&){
+    if(draggingCarve_>=0){
+        const int root=selected_/2,slot=draggingCarve_;
+        for(const auto* name:{"hz","depth"})
+            if(auto* p=processor_.apvts.getParameter(
+                PRISMVSTAudioProcessor::carveId(root,slot,name)))
+                p->endChangeGesture();
+        draggingCarve_=-1;
+    }
     if(dragging_>=0){
         if(auto* p=processor_.apvts.getParameter(
              PRISMVSTAudioProcessor::rootsNodeId(dragging_,"hz")))
@@ -422,6 +461,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     setResizeLimits(840,610,1800,1100);
     addAndMakeVisible(graph_);
     graph_.onSelectNode=[this](int n){bindNode(n);};
+    graph_.onSelectCarve=[this](int slot){carveSlot_=slot;bindCarve();};
     for(int root=0;root<7;++root){
         auto& b=rootButtons_[(size_t)root];
         b.setButtonText("ROOT "+juce::String(root+1)+"  "+
