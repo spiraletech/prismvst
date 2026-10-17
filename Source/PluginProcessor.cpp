@@ -550,13 +550,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
     juce::NormalisableRange<float> auraMemoryRange(0.05f, 10.0f, 0.01f);
     auraMemoryRange.setSkewForCentre(1.5f);
     p.push_back(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "aura_memory", 2 }, "Heat Memory",
+        juce::ParameterID { "aura_memory", 2 }, "Spectrum Release Time",
         auraMemoryRange, 1.5f));
 
     p.push_back(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID { "aura_color", 1 }, "Frequency Color Heat", true));
+        juce::ParameterID { "aura_color", 1 }, "Spectrum Amplitude Fill", true));
     p.push_back(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID { "surgery_heat_view", 1 }, "SONAR Dedicated Heatmap View", false));
+        juce::ParameterID { "surgery_heat_view", 1 }, "Spectrum Fill Palette: ROOT", false));
 
     // Four original surgically controllable EQ nodes in each of seven ROOTS.
     for(int root=0;root<surgery::kRoots;++root)
@@ -659,7 +659,6 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     }
 
     analyzerFifo.reset();
-    spectrogramFrames.resetWhenStopped();
     analyzerQueue.fill(0.0f);
     fftWritePos = 0;
     fftHopCounter = 0;
@@ -937,16 +936,11 @@ void PRISMVSTAudioProcessor::renderSpectrumFrame()
     labAnalyzer.processMagnitudes(fftData.data(), fftSize / 2 + 1,
                                   fftSize, currentSampleRate);
     const auto& labFrame = labAnalyzer.frame();
-    std::array<float,labBars> spectrogramRow {};
     for (int i = 0; i < labBars; ++i)
     {
-        const auto db=labFrame[(size_t)i].db;
-        labDb[(size_t)i].store(db);
+        labDb[(size_t)i].store(labFrame[(size_t)i].db);
         labPeakDb[(size_t)i].store(labFrame[(size_t)i].peakDb);
-        spectrogramRow[(size_t)i]=db;
     }
-    // Worker-thread only; drop old visual detail on overflow, never audio.
-    spectrogramFrames.push(spectrogramRow);
 
     const int maxBin = fftSize / 2;
     const double sr = juce::jmax(1.0, currentSampleRate);

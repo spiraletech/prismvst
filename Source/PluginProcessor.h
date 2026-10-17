@@ -5,7 +5,6 @@
 #include "PrismLabAnalyzer.h"
 #include "RootsAudioEngine.h"
 #include "SurgeryCarveEngine.h"
-#include "SurgerySpectrogram.h"
 
 class PRISMVSTAudioProcessor final : public juce::AudioProcessor,
                                     private juce::AudioProcessorValueTreeState::Listener,
@@ -54,11 +53,6 @@ public:
     void copySpectrum(std::array<float, spectrumBins>& destination) const noexcept;
     void copyPrismLabBars(std::array<float, labBars>& db,
                           std::array<float, labBars>& peakDb) const noexcept;
-    // GUI consumes whole measured FFT frames, never reading worker buffers directly.
-    bool popSpectrogramFrame(std::array<float,labBars>& frame) noexcept {
-        return spectrogramFrames.pop(frame);
-    }
-    static constexpr int spectrogramHopSamples = 768;
     float getStereoActivity(int section) const noexcept
     {
         return stereoActivity[(size_t)juce::jlimit(0, numSections - 1, section)].load();
@@ -177,7 +171,6 @@ private:
     prism::analysis::LabBands labAnalyzer;
     std::array<std::atomic<float>, labBars> labDb {};
     std::array<std::atomic<float>, labBars> labPeakDb {};
-    surgery::SpectrogramFifo<labBars> spectrogramFrames;
 
     double currentSampleRate = 44100.0;
     double integratedEnergy = 0.0;

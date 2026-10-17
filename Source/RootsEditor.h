@@ -1,7 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
-#include "SurgerySonar.h"
+#include "SurgerySpectrumFill.h"
 #include "SurgeryAssist.h"
 #include "SurgeryLookAndFeel.h"
 #include "SurgeryHeaderLayout.h"
@@ -59,14 +59,9 @@ private:
     float dragStartX_=0.0f,dragStartHz_=0.0f;
     bool fineDragging_=false;
     int theme_=0,mode_=0,slot_=0;
-    surgery::SonarField<PRISMVSTAudioProcessor::labBars> heat_;
+    surgery::LiveSpectrumEnvelope<PRISMVSTAudioProcessor::labBars> spectrumEnvelope_;
     surgery::AssistScanner<PRISMVSTAudioProcessor::labBars> assist_;
     bool hover_=false,frozen_=false;
-    static constexpr int waterfallWidth=PRISMVSTAudioProcessor::labBars;
-    static constexpr int waterfallRows=256;
-    juce::Image waterfall_{juce::Image::ARGB,waterfallWidth,waterfallRows,true};
-    int waterfallFrames_=0;
-    void appendWaterfallFrame(const std::array<float,waterfallWidth>& frame);
     juce::Point<float> mouse_;
     juce::Rectangle<float> area() const;
     float freqToX(float f) const;

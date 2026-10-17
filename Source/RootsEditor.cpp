@@ -3,7 +3,6 @@
 #include "SurgerySpectrogram.h"
 #include <cmath>
 #include <numbers>
-#include <cstring>
 
 namespace {
 float pval(const juce::AudioProcessorValueTreeState& ap,const juce::String& id) {
@@ -84,46 +83,17 @@ juce::Colour RootsGraph::colour(int root) const {
     return juce::Colour(0xff000000u |
         (unsigned)juce::roundToInt(pval(processor_.apvts,id)));
 }
-void RootsGraph::appendWaterfallFrame(
-    const std::array<float,waterfallWidth>& frame) {
-    // 256x256 ARGB sliding image, updated only on the GUI/message thread.
-    // For full history the cost is ~256KiB per FFT hop, independent of canvas
-    // dimensions; paint draws a single cached image, not thousands of blobs.
-    juce::Image::BitmapData pixels(waterfall_,juce::Image::BitmapData::readWrite);
-    const std::size_t bytes=(std::size_t)pixels.lineStride;
-    for(int y=waterfallRows-1;y>0;--y)
-        std::memmove(pixels.getLinePointer(y),
-                     pixels.getLinePointer(y-1),bytes);
-    for(int i=0;i<waterfallWidth;++i) {
-        const float intensity=surgery::heatIntensity(frame[(size_t)i]);
-        // Blue-cyan-amber intensity palette, measured dBFS (no AI inference).
-        const juce::Colour dark(0xff050d17);
-        const juce::Colour blue(0xff174681);
-        const juce::Colour cyan(0xff32b5c2);
-        const juce::Colour amber(0xffffcf82);
-        juce::Colour c=dark;
-        if(intensity<0.34f)c=dark.interpolatedWith(blue,intensity/0.34f);
-        else if(intensity<0.72f)c=blue.interpolatedWith(cyan,(intensity-0.34f)/0.38f);
-        else c=cyan.interpolatedWith(amber,(intensity-0.72f)/0.28f);
-        pixels.setPixelColour(i,0,c);
-    }
-    waterfallFrames_=std::min(waterfallFrames_+1,waterfallRows);
-}
 void RootsGraph::updateAnalyzer(
     const std::array<float,PRISMVSTAudioProcessor::labBars>& values,
     const std::array<float,PRISMVSTAudioProcessor::labBars>& pk){
-    std::array<float,waterfallWidth> frame{};
-    // One worker-produced row per actual FFT hop; drain on message thread.
-    // At 48 kHz, hop=768 => ~62.5 frames/sec. GUI may refresh slower,
-    // but retains time slices instead of repeating a single spectrum.
-    int processed=0;
-    while(processor_.popSpectrogramFrame(frame)) {
-        if(!frozen_)appendWaterfallFrame(frame);
-        if(++processed>=128)break;
-    }
     if(frozen_)return;
-    bands_=values;peaks_=pk;
-    heat_.update(values,1.0/30.0,pval(processor_.apvts,"aura_memory"));
+    // Analyzer worker owns the FFT. Only 256 display values arrive here.
+    // Message-thread smoothing is fast-attack with calibrated decay; never
+    // change the underlying audio or the diagnostic measurement data.
+    spectrumEnvelope_.update(values,1.0/30.0,
+        pval(processor_.apvts,"aura_memory"));
+    bands_=spectrumEnvelope_.frame();
+    peaks_=pk;
     const float low=param((selected_/2)*2,"hz");
     const float high=param((selected_/2)*2+1,"hz");
     assist_.observe(values,std::min(low,high),std::max(low,high));
@@ -161,9 +131,11 @@ void RootsGraph::paint(juce::Graphics& g){
     g.drawRoundedRectangle(full.reduced(1.0f),10.0f,1.0f);
     g.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::bold)));
     g.setColour(juce::Colour::fromRGB(145,172,182));
+    // Legacy heat-view state now selects a second 1D fill palette.
+    // Both styles share one logarithmic-frequency / dBFS coordinate system.
     const bool heatView=pval(processor_.apvts,"surgery_heat_view")>=0.5f;
     g.drawText(frozen_?"ANALYZE / FROZEN":
-               (heatView?"SONAR / FFT WATERFALL (POST-DSP)":"ANALYZE / POST-DSP LIVE"),
+               (heatView?"SONAR / LIVE SPECTRUM • ROOT FILL":"SONAR / LIVE SPECTRUM • ROSE FILL"),
                r.getX(),7.0f,r.getWidth(),16.0f,juce::Justification::centredLeft);
     // Frequency and calibrated dBFS dimensions.
     static constexpr std::array<float,11> freqs{
@@ -184,11 +156,7 @@ void RootsGraph::paint(juce::Graphics& g){
         g.setColour(juce::Colour::fromRGB(131,155,169));
         const int choice=juce::roundToInt(pval(processor_.apvts,"analyzer_depth"));
         const int rangeDb=choice==0?96:choice==1?120:144;
-        const double sampleRate=std::max(8000.0,processor_.getSampleRate());
-        const double lookback=(double)waterfallRows*
-             PRISMVSTAudioProcessor::spectrogramHopSamples/sampleRate;
-        g.drawText(heatView?juce::String(lookback*i/8.0,1)+"s":
-                   juce::String(-rangeDb*i/8),juce::roundToInt(r.getRight()+5),
+        g.drawText(juce::String(-rangeDb*i/8),juce::roundToInt(r.getRight()+5),
                    juce::roundToInt(y-8),34,16,juce::Justification::centredLeft);
     }
     // ROOT handle height is constant; vertical axis is exclusively dBFS.
@@ -196,7 +164,7 @@ void RootsGraph::paint(juce::Graphics& g){
     g.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::plain)));
     g.setColour(juce::Colour::fromRGB(184,197,209));
     g.drawText("Hz",8,16,34,16,juce::Justification::centredLeft);
-    g.drawText(heatView?"AGE":"dBFS",juce::roundToInt(r.getRight()),16,44,16,juce::Justification::centredRight);
+    g.drawText("dBFS",juce::roundToInt(r.getRight()),16,44,16,juce::Justification::centredRight);
     std::array<prism::roots::visual::Node,prism::roots::visual::kNodes> zones{};
     for(int node=0;node<prism::roots::visual::kNodes;++node)
     {
@@ -215,16 +183,15 @@ void RootsGraph::paint(juce::Graphics& g){
         g.setColour(colour(root).withAlpha(root==selected_/2?0.075f:0.025f));
         g.fillRect(x1,r.getY(),juce::jmax(0.0f,x2-x1),r.getHeight());
     }
-    // UNIFIED SONAR: one calibrated spectral envelope with persistence halo.
-    // No independent "bars below bars": heat is an intensity field behind
-    // the spectrum, and display slope NEVER feeds signal processing.
+    // Single live FFT envelope. X is 20-20k logarithmic Hz; Y is measured dBFS.
+    // The area beneath the one curve is closed at the -rangeDb graph floor.
+    // Display slope and fill palette never change DSP.
     const int depthMode=juce::roundToInt(pval(processor_.apvts,"analyzer_depth"));
     const float rangeDb=depthMode==0?96.0f:depthMode==1?120.0f:144.0f;
     const float slope=pval(processor_.apvts,"analyzer_slope");
     const bool heatOn=pval(processor_.apvts,"aura_color")>=0.5f;
     juce::Path spectrumPath,filledPath,peakPath;
     const int N=PRISMVSTAudioProcessor::labBars;
-    float initialX=0.0f;
     for(int i=0;i<N;++i){
         const float frequency=prism::analysis::LabBands::centreFrequency(i);
         const float x=freqToX(frequency);
@@ -233,7 +200,6 @@ void RootsGraph::paint(juce::Graphics& g){
         const float peak=surgery::displayDb(peaks_[(size_t)i],frequency,slope,rangeDb);
         const float py=r.getY()-peak*r.getHeight()/rangeDb;
         if(i==0){
-            initialX=x;
             spectrumPath.startNewSubPath(x,y);
             peakPath.startNewSubPath(x,py);
             filledPath.startNewSubPath(x,r.getBottom());
@@ -248,29 +214,29 @@ void RootsGraph::paint(juce::Graphics& g){
     filledPath.closeSubPath();
     g.saveState();
     g.reduceClipRegion(r.toNearestInt());
-    if(heatView){
-        if(heatOn){
-            // The top row is newest, time increases toward the bottom.
-            // Frequency is horizontal on the same log axis as ROOTS/CARVE.
-            g.setOpacity(0.92f);
-            g.drawImage(waterfall_,(int)r.getX(),(int)r.getY(),
-                        (int)r.getWidth(),(int)r.getHeight(),
-                        0,0,waterfallWidth,waterfallRows);
-            g.setOpacity(1.0f);
-        }
-    }else{
-        if(heatOn){
-            g.setGradientFill(juce::ColourGradient(
-                colour(selected_/2).withAlpha(0.16f),r.getCentreX(),r.getY(),
-                colour(selected_/2).withAlpha(0.01f),r.getCentreX(),r.getBottom(),false));
-            g.fillPath(filledPath);
-        }
-        g.setColour(juce::Colour(0xff91d9e1).withAlpha(0.88f));
-        g.strokePath(spectrumPath,juce::PathStrokeType(1.8f,
-            juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
-        g.setColour(juce::Colour(0xffe2f0f2).withAlpha(0.28f));
-        g.strokePath(peakPath,juce::PathStrokeType(0.85f));
+    if(heatOn){
+        // Vertical, SOLID amplitude fill—not scrolling time history or bars.
+        // Alternate palette preserves user automation of surgery_heat_view.
+        const auto primary=heatView?colour(selected_/2).brighter(0.30f):
+            juce::Colour(0xffff6b97);
+        const auto middle=heatView?colour(selected_/2).darker(0.10f):
+            juce::Colour(0xffb43461);
+        juce::ColourGradient fill(primary.withAlpha(0.93f),
+            r.getCentreX(),r.getY(),
+            juce::Colour(0xff1a0d1a).withAlpha(0.70f),
+            r.getCentreX(),r.getBottom(),false);
+        fill.addColour(0.42,middle.withAlpha(0.78f));
+        fill.addColour(0.82,juce::Colour(0xff391324).withAlpha(0.74f));
+        g.setGradientFill(fill);
+        g.fillPath(filledPath);
     }
+    g.setColour(heatView?colour(selected_/2).brighter(0.63f):
+                juce::Colour(0xffffb2cc));
+    g.strokePath(spectrumPath,juce::PathStrokeType(2.0f,
+        juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
+    // A restrained peak-hold readout; the audio measurements are unchanged.
+    g.setColour(juce::Colour(0xffe3edf2).withAlpha(0.31f));
+    g.strokePath(peakPath,juce::PathStrokeType(0.8f));
     g.restoreState();
 
     // Predict the EXACT static RBJ peak-filter response used in the CARVE DSP.
@@ -291,31 +257,6 @@ void RootsGraph::paint(juce::Graphics& g){
         const double q=pval(processor_.apvts,id("q"));
         const double depth=pval(processor_.apvts,id("depth"));
         if(depth<0.001)continue;
-        if(heatView){
-            // Time is the Y axis here. Visualize Q as a frequency-width region,
-            // NEVER draw a dB cut curve against time.
-            const double bwOct=surgery::precision::bandwidthOctaves((float)q);
-            const float minHz=std::min(lowHz,highHz);
-            const float maxHz=std::max(lowHz,highHz);
-            const float lo=(float)std::clamp(
-                fc*std::exp2(-bwOct/2.0),double(minHz),double(maxHz));
-            const float hi=(float)std::clamp(
-                fc*std::exp2(bwOct/2.0),double(minHz),double(maxHz));
-            const float cx=freqToX((float)fc);
-            const float x1=freqToX(lo),x2=freqToX(hi);
-            const auto tint=colour(selectedRoot).brighter(slot==slot_?0.68f:0.17f);
-            const float width=std::max(1.8f,x2-x1);
-            const float left=std::max(r.getX(),cx-width/2.0f);
-            g.setColour(tint.withAlpha(slot==slot_?0.16f:0.075f));
-            g.fillRect(left,r.getY(),width,r.getHeight());
-            g.setColour(tint.withAlpha(slot==slot_?0.80f:0.37f));
-            g.drawVerticalLine(juce::roundToInt(cx),r.getY(),r.getBottom());
-            // Band edges only inside this ROOT visualization; IIR skirts remain.
-            g.setColour(tint.withAlpha(slot==slot_?0.38f:0.17f));
-            g.drawVerticalLine(juce::roundToInt(x1),r.getY(),r.getBottom());
-            g.drawVerticalLine(juce::roundToInt(x2),r.getY(),r.getBottom());
-            continue;
-        }
         juce::Path contour,footprint;
         const float firstX=freqToX(20.0f);
         footprint.startNewSubPath(firstX,baseY);
@@ -344,8 +285,8 @@ void RootsGraph::paint(juce::Graphics& g){
     }
     g.setColour(juce::Colour(0xffacc3cf));
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
-    g.drawText(heatView?"SONAR / FFT HISTORY  (NEWEST TOP)     CARVE / Q CORE":
-               "SONAR / SPECTRUM     CARVE / MAX STATIC RESPONSE",
+    g.drawText(heatView?"SONAR / ROOT-COLOR AMPLITUDE FILL     CARVE / STATIC RESPONSE":
+               "SONAR / ROSE AMPLITUDE FILL     CARVE / STATIC RESPONSE",
                r.getX(),r.getBottom()+23.0f,r.getWidth(),16.0f,
                juce::Justification::centredLeft);
     // Both boundary handles always live on one horizontal rail.
@@ -878,7 +819,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     mono_.setTooltip("Frequency-selective MONO on the selected ROOT only");
     analyzerDepthLabel_.setText("VIEW RANGE",juce::dontSendNotification);
     analyzerSlopeLabel_.setText("PIVOT / dB PER OCT",juce::dontSendNotification);
-    analyzerMemoryLabel_.setText("HEAT MEMORY / SEC",juce::dontSendNotification);
+    analyzerMemoryLabel_.setText("SPECTRUM DECAY / SEC",juce::dontSendNotification);
     analyzerDepth_.addItem("MIX -96 dBFS",1);
     analyzerDepth_.addItem("DEEP -120 dBFS",2);
     analyzerDepth_.addItem("FORENSIC -144 dBFS",3);
@@ -890,11 +831,12 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     }
     analyzerSlopeA_=std::make_unique<SliderA>(processor_.apvts,"analyzer_slope",analyzerSlope_);
     analyzerMemoryA_=std::make_unique<SliderA>(processor_.apvts,"aura_memory",analyzerMemory_);
+    heatToggle_.setTooltip("Toggle the live FFT amplitude gradient fill");
     heatToggle_.setClickingTogglesState(true);
     addAndMakeVisible(heatToggle_);
     heatA_=std::make_unique<ButtonA>(processor_.apvts,"aura_color",heatToggle_);
     heatViewButton_.setClickingTogglesState(true);
-    heatViewButton_.setTooltip("Switch between calibrated spectrum and dedicated SONAR persistence heatmap");
+    heatViewButton_.setTooltip("Choose rose gradient or ROOT-matched gradient; both are live 1D dBFS spectrum fills");
     addAndMakeVisible(heatViewButton_);
     heatViewA_=std::make_unique<ButtonA>(processor_.apvts,
         "surgery_heat_view",heatViewButton_);
@@ -1043,10 +985,10 @@ void RootsEditor::timerCallback(){
        PRISMVSTAudioProcessor::carveId(node_/2,carveSlot_,"on"))>=0.5f?
        "CARVE ON":"CARVE OFF");
     heatToggle_.setButtonText(pval(processor_.apvts,"aura_color")>=0.5f?
-                              "SONAR ON":"SONAR OFF");
+                              "FILL ON":"FILL OFF");
     heatViewButton_.setButtonText(
         pval(processor_.apvts,"surgery_heat_view")>=0.5f?
-        "VIEW / HEATMAP":"VIEW / SPECTRUM");
+        "FILL / ROOT":"FILL / ROSE");
     graph_.setPresentation(themeIndex_,mode_,carveSlot_);
     std::array<float,PRISMVSTAudioProcessor::labBars> bars{},peaks{};
     processor_.copyPrismLabBars(bars,peaks);
