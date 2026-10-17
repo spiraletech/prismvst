@@ -63,7 +63,9 @@ private:
     RootsGraph graph_;
     std::array<RootSelectorButton,7> rootButtons_;
     juce::Slider gain_,bandSpace_,space_,threshold_;
-    juce::ToggleButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};
+    juce::TextButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};
+    juce::TextButton themeButton_{"THEME"};
+    int themeIndex_=0;
     juce::Label title_,selection_,status_,gainLabel_,bandSpaceLabel_,
         spaceLabel_,thresholdLabel_;
     std::unique_ptr<SliderA> gainA_,bandSpaceA_,spaceA_,thresholdA_;

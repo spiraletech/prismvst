@@ -26,7 +26,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "PRISM ROOTS PROTO 001"; }
+    const juce::String getName() const override { return "SURGERY EQ v1.0"; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }

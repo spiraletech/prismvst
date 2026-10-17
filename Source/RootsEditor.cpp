@@ -231,7 +231,19 @@ void RootsGraph::mouseDown(const juce::MouseEvent& e){
     mouse_=e.position;hover_=true;
     const int hit=hitNode(e.position);
     if(hit>=0)selectNode(hit);
-    if(e.mods.isPopupMenu()){popup();return;}
+    if(e.mods.isPopupMenu()){
+        if(hit<0){
+            const float f=xToFreq(e.position.x);
+            int target=6;
+            for(int root=0;root<7;++root){
+                const float low=param(root*2,"hz");
+                const float high=param(root*2+1,"hz");
+                if(f>=low&&f<=high){target=root;break;}
+            }
+            selectNode(target*2);
+        }
+        popup();return;
+    }
     dragging_=hit;
     if(dragging_>=0){
         if(auto* p=processor_.apvts.getParameter(
@@ -284,12 +296,6 @@ void RootsGraph::popup(){
     menu.addItem(11,"MID",true,juce::roundToInt(current("domain"))==1);
     menu.addItem(12,"SIDE",true,juce::roundToInt(current("domain"))==2);
     menu.addSeparator();
-    menu.addSectionHeader("ROOT COMPRESSOR MODEL");
-    static const char* names[]{"OFF","OPTICAL 3:1","OPTICAL 4:1",
-                               "CLB1 TUBE 3:1","FET 4:1"};
-    for(int i=0;i<5;++i)
-        menu.addItem(20+i,names[i],true,juce::roundToInt(current("comp"))==i);
-    menu.addSeparator();
     menu.addSectionHeader("ROOT COMPRESSOR CHANNEL");
     static const char* dn[]{"STEREO LINK","DUAL MID/SIDE","MID ONLY","SIDE ONLY"};
     for(int i=0;i<4;++i)
@@ -319,7 +325,6 @@ void RootsGraph::popup(){
                 change(graph.processor_,key,on?0.0f:1.0f);
             }
             if(id>=10&&id<=12)set("domain",(float)(id-10));
-            if(id>=20&&id<=24)set("comp",(float)(id-20));
             if(id>=30&&id<=33)set("detector",(float)(id-30));
             if(id>=40&&id<=42)set("space",(float)((id-40)*50));
             graph.repaint();
@@ -346,7 +351,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         addAndMakeVisible(*label);
         label->setColour(juce::Label::textColourId,juce::Colour::fromRGB(195,216,223));
     }
-    title_.setText("PRISM  /  ROOTS PROTO 001",juce::dontSendNotification);
+    title_.setText("SURGERY EQ  /  v1.0",juce::dontSendNotification);
     title_.setFont(juce::Font(juce::FontOptions(25.0f,juce::Font::bold)));
     for(auto* s:{&gain_,&bandSpace_,&space_,&threshold_}){
         addAndMakeVisible(*s);rotary(*s,"",s==&gain_?0.0:
@@ -364,7 +369,23 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     bandSpace_.setTooltip("Selected ROOT only: 0 mono, 50 neutral, 100 wide");
     space_.setTooltip("Global stereo: 0 mono, 50 neutral, 100 widened if phase permits");
     thresholdLabel_.setText("COMP THRESHOLD",juce::dontSendNotification);
-    for(auto* b:{&mono_,&on_,&solo_})addAndMakeVisible(*b);
+    for(auto* b:{&mono_,&on_,&solo_}){
+        b->setClickingTogglesState(true);
+        b->setColour(juce::TextButton::buttonColourId,juce::Colour::fromRGB(24,38,47));
+        b->setColour(juce::TextButton::buttonOnColourId,juce::Colour::fromRGB(43,153,166));
+        b->setColour(juce::TextButton::textColourOffId,juce::Colours::white);
+        b->setColour(juce::TextButton::textColourOnId,juce::Colours::white);
+        addAndMakeVisible(*b);
+    }
+    addAndMakeVisible(themeButton_);
+    themeButton_.onClick=[this]{
+        themeIndex_=(themeIndex_+1)%4;
+        static const char* names[]{"ONYX","ETHER LAB","ALIEN GRID","CINEMA VOID"};
+        themeButton_.setButtonText(juce::String("THEME  /  ")+names[themeIndex_]);
+        graph_.repaint();
+        repaint();
+    };
+    themeButton_.setButtonText("THEME  /  ONYX");
     monoA_=std::make_unique<ButtonA>(processor_.apvts,"roots_mono",mono_);
     spaceA_=std::make_unique<SliderA>(processor_.apvts,"roots_space",space_);
     bindNode(0);
@@ -402,7 +423,7 @@ void RootsEditor::updateRootButtons(){
     }
 }
 void RootsEditor::timerCallback(){
-    // Threshold has no audio effect unless an actual compressor model is selected.
+    // Show when compression is disabled; never present inactive controls as working.
     const int comp=juce::roundToInt(pval(processor_.apvts,
          PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp")));
     threshold_.setEnabled(comp!=0);
@@ -424,13 +445,17 @@ void RootsEditor::paint(juce::Graphics& g){
     const auto bounds=getLocalBounds().toFloat();
     juce::ColourGradient bg(juce::Colour::fromRGB(28,33,39),0,0,
                              juce::Colour::fromRGB(8,12,16),0,bounds.getBottom(),false);
-    g.setGradientFill(bg);g.fillRect(bounds);
+    static constexpr unsigned chassis[]{0xff0b1118u,0xffb9c4c6u,0xff071b19u,0xff19202bu};
+    const auto shell=juce::Colour(chassis[themeIndex_]);
+    g.fillAll(shell);
+    g.setGradientFill(bg);
+    g.fillRect(bounds.reduced(8.0f));
     g.setColour(juce::Colour::fromRGB(54,69,80));
     g.drawRoundedRectangle(bounds.reduced(5),11.0f,1.5f);
     g.setColour(juce::Colour::fromRGB(122,153,166));
     g.setFont(juce::Font(juce::FontOptions(10.0f,juce::Font::bold)));
-    g.drawText("SONY DIGITAL-DECK / CINEMA STEREO INSPIRATION  •  INDEPENDENT DESIGN",
-          370,24,getWidth()-390,18,juce::Justification::centredRight);
+    g.drawText("SPIRAL ETHER TECH  /  SONAR ROOT SPECTRAL WORKSTATION",
+          360,24,getWidth()-380,18,juce::Justification::centredRight);
     const int bottomY=getHeight()-158;
     g.setColour(juce::Colour::fromRGB(19,29,37));
     g.fillRoundedRectangle(15.0f,(float)bottomY,(float)getWidth()-30.0f,123.0f,9.0f);
@@ -444,6 +469,7 @@ void RootsEditor::paint(juce::Graphics& g){
 void RootsEditor::resized(){
     const int w=getWidth(),h=getHeight();
     title_.setBounds(35,13,330,37);
+    themeButton_.setBounds(w-190,40,172,21);
     const int buttonY=59,buttonGap=6,buttonX=18;
     const int buttonW=(w-36-6*buttonGap)/7;
     for(int root=0;root<7;++root)
