@@ -537,6 +537,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
                 juce::ParameterID{id("domain"),1},name+"Channel",
                 juce::StringArray{"STEREO","MID","SIDE"},0));
         }
+    p.push_back(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID{"surgery_theme",1},"Surgery UI Theme",
+        juce::StringArray{"ONYX","ETHER LAB","ALIEN GRID","CINEMA VOID"},0));
+    static constexpr unsigned colours[]{0x6BBDD4,0xDFA871,0xE6BD6A,0x8DCEA8,0x9DADEA,0xD2A2E5,0xE89EAD};
+    for(int root=0;root<7;++root)
+        p.push_back(std::make_unique<juce::AudioParameterInt>(
+            juce::ParameterID{"surgery_root"+juce::String(root+1)+"_rgb",1},
+            "ROOT "+juce::String(root+1)+" Colour",0,16777215,(int)colours[root]));
     return { p.begin(), p.end() };
 }
 

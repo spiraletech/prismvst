@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "SurgerySonar.h"
 #include <array>
 #include <functional>
 #include <memory>
@@ -34,10 +35,15 @@ public:
     int selectedNode() const noexcept{return selected_;}
     void selectNode(int node);
     void showRootMenu(int root);
+    void setPresentation(int theme,int mode,int slot) {
+        theme_=theme;mode_=mode;slot_=slot;repaint();
+    }
 private:
     PRISMVSTAudioProcessor& processor_;
     std::array<float,PRISMVSTAudioProcessor::labBars> bands_{},peaks_{};
     int selected_=0,dragging_=-1;
+    int theme_=0,mode_=0,slot_=0;
+    surgery::SonarField<PRISMVSTAudioProcessor::labBars> heat_;
     bool hover_=false;
     juce::Point<float> mouse_;
     juce::Rectangle<float> area() const;
@@ -47,7 +53,7 @@ private:
     void write(int i,const char* suffix,float value);
     int hitNode(juce::Point<float>) const;
     void popup();
-    static juce::Colour colour(int territory);
+    juce::Colour colour(int territory) const;
 };
 
 class RootsEditor final:public juce::AudioProcessorEditor,private juce::Timer {
@@ -65,13 +71,22 @@ private:
     juce::Slider gain_,bandSpace_,space_,threshold_;
     juce::TextButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};
     juce::TextButton themeButton_{"THEME"},dynButton_{"DYN OFF"};
-    int themeIndex_=0;
+    int themeIndex_=0,mode_=0,carveSlot_=0;
+    std::array<juce::TextButton,5> modeButtons_;
+    std::array<juce::TextButton,4> carveSlotButtons_;
+    juce::Slider carveFrequency_,carveDepth_,carveQ_,carveThreshold_;
+    juce::TextButton carveOn_{"CARVE ON"},carveDynamic_{"DYNAMIC"};
+    juce::Label carveFrequencyLabel_,carveDepthLabel_,carveQLabel_,carveThresholdLabel_;
+    std::unique_ptr<SliderA> carveFrequencyA_,carveDepthA_,carveQA_,carveThresholdA_;
+    std::unique_ptr<ButtonA> carveOnA_,carveDynamicA_;
     juce::Label title_,selection_,status_,gainLabel_,bandSpaceLabel_,
         spaceLabel_,thresholdLabel_;
     std::unique_ptr<SliderA> gainA_,bandSpaceA_,spaceA_,thresholdA_;
     std::unique_ptr<ButtonA> monoA_,onA_,soloA_;
     int node_=0;
     void bindNode(int n);
+    void bindCarve();
+    void setMode(int mode);
     void updateRootButtons();
     void timerCallback() override;
 };

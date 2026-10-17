@@ -73,11 +73,17 @@ int RootsGraph::hitNode(juce::Point<float> p)const{
     }
     return next>=0?next:first;
 }
-juce::Colour RootsGraph::colour(int territory) {return ::territory(territory);}
+juce::Colour RootsGraph::colour(int root) const {
+    const auto id="surgery_root"+juce::String(root+1)+"_rgb";
+    return juce::Colour(0xff000000u |
+        (unsigned)juce::roundToInt(pval(processor_.apvts,id)));
+}
 void RootsGraph::updateAnalyzer(
     const std::array<float,PRISMVSTAudioProcessor::labBars>& values,
     const std::array<float,PRISMVSTAudioProcessor::labBars>& pk){
-    bands_=values;peaks_=pk;repaint();
+    bands_=values;peaks_=pk;
+    heat_.update(values,1.0/30.0,pval(processor_.apvts,"aura_memory"));
+    repaint();
 }
 void RootsGraph::selectNode(int i){
     const int target=juce::jlimit(0,prism::roots::v2::kNodes-1,i);
@@ -95,8 +101,16 @@ void RootsGraph::showRootMenu(int root){
 void RootsGraph::paint(juce::Graphics& g){
     const auto full=getLocalBounds().toFloat();
     const auto r=area();
-    juce::ColourGradient bg(juce::Colour::fromRGB(14,21,28),full.getX(),full.getY(),
-                            juce::Colour::fromRGB(3,7,12),full.getX(),full.getBottom(),false);
+
+    const juce::Colour top=theme_==1?juce::Colour(0xff152b31):
+                            theme_==2?juce::Colour(0xff092820):
+                            theme_==3?juce::Colour(0xff142038):
+                                       juce::Colour(0xff0e151c);
+    const juce::Colour bottom=theme_==2?juce::Colour(0xff030f0c):
+                               theme_==3?juce::Colour(0xff070d19):
+                                          juce::Colour(0xff03070c);
+    juce::ColourGradient bg(top,full.getX(),full.getY(),
+                            bottom,full.getX(),full.getBottom(),false);
     g.setGradientFill(bg);g.fillRoundedRectangle(full.reduced(1.0f),10.0f);
     g.setColour(juce::Colour::fromRGB(58,74,86));
     g.drawRoundedRectangle(full.reduced(1.0f),10.0f,1.0f);
@@ -145,7 +159,7 @@ void RootsGraph::paint(juce::Graphics& g){
         if(!interval.enabled)continue;
         const float x1=freqToX((float)interval.lowHz);
         const float x2=freqToX((float)interval.highHz);
-        g.setColour(territory(root).withAlpha(root==selected_/2?0.075f:0.025f));
+        g.setColour(colour(root).withAlpha(root==selected_/2?0.075f:0.025f));
         g.fillRect(x1,r.getY(),juce::jmax(0.0f,x2-x1),r.getHeight());
     }
     for(int i=0;i<PRISMVSTAudioProcessor::labBars;++i){
@@ -156,7 +170,7 @@ void RootsGraph::paint(juce::Graphics& g){
         float red=0.0f,green=0.0f,blue=0.0f;
         for(int root=0;root<prism::roots::visual::kRoots;++root)
         {
-            const auto c=territory(root);
+            const auto c=colour(root);
             const float w=(float)weights.weight[(size_t)root];
             red+=w*c.getFloatRed();green+=w*c.getFloatGreen();blue+=w*c.getFloatBlue();
         }
@@ -176,6 +190,48 @@ void RootsGraph::paint(juce::Graphics& g){
             g.drawHorizontalLine(juce::roundToInt(peakY),x-1.0f,x+1.0f);
         }
     }
+    // SONAR FIELD: measured stationary heat/persistence under the spectrum.
+    // It is display-only; raw spectral dB values remain untouched above.
+    const float sonarTop=r.getY()+r.getHeight()*0.79f;
+    g.setColour(juce::Colour(0xff081617).withAlpha(0.68f));
+    g.fillRect(r.getX(),sonarTop,r.getWidth(),r.getBottom()-sonarTop);
+    for(int i=0;i<PRISMVSTAudioProcessor::labBars;++i) {
+        const float x=freqToX(prism::analysis::LabBands::centreFrequency(i));
+        const float intensity=heat_.heat((size_t)i);
+        const float motion=heat_.transient((size_t)i);
+        auto hue=colour(juce::jlimit(0,6,i*7/PRISMVSTAudioProcessor::labBars));
+        if(motion>0.16f)hue=hue.interpolatedWith(juce::Colour(0xffffd991),motion);
+        const float height=(r.getBottom()-sonarTop)*intensity;
+        g.setColour(hue.withAlpha(0.10f+0.77f*intensity));
+        g.drawVerticalLine(juce::roundToInt(x),r.getBottom()-height,r.getBottom());
+    }
+    g.setColour(juce::Colour(0xff8ab5b3));
+    g.setFont(juce::Font(juce::FontOptions(9.0f,juce::Font::bold)));
+    g.drawText("SONAR  /  ENERGY PERSISTENCE",r.getX()+8,sonarTop+3,210,14,
+               juce::Justification::centredLeft);
+    // CARVE nodes are measured frequency-domain corrections (not ROOT boundaries).
+    if(mode_==1) {
+        for(int slot=0;slot<4;++slot){
+            const int root=selected_/2;
+            const auto id=[root,slot](const char* s){
+                return PRISMVSTAudioProcessor::carveId(root,slot,s);
+            };
+            if(pval(processor_.apvts,id("on"))<0.5f)continue;
+            const float frequency=pval(processor_.apvts,id("hz"));
+            const float depth=pval(processor_.apvts,id("depth"));
+            const float x=freqToX(frequency);
+            const float y=r.getCentreY()-depth*2.0f;
+            const auto c=colour(root);
+            g.setColour(c.withAlpha(0.38f));
+            g.drawVerticalLine(juce::roundToInt(x),y,r.getBottom());
+            g.setColour(c);
+            g.fillEllipse(x-5.5f,y-5.5f,11.0f,11.0f);
+            if(slot==slot_){
+                g.setColour(juce::Colours::white);
+                g.drawEllipse(x-9,y-9,18.0f,18.0f,2.0f);
+            }
+        }
+    }
     // Both boundary handles always live on one horizontal rail.
     g.setColour(juce::Colour::fromRGB(159,182,191).withAlpha(0.14f));
     g.drawHorizontalLine(juce::roundToInt(r.getCentreY()),r.getX(),r.getRight());
@@ -186,7 +242,7 @@ void RootsGraph::paint(juce::Graphics& g){
             PRISMVSTAudioProcessor::rootsRootControlId(i/2,"on"))>=0.5f;
         const bool solo=pval(processor_.apvts,
              PRISMVSTAudioProcessor::rootsRootSoloId(i/2))>=0.5f;
-        const auto col=territory(i/2);
+        const auto col=colour(i/2);
         // Vertical guides represent frequency boundaries, not gain movements.
         g.setColour(col.withAlpha(enabled?0.23f:0.06f));
         g.drawVerticalLine(juce::roundToInt(x),r.getY(),r.getBottom());
@@ -304,6 +360,12 @@ void RootsGraph::popup(){
     menu.addItem(40,"ROOT SPACE: MONO (0)");
     menu.addItem(41,"ROOT SPACE: NEUTRAL (50)");
     menu.addItem(42,"ROOT SPACE: WIDE (100)");
+    menu.addSeparator();
+    juce::PopupMenu palette;
+    static constexpr const char* names[]{"CYAN","AMBER","JADE","VIOLET","ROSE","BLUE","LIME","WHITE"};
+    for(int i=0;i<8;++i)palette.addItem(80+i,names[i]);
+    palette.addItem(99,"CUSTOM HEX...");
+    menu.addSubMenu("ROOT COLOUR",palette);
     const juce::Component::SafePointer<RootsGraph> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
         [safe,root](int id){
@@ -327,6 +389,29 @@ void RootsGraph::popup(){
             if(id>=10&&id<=12)set("domain",(float)(id-10));
             if(id>=30&&id<=33)set("detector",(float)(id-30));
             if(id>=40&&id<=42)set("space",(float)((id-40)*50));
+            const auto colorId="surgery_root"+juce::String(root+1)+"_rgb";
+            static constexpr unsigned swatches[]{
+                0x6BBDD4,0xDFA871,0x8DCEA8,0xD2A2E5,
+                0xE89EAD,0x9DADEA,0xBFD678,0xE5F4F3};
+            if(id>=80&&id<=87)change(graph.processor_,colorId,(float)swatches[id-80]);
+            if(id==99){
+                auto* dialog=new juce::AlertWindow(
+                    "ROOT COLOUR","Enter a 6-digit RGB hexadecimal value",
+                    juce::MessageBoxIconType::NoIcon);
+                dialog->addTextEditor("hex","6BBDD4","RRGGBB");
+                dialog->addButton("APPLY",1);
+                dialog->addButton("CANCEL",0);
+                dialog->enterModalState(true,
+                    juce::ModalCallbackFunction::create(
+                        [safe,dialog,colorId](int result) {
+                            if(result!=1||safe==nullptr)return;
+                            auto str=dialog->getTextEditorContents("hex").trim().removeCharacters("#");
+                            if(str.length()!=6||!str.containsOnly("0123456789aAbBcCdDeEfF"))return;
+                            const unsigned value=(unsigned)str.getHexValue32()&0x00ffffffu;
+                            change(safe->processor_,colorId,(float)value);
+                            safe->repaint();
+                        }),true);
+            }
             graph.repaint();
         });
 }
@@ -347,7 +432,8 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         addAndMakeVisible(b);
     }
     for(auto* label:{&title_,&selection_,&status_,&gainLabel_,&bandSpaceLabel_,
-                     &spaceLabel_,&thresholdLabel_}){
+                     &spaceLabel_,&thresholdLabel_,&carveFrequencyLabel_,
+                     &carveDepthLabel_,&carveQLabel_,&carveThresholdLabel_}){
         addAndMakeVisible(*label);
         label->setColour(juce::Label::textColourId,juce::Colour::fromRGB(195,216,223));
     }
@@ -377,6 +463,30 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         b->setColour(juce::TextButton::textColourOnId,juce::Colours::white);
         addAndMakeVisible(*b);
     }
+    static constexpr const char* labels[]{"ROOT","CARVE","SPACE","DYN","ANALYZE"};
+    for(int i=0;i<5;++i){
+        auto& b=modeButtons_[(size_t)i];
+        b.setButtonText(labels[i]);
+        b.onClick=[this,i]{setMode(i);};
+        addAndMakeVisible(b);
+    }
+    for(int i=0;i<4;++i){
+        auto& b=carveSlotButtons_[(size_t)i];
+        b.setButtonText("C"+juce::String(i+1));
+        b.onClick=[this,i]{carveSlot_=i;bindCarve();graph_.setPresentation(themeIndex_,mode_,carveSlot_);};
+        addAndMakeVisible(b);
+    }
+    for(auto* s:{&carveFrequency_,&carveDepth_,&carveQ_,&carveThreshold_}){
+        rotary(*s,"",0.0);addAndMakeVisible(*s);
+    }
+    carveFrequencyLabel_.setText("FREQUENCY Hz",juce::dontSendNotification);
+    carveDepthLabel_.setText("CUT DEPTH dB",juce::dontSendNotification);
+    carveQLabel_.setText("Q / PRECISION",juce::dontSendNotification);
+    carveThresholdLabel_.setText("TRIGGER dBFS",juce::dontSendNotification);
+    for(auto* b:{&carveOn_,&carveDynamic_}){
+        b->setClickingTogglesState(true);
+        addAndMakeVisible(*b);
+    }
     addAndMakeVisible(dynButton_);
     dynButton_.onClick=[this]{
         const auto id=PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp");
@@ -388,6 +498,8 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     addAndMakeVisible(themeButton_);
     themeButton_.onClick=[this]{
         themeIndex_=(themeIndex_+1)%4;
+        change(processor_,"surgery_theme",(float)themeIndex_);
+        graph_.setPresentation(themeIndex_,mode_,carveSlot_);
         static const char* names[]{"ONYX","ETHER LAB","ALIEN GRID","CINEMA VOID"};
         themeButton_.setButtonText(juce::String("THEME  /  ")+names[themeIndex_]);
         graph_.repaint();
@@ -397,6 +509,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     monoA_=std::make_unique<ButtonA>(processor_.apvts,"roots_mono",mono_);
     spaceA_=std::make_unique<SliderA>(processor_.apvts,"roots_space",space_);
     bindNode(0);
+    setMode(0);
     startTimerHz(30);
 }
 RootsEditor::~RootsEditor(){stopTimer();}
@@ -417,7 +530,58 @@ void RootsEditor::bindNode(int n){
     selection_.setText("ROOT "+juce::String(node_/2+1)+" / "+
         PRISMVSTAudioProcessor::sectionName(node_/2)+
         "  BOUNDARY "+juce::String(node_%2+1),juce::dontSendNotification);
+    bindCarve();
     updateRootButtons();
+}
+void RootsEditor::bindCarve(){
+    carveFrequencyA_.reset();carveDepthA_.reset();
+    carveQA_.reset();carveThresholdA_.reset();
+    carveOnA_.reset();carveDynamicA_.reset();
+    const int root=node_/2,slot=carveSlot_;
+    const auto id=[root,slot](const char* s){
+        return PRISMVSTAudioProcessor::carveId(root,slot,s);
+    };
+    carveFrequencyA_=std::make_unique<SliderA>(processor_.apvts,id("hz"),carveFrequency_);
+    carveDepthA_=std::make_unique<SliderA>(processor_.apvts,id("depth"),carveDepth_);
+    carveQA_=std::make_unique<SliderA>(processor_.apvts,id("q"),carveQ_);
+    carveThresholdA_=std::make_unique<SliderA>(processor_.apvts,id("threshold"),carveThreshold_);
+    carveOnA_=std::make_unique<ButtonA>(processor_.apvts,id("on"),carveOn_);
+    carveDynamicA_=std::make_unique<ButtonA>(processor_.apvts,id("dynamic"),carveDynamic_);
+    for(int i=0;i<4;++i){
+        carveSlotButtons_[(size_t)i].setToggleState(i==slot,juce::dontSendNotification);
+        carveSlotButtons_[(size_t)i].setColour(juce::TextButton::buttonOnColourId,
+            territory(root).withAlpha(0.66f));
+    }
+    graph_.setPresentation(themeIndex_,mode_,carveSlot_);
+}
+void RootsEditor::setMode(int next){
+    mode_=juce::jlimit(0,4,next);
+    for(int i=0;i<5;++i){
+        auto& b=modeButtons_[(size_t)i];
+        b.setToggleState(i==mode_,juce::dontSendNotification);
+        b.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff1a2933));
+        b.setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xff247a83));
+        b.setColour(juce::TextButton::textColourOffId,juce::Colours::white);
+        b.setColour(juce::TextButton::textColourOnId,juce::Colours::white);
+    }
+    const bool carve=mode_==1;
+    for(auto* s:{&carveFrequency_,&carveDepth_,&carveQ_,&carveThreshold_})s->setVisible(carve);
+    for(auto* l:{&carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_,&carveThresholdLabel_})l->setVisible(carve);
+    for(auto& b:carveSlotButtons_)b.setVisible(carve);
+    carveOn_.setVisible(carve);carveDynamic_.setVisible(carve);
+    gain_.setVisible(mode_==0);gainLabel_.setVisible(mode_==0);
+    bandSpace_.setVisible(mode_==0||mode_==2);
+    bandSpaceLabel_.setVisible(mode_==0||mode_==2);
+    threshold_.setVisible(mode_==0||mode_==3);
+    thresholdLabel_.setVisible(mode_==0||mode_==3);
+    space_.setVisible(mode_==0||mode_==2);
+    spaceLabel_.setVisible(mode_==0||mode_==2);
+    dynButton_.setVisible(mode_==0||mode_==3);
+    on_.setVisible(mode_!=4);solo_.setVisible(mode_!=4);
+    mono_.setVisible(mode_==0||mode_==2);
+    graph_.setPresentation(themeIndex_,mode_,carveSlot_);
+    resized();
+    repaint();
 }
 void RootsEditor::updateRootButtons(){
     for(int root=0;root<7;++root){
@@ -431,6 +595,7 @@ void RootsEditor::updateRootButtons(){
     }
 }
 void RootsEditor::timerCallback(){
+    themeIndex_=juce::jlimit(0,3,juce::roundToInt(pval(processor_.apvts,"surgery_theme")));
     // Show when compression is disabled; never present inactive controls as working.
     const int comp=juce::roundToInt(pval(processor_.apvts,
          PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp")));
@@ -441,6 +606,7 @@ void RootsEditor::timerCallback(){
     thresholdLabel_.setText(comp==0?"THRESHOLD (COMP OFF)":"COMP THRESHOLD",
                             juce::dontSendNotification);
     updateRootButtons();
+    graph_.setPresentation(themeIndex_,mode_,carveSlot_);
     std::array<float,PRISMVSTAudioProcessor::labBars> bars{},peaks{};
     processor_.copyPrismLabBars(bars,peaks);
     graph_.updateAnalyzer(bars,peaks);
@@ -474,7 +640,7 @@ void RootsEditor::paint(juce::Graphics& g){
     g.drawRoundedRectangle(15.0f,(float)bottomY,(float)getWidth()-30.0f,123.0f,9.0f,1.0f);
     g.setColour(juce::Colour::fromRGB(142,162,172));
     g.setFont(juce::Font(juce::FontOptions(10.0f)));
-    g.drawText("SELECT ROOT ABOVE  /  DRAG Hz BOUNDARIES  /  RIGHT-CLICK ROOT: SPACE, STEREO & COMP",
+    g.drawText("SONAR  /  SURGERY ROOTS  /  28 CARVE CHANNELS  /  MEASURE BEFORE CORRECTION",
                24,getHeight()-28,getWidth()-48,18,juce::Justification::centredLeft);
 }
 void RootsEditor::resized(){
@@ -486,7 +652,12 @@ void RootsEditor::resized(){
     for(int root=0;root<7;++root)
         rootButtons_[(size_t)root].setBounds(
             buttonX+root*(buttonW+buttonGap),buttonY,buttonW,30);
-    graph_.setBounds(16,97,w-32,h-277);
+    graph_.setBounds(16,97,w-32,h-326);
+    const int modeTop=h-220;
+    const int modeGap=7;
+    const int modeWidth=(w-36-4*modeGap)/5;
+    for(int i=0;i<5;++i)
+        modeButtons_[(size_t)i].setBounds(18+i*(modeWidth+modeGap),modeTop,modeWidth,29);
     const int panelY=h-153;
     selection_.setBounds(31,panelY+2,210,26);
     status_.setBounds(w-450,panelY+2,425,27);
@@ -504,5 +675,20 @@ void RootsEditor::resized(){
     on_.setBounds(left,panelY+36,cw-2,25);
     solo_.setBounds(left,panelY+66,cw-2,25);
     mono_.setBounds(left+6*cw,panelY+72,cw-2,25);
+    for(int i=0;i<4;++i)
+        carveSlotButtons_[(size_t)i].setBounds(255+i*62,panelY+1,56,27);
+    const std::array<juce::Slider*,4> cs{
+        &carveFrequency_,&carveDepth_,&carveQ_,&carveThreshold_
+    };
+    const std::array<juce::Label*,4> cl{
+        &carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_,&carveThresholdLabel_
+    };
+    for(int i=0;i<4;++i){
+        const int x=left+(i+1)*cw;
+        cl[(size_t)i]->setBounds(x,panelY+24,cw,18);
+        cs[(size_t)i]->setBounds(x,panelY+40,cw,74);
+    }
+    carveOn_.setBounds(left,panelY+38,cw-2,25);
+    carveDynamic_.setBounds(left,panelY+69,cw-2,25);
     dynButton_.setBounds(left+6*cw,panelY+36,cw-2,26);
 }
