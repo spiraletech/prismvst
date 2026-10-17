@@ -939,10 +939,10 @@ void RootsEditor::resized(){
     }
     carveOn_.setBounds(left,panelY+38,cw-2,25);
     carveDynamic_.setBounds(left,panelY+69,cw-2,25);
-    assistApply_.setBounds(260,panelY+51,220,34);
+    assistApply_.setBounds(left,panelY+51,2*cw-12,34);
     dynButton_.setBounds(left+6*cw,panelY+36,cw-2,26);
-    analyzerDepthLabel_.setBounds(left+cw,panelY+27,152,18);
-    analyzerDepth_.setBounds(left+cw,panelY+50,152,28);
+    analyzerDepthLabel_.setBounds(left+2*cw,panelY+27,cw,18);
+    analyzerDepth_.setBounds(left+2*cw,panelY+50,cw,28);
     analyzerSlopeLabel_.setBounds(left+3*cw,panelY+23,cw,18);
     analyzerSlope_.setBounds(left+3*cw,panelY+42,cw,75);
     analyzerMemoryLabel_.setBounds(left+4*cw,panelY+23,cw,18);
