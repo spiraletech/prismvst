@@ -1,5 +1,6 @@
 #include "RootsEditor.h"
 #include "RootsSpectrumColours.h"
+#include "SurgerySpectralColours.h"
 #include "SurgerySpectrogram.h"
 #include <cmath>
 #include <numbers>
@@ -90,7 +91,7 @@ void RootsGraph::updateAnalyzer(
     // Analyzer worker owns the FFT. Only 256 display values arrive here.
     // Message-thread smoothing is fast-attack with calibrated decay; never
     // change the underlying audio or the diagnostic measurement data.
-    spectrumEnvelope_.update(values,1.0/30.0,
+    spectrumEnvelope_.update(values,1.0/60.0,
         pval(processor_.apvts,"aura_memory"));
     bands_=spectrumEnvelope_.frame();
     peaks_=pk;
@@ -131,11 +132,8 @@ void RootsGraph::paint(juce::Graphics& g){
     g.drawRoundedRectangle(full.reduced(1.0f),10.0f,1.0f);
     g.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::bold)));
     g.setColour(juce::Colour::fromRGB(145,172,182));
-    // Legacy heat-view state now selects a second 1D fill palette.
-    // Both styles share one logarithmic-frequency / dBFS coordinate system.
-    const bool heatView=pval(processor_.apvts,"surgery_heat_view")>=0.5f;
-    g.drawText(frozen_?"ANALYZE / FROZEN":
-               (heatView?"SONAR / LIVE SPECTRUM • ROOT FILL":"SONAR / LIVE SPECTRUM • ROSE FILL"),
+    // Measured frequency/intensity colouring, independent of ROOT or theme.
+    g.drawText(frozen_?"SONAR / FROZEN":"SONAR / LIVE FREQUENCY ENERGY",
                r.getX(),7.0f,r.getWidth(),16.0f,juce::Justification::centredLeft);
     // Frequency and calibrated dBFS dimensions.
     static constexpr std::array<float,11> freqs{
@@ -185,7 +183,7 @@ void RootsGraph::paint(juce::Graphics& g){
     }
     // Single live FFT envelope. X is 20-20k logarithmic Hz; Y is measured dBFS.
     // The area beneath the one curve is closed at the -rangeDb graph floor.
-    // Display slope and fill palette never change DSP.
+    // Display slope or spectral colouring never changes the audio path.
     const int depthMode=juce::roundToInt(pval(processor_.apvts,"analyzer_depth"));
     const float rangeDb=depthMode==0?96.0f:depthMode==1?120.0f:144.0f;
     const float slope=pval(processor_.apvts,"analyzer_slope");
@@ -215,24 +213,60 @@ void RootsGraph::paint(juce::Graphics& g){
     g.saveState();
     g.reduceClipRegion(r.toNearestInt());
     if(heatOn){
-        // Vertical, SOLID amplitude fill—not scrolling time history or bars.
-        // Alternate palette preserves user automation of surgery_heat_view.
-        const auto primary=heatView?colour(selected_/2).brighter(0.30f):
-            juce::Colour(0xffff6b97);
-        const auto middle=heatView?colour(selected_/2).darker(0.10f):
-            juce::Colour(0xffb43461);
-        juce::ColourGradient fill(primary.withAlpha(0.93f),
+        // Frequency-addressed, measured-energy heat is clipped to ONE
+        // closed dBFS spectrum, as in a parametric-EQ spectral background.
+        // No theme/palette choice, scrolling spectrogram, or stacked bars.
+        g.saveState();
+        g.reduceClipRegion(filledPath);
+        juce::ColourGradient frequencyRamp(
+            juce::Colour(0xffef4357),r.getX(),r.getY(),
+            juce::Colour(0xff7194df),r.getRight(),r.getY(),false);
+        for(std::size_t i=1;i<surgery::spectrum::stops.size()-1;++i){
+            const auto& stop=surgery::spectrum::stops[i];
+            const auto& rgb=stop.value;
+            const auto tint=juce::Colour::fromFloatRGBA(rgb.r,rgb.g,rgb.b,1.0f);
+            frequencyRamp.addColour(surgery::spectrum::plotFraction(stop.hz),tint);
+        }
+        g.setGradientFill(frequencyRamp);
+        g.fillRect(r);
+        // Vertical shadow gives full-bodied colour at the envelope with
+        // darker energy below, without imposing one global rose/ROOT shade.
+        juce::ColourGradient shade(juce::Colours::transparentBlack,
             r.getCentreX(),r.getY(),
-            juce::Colour(0xff1a0d1a).withAlpha(0.70f),
+            juce::Colour(0xff050b16).withAlpha(0.80f),
             r.getCentreX(),r.getBottom(),false);
-        fill.addColour(0.42,middle.withAlpha(0.78f));
-        fill.addColour(0.82,juce::Colour(0xff391324).withAlpha(0.74f));
-        g.setGradientFill(fill);
-        g.fillPath(filledPath);
+        shade.addColour(0.55,juce::Colour(0xff110e1f).withAlpha(0.25f));
+        g.setGradientFill(shade);
+        g.fillRect(r);
+        // Fine vertical activity reflects the real FFT magnitudes.
+        // These remain INSIDE the same single envelope and do not create
+        // a separate lower bar graph. Clip is applied only once.
+        constexpr int spectralSlices=128;
+        for(int i=0;i<spectralSlices;++i){
+            const float u=((float)i+0.5f)/(float)spectralSlices;
+            const float hz=20.0f*std::pow(1000.0f,u);
+            const int bin=juce::jlimit(0,N-1,
+                (int)(u*(float)N));
+            const float strength=surgery::spectrum::brightness(bands_[(size_t)bin]);
+            if(strength<0.012f)continue;
+            const auto rgb=surgery::spectrum::colourAt(hz);
+            const auto shine=juce::Colour::fromFloatRGBA(
+                rgb.r,rgb.g,rgb.b,0.13f+0.49f*strength);
+            const float x1=r.getX()+r.getWidth()*(float)i/spectralSlices;
+            const float x2=r.getX()+r.getWidth()*(float)(i+1)/spectralSlices;
+            g.setColour(shine);
+            g.fillRect(x1,r.getY(),x2-x1+0.45f,r.getHeight());
+        }
+        g.restoreState();
     }
-    g.setColour(heatView?colour(selected_/2).brighter(0.63f):
-                juce::Colour(0xffffb2cc));
-    g.strokePath(spectrumPath,juce::PathStrokeType(2.0f,
+    // A single fine readout follows the spectrum edge, never a 2D waterfall.
+    juce::ColourGradient edge(
+        juce::Colour(0xffffa5ad),r.getX(),r.getY(),
+        juce::Colour(0xffa8c6ff),r.getRight(),r.getY(),false);
+    edge.addColour(0.34,juce::Colour(0xffe4a7d4));
+    edge.addColour(0.66,juce::Colour(0xffff9bbb));
+    g.setGradientFill(edge);
+    g.strokePath(spectrumPath,juce::PathStrokeType(1.3f,
         juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
     // A restrained peak-hold readout; the audio measurements are unchanged.
     g.setColour(juce::Colour(0xffe3edf2).withAlpha(0.31f));
@@ -285,8 +319,7 @@ void RootsGraph::paint(juce::Graphics& g){
     }
     g.setColour(juce::Colour(0xffacc3cf));
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
-    g.drawText(heatView?"SONAR / ROOT-COLOR AMPLITUDE FILL     CARVE / STATIC RESPONSE":
-               "SONAR / ROSE AMPLITUDE FILL     CARVE / STATIC RESPONSE",
+    g.drawText("SONAR / FREQUENCY-COLORED ENERGY     CARVE / STATIC RESPONSE",
                r.getX(),r.getBottom()+23.0f,r.getWidth(),16.0f,
                juce::Justification::centredLeft);
     // Both boundary handles always live on one horizontal rail.
@@ -819,7 +852,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     mono_.setTooltip("Frequency-selective MONO on the selected ROOT only");
     analyzerDepthLabel_.setText("VIEW RANGE",juce::dontSendNotification);
     analyzerSlopeLabel_.setText("PIVOT / dB PER OCT",juce::dontSendNotification);
-    analyzerMemoryLabel_.setText("SPECTRUM DECAY / SEC",juce::dontSendNotification);
+    analyzerMemoryLabel_.setText("VISUAL DECAY / SEC",juce::dontSendNotification);
     analyzerDepth_.addItem("MIX -96 dBFS",1);
     analyzerDepth_.addItem("DEEP -120 dBFS",2);
     analyzerDepth_.addItem("FORENSIC -144 dBFS",3);
@@ -831,15 +864,10 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     }
     analyzerSlopeA_=std::make_unique<SliderA>(processor_.apvts,"analyzer_slope",analyzerSlope_);
     analyzerMemoryA_=std::make_unique<SliderA>(processor_.apvts,"aura_memory",analyzerMemory_);
-    heatToggle_.setTooltip("Toggle the live FFT amplitude gradient fill");
+    heatToggle_.setTooltip("Show or hide frequency-coloured spectral activity from measured FFT levels");
     heatToggle_.setClickingTogglesState(true);
     addAndMakeVisible(heatToggle_);
     heatA_=std::make_unique<ButtonA>(processor_.apvts,"aura_color",heatToggle_);
-    heatViewButton_.setClickingTogglesState(true);
-    heatViewButton_.setTooltip("Choose rose gradient or ROOT-matched gradient; both are live 1D dBFS spectrum fills");
-    addAndMakeVisible(heatViewButton_);
-    heatViewA_=std::make_unique<ButtonA>(processor_.apvts,
-        "surgery_heat_view",heatViewButton_);
     freezeButton_.setClickingTogglesState(true);
     freezeButton_.setTooltip("Freeze measured spectrum and SONAR history; DSP remains live");
     freezeButton_.onClick=[this]{
@@ -849,7 +877,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     addAndMakeVisible(freezeButton_);
     bindNode(0);
     setMode(0);
-    startTimerHz(30);
+    startTimerHz(60);
 }
 RootsEditor::~RootsEditor(){stopTimer();setLookAndFeel(nullptr);}
 void RootsEditor::bindNode(int n){
@@ -944,7 +972,6 @@ void RootsEditor::setMode(int next){
     analyzerMemory_.setVisible(analyze);
     analyzerMemoryLabel_.setVisible(analyze);
     heatToggle_.setVisible(analyze);
-    heatViewButton_.setVisible(analyze);
     freezeButton_.setVisible(analyze);
     graph_.setPresentation(themeIndex_,mode_,carveSlot_);
     resized();
@@ -985,10 +1012,7 @@ void RootsEditor::timerCallback(){
        PRISMVSTAudioProcessor::carveId(node_/2,carveSlot_,"on"))>=0.5f?
        "CARVE ON":"CARVE OFF");
     heatToggle_.setButtonText(pval(processor_.apvts,"aura_color")>=0.5f?
-                              "FILL ON":"FILL OFF");
-    heatViewButton_.setButtonText(
-        pval(processor_.apvts,"surgery_heat_view")>=0.5f?
-        "FILL / ROOT":"FILL / ROSE");
+                              "SONAR ON":"SONAR OFF");
     graph_.setPresentation(themeIndex_,mode_,carveSlot_);
     std::array<float,PRISMVSTAudioProcessor::labBars> bars{},peaks{};
     processor_.copyPrismLabBars(bars,peaks);
@@ -1144,6 +1168,5 @@ void RootsEditor::resized(){
     analyzerMemoryLabel_.setBounds(left+4*cw,panelY+23,cw,18);
     analyzerMemory_.setBounds(left+4*cw,panelY+42,cw,75);
     heatToggle_.setBounds(left+6*cw,panelY+41,cw-2,28);
-    heatViewButton_.setBounds(left+5*cw,panelY+41,cw-2,28);
     freezeButton_.setBounds(left+6*cw,panelY+76,cw-2,28);
 }

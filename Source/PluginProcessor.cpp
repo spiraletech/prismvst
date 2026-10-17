@@ -548,15 +548,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
         juce::NormalisableRange<float>(0.0f, 6.0f, 0.1f), 0.0f));
 
     juce::NormalisableRange<float> auraMemoryRange(0.05f, 10.0f, 0.01f);
-    auraMemoryRange.setSkewForCentre(1.5f);
+    auraMemoryRange.setSkewForCentre(0.4f);
     p.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "aura_memory", 2 }, "Spectrum Release Time",
-        auraMemoryRange, 1.5f));
+        auraMemoryRange, 0.18f));
 
     p.push_back(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID { "aura_color", 1 }, "Spectrum Amplitude Fill", true));
+        juce::ParameterID { "aura_color", 1 }, "Measured Spectral Energy Fill", true));
     p.push_back(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID { "surgery_heat_view", 1 }, "Spectrum Fill Palette: ROOT", false));
+        juce::ParameterID { "surgery_heat_view", 1 }, "Legacy Spectrum View (Retired)", false));
 
     // Four original surgically controllable EQ nodes in each of seven ROOTS.
     for(int root=0;root<surgery::kRoots;++root)

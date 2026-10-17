@@ -70,6 +70,11 @@ int main()
             return 1;
         }
     }
+    // The FFT visualizer never adds host-reported audio buffering latency.
+    {
+        PRISMVSTAudioProcessor p;
+        if(p.getLatencySamples()!=0)return 31;
+    }
     // Ultra Q must be host-editable, not just an extended rotary visual.
     {
         PRISMVSTAudioProcessor p;

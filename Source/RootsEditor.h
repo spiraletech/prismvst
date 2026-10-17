@@ -91,8 +91,7 @@ private:
     std::array<RootSelectorButton,7> rootButtons_;
     juce::Slider gain_,threshold_,analyzerSlope_,analyzerMemory_;
     juce::ComboBox analyzerDepth_;
-    juce::TextButton heatToggle_{"SONAR ON"},freezeButton_{"FREEZE"},
-                     heatViewButton_{"VIEW / SPECTRUM"};
+    juce::TextButton heatToggle_{"SONAR ON"},freezeButton_{"FREEZE"};
     juce::TextButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};
     juce::TextButton themeButton_{"THEME"},dynButton_{"DYN OFF"},assistApply_{"APPLY SUGGESTION"};
     int themeIndex_=0,mode_=0,carveSlot_=0;
@@ -108,7 +107,7 @@ private:
     using ComboA=juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     std::unique_ptr<SliderA> gainA_,thresholdA_,analyzerSlopeA_,analyzerMemoryA_;
     std::unique_ptr<ComboA> analyzerDepthA_;
-    std::unique_ptr<ButtonA> heatA_,heatViewA_;
+    std::unique_ptr<ButtonA> heatA_;
     std::unique_ptr<ButtonA> monoA_,onA_,soloA_;
     int node_=0;
     void bindNode(int n);
