@@ -89,6 +89,7 @@ private:
     juce::Slider attackSlider;
     juce::Slider releaseSlider;
     juce::Slider onyxSlider;
+    juce::Slider sparkleSlider, shineSlider, smoothSlider, tapeSlider;
     juce::Slider precisionLever;
 
     juce::Label selectedBandLabel;
@@ -103,6 +104,7 @@ private:
     std::unique_ptr<SliderAttachment> attackA;
     std::unique_ptr<SliderAttachment> releaseA;
     std::unique_ptr<SliderAttachment> onyxA;
+    std::unique_ptr<SliderAttachment> sparkleA, shineA, smoothA, tapeA;
     std::unique_ptr<ButtonAttachment> enabledA;
     std::unique_ptr<ButtonAttachment> bypassA;
 
