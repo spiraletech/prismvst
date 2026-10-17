@@ -26,7 +26,10 @@ juce::Colour territory(int i){
 }
 void rotary(juce::Slider& s,juce::String suffix,double resetValue) {
     s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    s.setTextBoxStyle(juce::Slider::TextBoxBelow,false,87,18);
+    s.setTextBoxStyle(juce::Slider::TextBoxBelow,false,90,22);
+    s.setColour(juce::Slider::textBoxTextColourId,juce::Colour(0xffe4eef1));
+    s.setColour(juce::Slider::textBoxBackgroundColourId,juce::Colour(0xff0d1b23));
+    s.setColour(juce::Slider::textBoxOutlineColourId,juce::Colour(0xff47616a));
     s.setTextValueSuffix(suffix);
     s.setDoubleClickReturnValue(true,resetValue);
 }
@@ -120,7 +123,7 @@ void RootsGraph::paint(juce::Graphics& g){
     g.setGradientFill(bg);g.fillRoundedRectangle(full.reduced(1.0f),10.0f);
     g.setColour(juce::Colour::fromRGB(58,74,86));
     g.drawRoundedRectangle(full.reduced(1.0f),10.0f,1.0f);
-    g.setFont(juce::Font(juce::FontOptions(10.0f,juce::Font::bold)));
+    g.setFont(juce::Font(juce::FontOptions("Segoe UI",11.0f,juce::Font::bold)));
     g.setColour(juce::Colour::fromRGB(145,172,182));
     g.drawText(frozen_?"ANALYZE / FROZEN":"ANALYZE / POST-DSP LIVE",
                r.getX(),7.0f,r.getWidth(),16.0f,juce::Justification::centredLeft);
@@ -148,7 +151,7 @@ void RootsGraph::paint(juce::Graphics& g){
     }
     // ROOT handle height is constant; vertical axis is exclusively dBFS.
     // ROOT gain is a separate, single control in the bottom panel.
-    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+    g.setFont(juce::Font(juce::FontOptions("Segoe UI",11.0f,juce::Font::plain)));
     g.setColour(juce::Colour::fromRGB(184,197,209));
     g.drawText("Hz",8,16,34,16,juce::Justification::centredLeft);
     g.drawText("dBFS",juce::roundToInt(r.getRight()),16,44,16,juce::Justification::centredRight);
@@ -302,15 +305,8 @@ void RootsGraph::paint(juce::Graphics& g){
             g.setColour(solo?juce::Colours::white:col.brighter(0.65f));
             g.drawEllipse(x-9,y-9,18,18,i==selected_?2.0f:1.2f);
         }
-        if(i==selected_){
-            g.setColour(juce::Colours::white);
-            g.setFont(juce::Font(juce::FontOptions(10.0f,juce::Font::bold)));
-            const juce::String detail="ROOT "+juce::String(i/2+1)+"  "
-                  +(i%2==0?"A ":"B ")+hzText(hz)+" Hz";
-            g.drawText(detail,juce::roundToInt(juce::jlimit(r.getX(),r.getRight()-120,x-48)),
-                       juce::roundToInt(juce::jlimit(r.getY(),r.getBottom()-20,y-30)),
-                       125,19,juce::Justification::centredLeft);
-        }
+        // Precise ROOT selection details live in the contextual control shelf,
+        // not in floating text that masks live spectrum or CARVE contours.
     }
     // Focused ROOT foreground rail: all four slots remain identifiable.
     // OFF slots are selectable but never represented as active audio filters.
@@ -318,8 +314,8 @@ void RootsGraph::paint(juce::Graphics& g){
     g.setColour(focusedColor.withAlpha(0.18f));
     g.fillRoundedRectangle(r.getX(),24.0f,171.0f,20.0f,4.0f);
     g.setColour(focusedColor.brighter(0.45f));
-    g.setFont(juce::Font(juce::FontOptions(10.0f,juce::Font::bold)));
-    g.drawFittedText("ROOT "+juce::String(selectedRoot+1)+" / CARVE",
+    g.setFont(juce::Font(juce::FontOptions("Segoe UI",11.0f,juce::Font::bold)));
+    g.drawFittedText("ROOT "+juce::String(selectedRoot+1)+"  /  C1–C4",
         juce::Rectangle<int>((int)r.getX()+6,25,160,18),
         juce::Justification::centredLeft,1);
 
@@ -384,15 +380,26 @@ void RootsGraph::paint(juce::Graphics& g){
         g.setColour(juce::Colours::white.withAlpha(0.26f));
         g.drawVerticalLine(juce::roundToInt(mouse_.x),r.getY(),r.getBottom());
         g.drawHorizontalLine(juce::roundToInt(mouse_.y),r.getX(),r.getRight());
-        const juce::String text=hzText(freq)+" Hz  /  BAR "
-                +juce::String(bands_[(size_t)bar],1)+" dBFS  /  PEAK "
-                +juce::String(peaks_[(size_t)bar],1)+" dBFS";
+        juce::String text=hzText(freq)+" Hz / "+
+                juce::String(bands_[(size_t)bar],1)+" dBFS / HOLD "+
+                juce::String(peaks_[(size_t)bar],1)+" dBFS";
+        const int hoveredCarve=hitCarveNode(mouse_);
+        if(hoveredCarve>=0) {
+            const int root=selected_/2;
+            const auto id=[root,hoveredCarve](const char* suffix){
+                return PRISMVSTAudioProcessor::carveId(root,hoveredCarve,suffix);
+            };
+            text="C"+juce::String(hoveredCarve+1)+" / "+
+                 hzText(pval(processor_.apvts,id("hz")))+" Hz / Q "+
+                 juce::String(pval(processor_.apvts,id("q")),2)+" / CUT "+
+                 juce::String(pval(processor_.apvts,id("depth")),1)+" dB";
+        }
         const float left=juce::jlimit(r.getX(),r.getRight()-274.0f,mouse_.x+12);
         const float top=juce::jlimit(r.getY(),r.getBottom()-29.0f,mouse_.y-39.0f);
         g.setColour(juce::Colour::fromRGB(6,11,18).withAlpha(0.97f));
         g.fillRoundedRectangle(left,top,274,27,4.0f);
         g.setColour(juce::Colour::fromRGB(236,243,247));
-        g.setFont(juce::Font(juce::FontOptions(10.0f)));
+        g.setFont(juce::Font(juce::FontOptions("Segoe UI",11.0f)));
         g.drawFittedText(text,(int)left+6,(int)top+3,262,21,
                          juce::Justification::centredLeft,1);
     }
@@ -640,10 +647,15 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
                      &carveQLabel_,&carveThresholdLabel_,&analyzerDepthLabel_,
                      &analyzerSlopeLabel_,&analyzerMemoryLabel_}){
         addAndMakeVisible(*label);
-        label->setColour(juce::Label::textColourId,juce::Colour::fromRGB(195,216,223));
+        label->setColour(juce::Label::textColourId,juce::Colour::fromRGB(205,224,229));
+        label->setFont(juce::Font(juce::FontOptions("Segoe UI",12.0f,juce::Font::plain)));
+        label->setJustificationType(juce::Justification::centredLeft);
     }
     title_.setText("SURGERY EQ  /  v1.0",juce::dontSendNotification);
-    title_.setFont(juce::Font(juce::FontOptions(25.0f,juce::Font::bold)));
+    title_.setFont(juce::Font(juce::FontOptions("Segoe UI",24.0f,juce::Font::bold)));
+    selection_.setFont(juce::Font(juce::FontOptions("Segoe UI",12.0f,juce::Font::bold)));
+    status_.setFont(juce::Font(juce::FontOptions("Segoe UI",11.5f,juce::Font::plain)));
+    status_.setJustificationType(juce::Justification::centredRight);
     for(auto* s:{&gain_,&threshold_}){
         addAndMakeVisible(*s);rotary(*s,"",s==&gain_?0.0:-18.0);
         s->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour::fromRGB(143,192,204));
@@ -939,6 +951,7 @@ void RootsEditor::paint(juce::Graphics& g){
     g.setColour(accent.withAlpha(.58f));
     g.drawRoundedRectangle(header,5.0f,1.0f);
     g.fillRect(header.getX()+8,header.getBottom()-2,56.0f,2.0f);
+    // Reserved grouping lines, never crossing numeric fields or labels.
     // Mode bank and modular instrument shelf.
     const auto mode=juce::Rectangle<float>(12,h-226,w-24,42);
     g.setColour(lab?juce::Colour(0xff7d969e):juce::Colour(0xff0a141d));
@@ -950,21 +963,17 @@ void RootsEditor::paint(juce::Graphics& g){
     g.fillRoundedRectangle(shelf,7.0f);
     g.setColour(accent.withAlpha(.44f));
     g.drawRoundedRectangle(shelf,7.0f,1.1f);
-    for(int i=1;i<7;++i){
-        const float x=24+(w-48)*(float)i/7.0f;
-        g.setColour((lab?juce::Colour(0xffd7e1e4):juce::Colour(0xff334957)).withAlpha(.55f));
-        g.drawVerticalLine(juce::roundToInt(x),h-113,h-49);
-    }
+    // No internal vertical bars under control labels: one coherent shelf.
     const auto label=lab?juce::Colour(0xff24404a):juce::Colour(0xff93b1bd);
     g.setColour(label);
-    g.setFont(juce::Font(juce::FontOptions(10.0f,juce::Font::bold)));
+    g.setFont(juce::Font(juce::FontOptions("Segoe UI",11.0f,juce::Font::bold)));
     const auto headerLayout=surgery::ui::headerLayout(getWidth());
     g.drawFittedText("SPIRAL ETHER TECH  /  SONAR ROOTS PROCESSOR",
                headerLayout.brand.x,headerLayout.brand.y,
                headerLayout.brand.width,headerLayout.brand.height,
                juce::Justification::centredRight,1);
     g.setColour(label.withAlpha(.85f));
-    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+    g.setFont(juce::Font(juce::FontOptions("Segoe UI",11.0f,juce::Font::plain)));
     g.drawText("SURGERY ENGINE / ROOTS / CARVE / DYN / ANALYZE",
                24,getHeight()-27,getWidth()-48,18,juce::Justification::centredLeft);
 }
@@ -987,8 +996,8 @@ void RootsEditor::resized(){
     for(int i=0;i<4;++i)
         modeButtons_[(size_t)i].setBounds(18+i*(modeWidth+modeGap),modeTop,modeWidth,29);
     const int panelY=h-153;
-    selection_.setBounds(31,panelY+2,210,26);
-    status_.setBounds(w-450,panelY+2,425,27);
+    selection_.setBounds(32,panelY+4,220,27);
+    status_.setBounds(w-470,panelY+4,440,27);
     const int left=24, usable=w-48, cw=usable/7;
     struct Entry{juce::Slider* slider;juce::Label* label;};
     const std::array<Entry,2> controls{{
