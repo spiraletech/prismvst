@@ -52,6 +52,8 @@ private:
         float smoothedGainDb = 0.0f;
     };
 
+    struct OnyxState { float sparkleLow = 0.0f, shineLow = 0.0f, smoothLow = 0.0f, tapeDc = 0.0f; };
+    std::array<OnyxState, 2> onyxStates {};
     std::array<DynamicBand, numEqBands> bands;
     std::array<juce::dsp::IIR::Filter<float>, 2> loudHp;
     std::array<juce::dsp::IIR::Filter<float>, 2> loudShelf;
