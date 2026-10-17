@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 #include "SurgerySonar.h"
 #include "SurgeryAssist.h"
+#include "SurgeryLookAndFeel.h"
 #include <array>
 #include <functional>
 #include <memory>
@@ -71,6 +72,7 @@ private:
     using ButtonA=juce::AudioProcessorValueTreeState::ButtonAttachment;
     PRISMVSTAudioProcessor& processor_;
     RootsGraph graph_;
+    SurgeryLookAndFeel lookAndFeel_;
     std::array<RootSelectorButton,7> rootButtons_;
     juce::Slider gain_,bandSpace_,space_,threshold_;
     juce::TextButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};

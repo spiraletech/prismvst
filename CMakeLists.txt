@@ -77,6 +77,7 @@ if(PRISMVST_BUILD_TESTS)
     Source/RootsEditor.h
     Source/RootsAudioEngine.h
     Source/SurgeryCarveEngine.h
+    Source/SurgeryLookAndFeel.h
   )
   juce_generate_juce_header(prismvst_tests)
   target_compile_definitions(prismvst_tests PRIVATE

@@ -457,6 +457,7 @@ void RootsGraph::popup(){
 }
 RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
 : juce::AudioProcessorEditor(&p),processor_(p),graph_(p) {
+    setLookAndFeel(&lookAndFeel_);
     setSize(1120,755);setResizable(true,true);
     setResizeLimits(840,610,1800,1100);
     addAndMakeVisible(graph_);
@@ -579,7 +580,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     setMode(0);
     startTimerHz(30);
 }
-RootsEditor::~RootsEditor(){stopTimer();}
+RootsEditor::~RootsEditor(){stopTimer();setLookAndFeel(nullptr);}
 void RootsEditor::bindNode(int n){
     node_=juce::jlimit(0,prism::roots::v2::kNodes-1,n);
     gainA_.reset();bandSpaceA_.reset();thresholdA_.reset();
@@ -664,6 +665,9 @@ void RootsEditor::updateRootButtons(){
 }
 void RootsEditor::timerCallback(){
     themeIndex_=juce::jlimit(0,3,juce::roundToInt(pval(processor_.apvts,"surgery_theme")));
+    lookAndFeel_.setTheme(themeIndex_);
+    static const char* themeNames[]{"ONYX","ETHER LAB","ALIEN GRID","CINEMA VOID"};
+    themeButton_.setButtonText(juce::String("THEME / ")+themeNames[themeIndex_]);
     // Show when compression is disabled; never present inactive controls as working.
     const int comp=juce::roundToInt(pval(processor_.apvts,
          PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp")));
@@ -699,29 +703,55 @@ void RootsEditor::timerCallback(){
     } else status_.setText(status,juce::dontSendNotification);
 }
 void RootsEditor::paint(juce::Graphics& g){
-    const auto bounds=getLocalBounds().toFloat();
-    juce::ColourGradient bg(juce::Colour::fromRGB(28,33,39),0,0,
-                             juce::Colour::fromRGB(8,12,16),0,bounds.getBottom(),false);
-    static constexpr unsigned chassis[]{0xff0b1118u,0xffb9c4c6u,0xff071b19u,0xff19202bu};
-    const auto shell=juce::Colour(chassis[themeIndex_]);
-    g.fillAll(shell);
-    g.setGradientFill(bg);
-    g.fillRect(bounds.reduced(8.0f));
-    g.setColour(juce::Colour::fromRGB(54,69,80));
-    g.drawRoundedRectangle(bounds.reduced(5),11.0f,1.5f);
-    g.setColour(juce::Colour::fromRGB(122,153,166));
+    const auto w=(float)getWidth(),h=(float)getHeight();
+    const bool lab=themeIndex_==1;
+    const auto top=lab?juce::Colour(0xffe0e8e9):
+                   themeIndex_==2?juce::Colour(0xff102923):
+                   themeIndex_==3?juce::Colour(0xff263448):
+                                  juce::Colour(0xff1b2731);
+    const auto bottom=lab?juce::Colour(0xffa5b6bb):
+                      themeIndex_==2?juce::Colour(0xff071612):
+                      themeIndex_==3?juce::Colour(0xff0e1724):
+                                     juce::Colour(0xff0a121b);
+    juce::ColourGradient chassis(top,0,0,bottom,w,h,false);
+    chassis.addColour(.45,top.interpolatedWith(bottom,.32f));
+    g.setGradientFill(chassis);
+    g.fillRect(getLocalBounds());
+    const auto accent=themeIndex_==2?juce::Colour(0xff81dfbb):
+                      themeIndex_==3?juce::Colour(0xffe0a878):
+                                     juce::Colour(0xff84d1df);
+    // Hardware header: thin structural rails rather than ornamental neon.
+    const auto header=juce::Rectangle<float>(12,9,w-24,43);
+    g.setColour(lab?juce::Colour(0xffc2d1d4):juce::Colour(0xff121e27));
+    g.fillRoundedRectangle(header,5.0f);
+    g.setColour(accent.withAlpha(.58f));
+    g.drawRoundedRectangle(header,5.0f,1.0f);
+    g.fillRect(header.getX()+8,header.getBottom()-2,56.0f,2.0f);
+    // Mode bank and modular instrument shelf.
+    const auto mode=juce::Rectangle<float>(12,h-226,w-24,42);
+    g.setColour(lab?juce::Colour(0xff7d969e):juce::Colour(0xff0a141d));
+    g.fillRoundedRectangle(mode,6.0f);
+    g.setColour(accent.withAlpha(.33f));
+    g.drawRoundedRectangle(mode,6.0f,1.0f);
+    const auto shelf=juce::Rectangle<float>(12,h-158,w-24,124);
+    g.setColour(lab?juce::Colour(0xff8a9fa5):juce::Colour(0xff14232c));
+    g.fillRoundedRectangle(shelf,7.0f);
+    g.setColour(accent.withAlpha(.44f));
+    g.drawRoundedRectangle(shelf,7.0f,1.1f);
+    for(int i=1;i<7;++i){
+        const float x=24+(w-48)*(float)i/7.0f;
+        g.setColour((lab?juce::Colour(0xffd7e1e4):juce::Colour(0xff334957)).withAlpha(.55f));
+        g.drawVerticalLine(juce::roundToInt(x),h-113,h-49);
+    }
+    const auto label=lab?juce::Colour(0xff24404a):juce::Colour(0xff93b1bd);
+    g.setColour(label);
     g.setFont(juce::Font(juce::FontOptions(10.0f,juce::Font::bold)));
-    g.drawText("SPIRAL ETHER TECH  /  SONAR ROOT SPECTRAL WORKSTATION",
-          360,24,getWidth()-380,18,juce::Justification::centredRight);
-    const int bottomY=getHeight()-158;
-    g.setColour(juce::Colour::fromRGB(19,29,37));
-    g.fillRoundedRectangle(15.0f,(float)bottomY,(float)getWidth()-30.0f,123.0f,9.0f);
-    g.setColour(juce::Colour::fromRGB(57,75,86));
-    g.drawRoundedRectangle(15.0f,(float)bottomY,(float)getWidth()-30.0f,123.0f,9.0f,1.0f);
-    g.setColour(juce::Colour::fromRGB(142,162,172));
+    g.drawText("SPIRAL ETHER TECH  /  SONAR ROOTS PROCESSOR",
+               365,19,getWidth()-385,22,juce::Justification::centredRight);
+    g.setColour(label.withAlpha(.85f));
     g.setFont(juce::Font(juce::FontOptions(10.0f)));
-    g.drawText("SONAR  /  SURGERY ROOTS  /  28 CARVE CHANNELS  /  MEASURE BEFORE CORRECTION",
-               24,getHeight()-28,getWidth()-48,18,juce::Justification::centredLeft);
+    g.drawText("SURGERY ENGINE / ROOTS / CARVE / SPACE / DYN / ANALYZE",
+               24,getHeight()-27,getWidth()-48,18,juce::Justification::centredLeft);
 }
 void RootsEditor::resized(){
     const int w=getWidth(),h=getHeight();
