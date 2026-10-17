@@ -22,7 +22,8 @@ inline float safeFrequency(double sampleRate, float frequency)
 const char* PRISMVSTAudioProcessor::sectionName(int section) noexcept
 {
     static constexpr std::array<const char*, numSections> names {
-        "SUB", "KICK", "LOW", "LOWER MID", "MID", "HIGH", "HIGHER"
+        "ROOT 1", "ROOT 2", "ROOT 3", "ROOT 4",
+        "ROOT 5", "ROOT 6", "ROOT 7"
     };
     return names[(size_t)juce::jlimit(0, numSections - 1, section)];
 }
@@ -72,8 +73,11 @@ bool PRISMVSTAudioProcessor::resetCarveNode(int root,int slot)
     // The global 1 kHz factory value would land outside most ROOTS.
     const float a=read(apvts,rootsNodeId(root*2,"hz"));
     const float b=read(apvts,rootsNodeId(root*2+1,"hz"));
+    const double fraction=(slot+1.0)/5.0;
+    const float low=juce::jmax(20.0f,std::min(a,b));
+    const float high=juce::jmax(low,std::max(a,b));
     const float frequency=juce::jlimit(20.0f,20000.0f,
-        std::sqrt(juce::jmax(20.0f,a)*juce::jmax(20.0f,b)));
+        (float)std::exp(std::log((double)low)+fraction*std::log(high/low)));
     const auto assign=[this,root,slot](const char* suffix,float value) {
         if(auto* parameter=apvts.getParameter(carveId(root,slot,suffix))) {
             parameter->beginChangeGesture();
@@ -474,9 +478,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             juce::String(sectionName(root)) + " ROOT Gain",
             juce::NormalisableRange<float>(-60.0f,60.0f,0.01f),0.0f));
         const auto id=[root](const char* suffix){return rootsRootControlId(root,suffix);};
-        const auto label=juce::String(sectionName(root))+" ROOT ";
+        const auto label=juce::String(sectionName(root))+" ";
         p.push_back(std::make_unique<juce::AudioParameterBool>(
             juce::ParameterID{id("on"),1},label+"Enabled",true));
+        p.push_back(std::make_unique<juce::AudioParameterBool>(
+            juce::ParameterID{id("mono"),1},label+"Mono Within Territory",false));
         p.push_back(std::make_unique<juce::AudioParameterFloat>(
             juce::ParameterID{id("space"),1},label+"Band Space",
             juce::NormalisableRange<float>(0.0f,100.0f,0.1f),50.0f));
@@ -556,11 +562,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             const auto id=[root,slot](const char* s){return carveId(root,slot,s);};
             const auto name=juce::String("CARVE ")+juce::String(root+1)+"/"+juce::String(slot+1)+" ";
             p.push_back(std::make_unique<juce::AudioParameterBool>(
-                juce::ParameterID{id("on"),1},name+"Enabled",false));
+                juce::ParameterID{id("on"),1},name+"Enabled",true));
             juce::NormalisableRange<float> range(20.0f,20000.0f,0.01f);
             range.setSkewForCentre(1000.0f);
             p.push_back(std::make_unique<juce::AudioParameterFloat>(
-                juce::ParameterID{id("hz"),1},name+"Frequency",range,1000.0f));
+                juce::ParameterID{id("hz"),1},name+"Frequency",range,
+                surgery::defaultCarveHz(root,slot)));
             p.push_back(std::make_unique<juce::AudioParameterFloat>(
                 juce::ParameterID{id("depth"),1},name+"Cut Depth",
                 juce::NormalisableRange<float>(0.0f,36.0f,0.01f),0.0f));
@@ -1017,11 +1024,16 @@ void PRISMVSTAudioProcessor::updateMeters(const juce::AudioBuffer<float>& buffer
 void PRISMVSTAudioProcessor::processRootsEngine(juce::AudioBuffer<float>& buffer)
 {
     using namespace prism::roots::v2;
-    rootsEngine.setSpace(read(apvts,"roots_space"));
-    rootsEngine.setMono(read(apvts,"roots_mono")>=0.5f);
+    // Historical global SPACE/MONO parameters remain for session recall,
+    // but they are no longer exposed or allowed to alter this audio path.
+    rootsEngine.setSpace(50.0);
+    rootsEngine.setMono(false);
     rootsEngine.setSoloRoot(getActiveRootsSolo());
-    for(int root=0;root<numSections;++root)
+    for(int root=0;root<numSections;++root){
         rootsEngine.setRootGain(root,read(apvts,rootsRootGainId(root)));
+        rootsEngine.setRootMono(root,
+            read(apvts,rootsRootControlId(root,"mono"))>=0.5f);
+    }
     for(int i=0;i<kNodes;++i)
     {
         const auto id=[i](const char* s){return rootsNodeId(i,s);};
@@ -1034,7 +1046,7 @@ void PRISMVSTAudioProcessor::processRootsEngine(juce::AudioBuffer<float>& buffer
         c.enabled=read(apvts,parent("on"))>=0.5f;
         c.solo=false; // only root-level SOLO is authoritative
         c.domain=(Domain)juce::roundToInt(read(apvts,parent("domain")));
-        c.space=read(apvts,parent("space"));
+        c.space=50.0; // deprecated invisible ROOT SPACE neutralized
         c.comp=(Compressor)juce::roundToInt(read(apvts,parent("comp")));
         c.detector=(Detector)juce::roundToInt(read(apvts,parent("detector")));
         c.thresholdDb=read(apvts,parent("threshold"));
@@ -1051,6 +1063,8 @@ void PRISMVSTAudioProcessor::processRootsEngine(juce::AudioBuffer<float>& buffer
         carveEngine.bounds(root,lo,hi);
         carveEngine.rootEnabled(root,
             read(apvts,rootsRootControlId(root,"on"))>=0.5f);
+        carveEngine.rootDomain(root,(surgery::Channel)juce::roundToInt(
+            read(apvts,rootsRootControlId(root,"domain"))));
         for(int slot=0;slot<surgery::kSlots;++slot) {
             const auto id=[root,slot](const char* suffix){return carveId(root,slot,suffix);};
             surgery::CarveConfig c;

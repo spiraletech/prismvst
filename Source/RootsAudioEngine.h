@@ -119,7 +119,10 @@ public:
     double rootGain(int root) const noexcept {
         return root>=0&&root<kTerritories?rootGainDb_[(size_t)root]:0.0;
     }
-    void setMono(bool mono) noexcept {mono_=mono;}
+    void setMono(bool mono) noexcept {mono_=mono;} // legacy only; UI uses setRootMono()
+    void setRootMono(int root,bool enabled) noexcept {
+        if(root>=0&&root<kTerritories)rootMono_[(size_t)root]=enabled;
+    }
     // SOLO authority belongs to one ROOT, never to an individual handle.
     void setSoloRoot(int root) noexcept {
         soloRoot_=root>=0&&root<kTerritories?root:-1;
@@ -132,8 +135,10 @@ public:
         bool active=false;
         const int requestedSolo=soloRoot_;
         for(int root=0;root<kTerritories;++root)
-            active=active||std::abs(rootGainDb_[(size_t)root])>0.00001||
-                   std::abs(smoothedRootDelta_[(size_t)root])>1.0e-8;
+            if(nodes_[(size_t)(2*root)].config.enabled)
+                active=active||rootMono_[(size_t)root]||
+                    std::abs(rootGainDb_[(size_t)root])>0.00001||
+                    std::abs(smoothedRootDelta_[(size_t)root])>1.0e-8;
         for(const auto& n:nodes_) {
             if(!n.config.enabled)continue;
             active=active||n.config.comp!=Compressor::off||n.config.space!=50.0;
@@ -179,6 +184,7 @@ public:
                 const Config& c=node.config;
                 if(!c.enabled)continue;
                 const bool wantsEffects=c.comp!=Compressor::off ||
+                                        rootMono_[(size_t)root] ||
                                         std::abs(c.space-50.0)>1e-5;
                 if(!wantsEffects)continue;
                 auto& tap=rootFxBands_[(size_t)root].filters;
@@ -191,6 +197,11 @@ public:
                 const double ea=1.0-correlationAlpha_;
                 node.midEnergy+=ea*(bandMid*bandMid-node.midEnergy);
                 node.sideEnergy+=ea*(bandSide*bandSide-node.sideEnergy);
+                if(rootMono_[(size_t)root]) {
+                    // Frequency-selective mono: remove SIDE only within this
+                    // ROOT's HP/LP territory. Never collapse the entire mix.
+                    s-=bandSide;
+                }
                 if(std::abs(c.space-50.0)>1e-5){
                     const double requested=spaceToWidth(c.space);
                     double allowed=requested;
@@ -241,16 +252,23 @@ public:
                     const double delta=smoothedRootDelta_[(size_t)root];
                     if(delta==0.0)continue;
                     auto& tap=rootGainBands_[(size_t)root].filters;
-                    m+=delta*tap[1].sample(tap[0].sample(dryM));
-                    s+=delta*tap[3].sample(tap[2].sample(dryS));
+                    const double bm=tap[1].sample(tap[0].sample(dryM));
+                    const double bs=tap[3].sample(tap[2].sample(dryS));
+                    const auto domain=nodes_[(size_t)(root*2)].config.domain;
+                    if(domain!=Domain::side)m+=delta*bm;
+                    if(domain!=Domain::mid)s+=delta*bs;
                 }
             }
             if(solo) {
                 auto audition=[&](int root)->std::array<double,2> {
                     auto& filters=soloBands_[(size_t)root].filters;
                     const double gain=1.0+smoothedRootDelta_[(size_t)root];
-                    return {gain*filters[1].sample(filters[0].sample(dryM)),
-                            gain*filters[3].sample(filters[2].sample(dryS))};
+                    const double bm=filters[1].sample(filters[0].sample(dryM));
+                    const double bs=filters[3].sample(filters[2].sample(dryS));
+                    const auto domain=nodes_[(size_t)(root*2)].config.domain;
+                    return {(domain==Domain::side?bm:gain*bm),
+                            rootMono_[(size_t)root]?0.0:
+                            (domain==Domain::mid?bs:gain*bs)};
                 };
                 const auto next=audition(currentSolo_);
                 if(soloFadeLeft_>0&&previousSolo_>=0){
@@ -352,6 +370,7 @@ private:
     std::array<RootBand,kTerritories> rootGainBands_{};
     std::array<RootBand,kTerritories> rootFxBands_{};
     std::array<double,kTerritories> rootGainDb_{};
+    std::array<bool,kTerritories> rootMono_{};
     std::array<double,kTerritories> smoothedRootDelta_{};
     double gainSmoothingAlpha_=0.99;
     int soloRoot_=-1;

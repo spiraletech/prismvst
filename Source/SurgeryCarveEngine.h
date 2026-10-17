@@ -9,6 +9,13 @@
 
 namespace surgery {
 constexpr int kRoots=7, kSlots=4, kCarves=kRoots*kSlots;
+inline float defaultCarveHz(int root,int slot) noexcept {
+    static constexpr double low[]{20,60,120,250,500,2000,6000};
+    static constexpr double high[]{60,120,250,500,2000,6000,20000};
+    root=std::clamp(root,0,6);slot=std::clamp(slot,0,3);
+    return (float)std::exp(std::log(low[root])+
+        (slot+1.0)/5.0*std::log(high[root]/low[root]));
+}
 enum class Channel : int { stereo=0, mid=1, side=2 };
 struct CarveConfig {
     double hz=1000.0, depthDb=0.0, q=2.0, thresholdDb=-24.0;
@@ -63,6 +70,9 @@ public:
     void rootEnabled(int root,bool enabled) noexcept {
         if(root>=0&&root<kRoots)enabled_[(size_t)root]=enabled;
     }
+    void rootDomain(int root,Channel domain) noexcept {
+        if(root>=0&&root<kRoots)domain_[(size_t)root]=domain;
+    }
     void configure(int root,int slot,CarveConfig c) noexcept {
         if(root<0||root>=kRoots||slot<0||slot>=kSlots)return;
         c.hz=std::clamp(c.hz,20.0,std::min(20000.0,sr_*0.45));
@@ -92,13 +102,15 @@ public:
             for(int slot=0;slot<kSlots;++slot){
                 auto& n=nodes_[(size_t)(root*kSlots+slot)];
                 const auto& c=n.config;
+                const Channel channel=domain_[(size_t)root]==Channel::stereo?
+                    c.channel:domain_[(size_t)root];
                 if(!c.enabled||c.depthDb<0.001)continue;
                 const double weight=boundaryWeight(c.hz,low_[(size_t)root],high_[(size_t)root]);
                 if(weight<1e-7)continue;
                 for(std::size_t i=0;i<samples;++i){
                     const double l=left[i],r=right[i],mid=0.5*(l+r),side=0.5*(l-r);
-                    const double dl=c.channel==Channel::mid?mid:c.channel==Channel::side?side:l;
-                    const double dr=c.channel==Channel::stereo?r:dl;
+                    const double dl=channel==Channel::mid?mid:channel==Channel::side?side:l;
+                    const double dr=channel==Channel::stereo?r:dl;
                     if(c.dynamic){
                         const double detected=std::max(std::abs(n.detector[0].sample(dl)),
                                                         std::abs(n.detector[1].sample(dr)));
@@ -109,11 +121,11 @@ public:
                     const double target=weight*(c.dynamic?std::clamp((levelDb-c.thresholdDb)/12.0,0.0,1.0):1.0);
                     n.mix=blendAlpha_*n.mix+(1.0-blendAlpha_)*target;
                     const double y1=dl+n.mix*(n.eq[0].sample(dl)-dl);
-                    const double y2=c.channel==Channel::stereo?
+                    const double y2=channel==Channel::stereo?
                         dr+n.mix*(n.eq[1].sample(dr)-dr):0.0;
-                    if(c.channel==Channel::mid){
+                    if(channel==Channel::mid){
                         left[i]=(float)(y1+side);right[i]=(float)(y1-side);
-                    }else if(c.channel==Channel::side){
+                    }else if(channel==Channel::side){
                         left[i]=(float)(mid+y1);right[i]=(float)(mid-y1);
                     }else{
                         left[i]=(float)y1;right[i]=(float)y2;
@@ -136,6 +148,7 @@ private:
     std::array<double,kRoots> low_{20,60,120,250,500,2000,6000};
     std::array<double,kRoots> high_{60,120,250,500,2000,6000,20000};
     std::array<bool,kRoots> enabled_{true,true,true,true,true,true,true};
+    std::array<Channel,kRoots> domain_{};
     double sr_=48000,attack_=0.99,release_=0.999,blendAlpha_=0.99;
 };
 } // namespace surgery
