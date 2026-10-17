@@ -13,5 +13,8 @@ int main(){
     if(adjustQ(4.0f,0.1f,true)<=4.0f)return 8;
     if(adjustQ(96.0f,10,false)!=96.0f)return 9;
     if(bandwidthOctaves(15.0f)>=bandwidthOctaves(1.0f))return 10;
+    if(tightnessPercent(0.3f)!=0.0f||
+       tightnessPercent(96.0f)!=100.0f)return 11;
+    if(!(tightnessPercent(24.0f)>tightnessPercent(2.0f)))return 12;
     std::cout<<"ROOT frequency clamp, CTRL scrub and numerical Q proofs passed\n";
 }

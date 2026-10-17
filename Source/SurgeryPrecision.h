@@ -29,6 +29,13 @@ inline float adjustQ(float q,float wheelTurns,bool fine) noexcept {
     const float step=fine?0.025f:0.25f;
     return std::clamp(q+wheelTurns*step,0.3f,96.0f);
 }
+// Display-only logarithmic Q tightness. Lives with precision controls,
+ // independent of any retired waterfall/spectrogram implementation.
+inline float tightnessPercent(float q) noexcept {
+    constexpr float minQ=0.3f,maxQ=96.0f;
+    return 100.0f*std::clamp(
+        std::log(std::clamp(q,minQ,maxQ)/minQ)/std::log(maxQ/minQ),0.0f,1.0f);
+}
 inline float bandwidthOctaves(float q) noexcept {
     return 2.0f*std::asinh(1.0f/(2.0f*std::clamp(q,0.3f,96.0f)))/
            std::log(2.0f);

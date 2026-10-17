@@ -1003,7 +1003,7 @@ void RootsEditor::timerCallback(){
     updateRootButtons();
     const float factor=pval(processor_.apvts,
         PRISMVSTAudioProcessor::carveId(node_/2,carveSlot_,"q"));
-    const float tight=surgery::tightnessPercent(factor);
+    const float tight=surgery::precision::tightnessPercent(factor);
     carveQLabel_.setText("Q / "+juce::String(tight,1)+"% TIGHT",
                          juce::dontSendNotification);
     carveOn_.setButtonText(pval(processor_.apvts,
