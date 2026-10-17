@@ -1,30 +1,29 @@
-# SURGERY EQ v1.0 — development baseline
+# SURGERY EQ v1.0 — Engineering acceptance status
 
-Spiral Ether Tech. Branch: `surgery-eq-v1.0`.
+**In source (not yet proof of runtime correctness)**
+- [x] Product name updated and Windows VST3 packaging renamed
+- [x] Seven ROOTS with independent boundary handles based on ROOTS v2 baseline
+- [x] 28 CARVE DSP instances, host parameters, stereo/Mid/Side routing and four C++ proof tests
+- [x] Five mode tabs, CARVE slot editing controls, graph drag gestures and ON/SOLO/MONO hardware buttons
+- [x] Stationary SONAR intensity/persistence engine and four new tests
+- [x] Deterministic ASSIST prominence scanner, four new tests, explicit user-approved insertion
+- [x] Persisted four-theme selection and seven custom ROOT RGB colors
+- [x] ROOT right-click targeting and no hardware-model selection in its menu
+- [x] Audio doctrine and UI thesis documentation
 
-This is the first engineering update built on the latest verified ROOTS source branch, **not** an assertion that all planned v1.0 features exist.
+**Required gates**
+- [ ] Windows CI successful on final commit
+- [ ] FL Studio discovery, parameter persistence, saved project recall and actual GUI interaction
+- [ ] Stereo width / phase and CARVE response listening tests
+- [ ] CPU, aliasing, click-free automation and thread-safety profiling
+- [ ] SONAR calibrated display and graph accuracy verified against reference tones
+- [ ] Accessibility and high-DPI screenshot review
 
-## Implemented in this patch
-- User-facing product name and Windows VST3 artifact name changed to SURGERY EQ v1.0.
-- Historic VST3 bundle ID, plugin code and existing parameter IDs intentionally retained for backwards compatibility with ROOTS PROTO 001.
-- ROOT right-click ownership selects the territory under the pointer instead of unintentionally targeting a previously selected root.
-- Root menu compressor model selections removed; the existing internal models remain in the DSP until replaced through tested migration.
-- MONO / SOLO / ON are proper illuminated buttons instead of checkbox-styled toggles.
-- Theme button cycles four chassis appearance variants (ONYX / ETHER LAB / ALIEN GRID / CINEMA VOID).
-- Original third-party branding references removed from the Roots editor.
-- Windows artifact packaging renamed.
+**Explicitly future / not in v1.0 engineering baseline**
+- Actual vocal/drum/bass stem separation
+- Trained source-aware AI model
+- Full spectral trail history and dual pre/post spectrogram
+- FIR linear-phase mode and true-peak limiting
+- Fully configurable compressor modeling and DELTA audio subtraction
 
-## Unfinished: do not advertise as implemented
-- Independent full-panel theme palette and per-ROOT RGB customization.
-- Calibrated sonar thermal heatmap and AI diagnostics.
-- 28 CARVE nodes (current engine includes fourteen boundary handles).
-- True source separation, source-aware instrument SOLO.
-- New native adaptive compressor, exact compressor timing response.
-- Complete surgical parametric node DSP.
-- Full proof tests for the updated UI and FL Studio.
-
-## Verification
-The GitHub Actions Windows job is the acceptance gate. No local Windows compilation is claimed. Confirm tests and FL Studio plugin discovery before declaring release stable.
-
-## Compatibility
-The host-facing display name changes, but plugin identity is deliberately retained for host-recall migration. Existing projects should be backed up and tested.
+Main branch left untouched to preserve the previous verified release line.

@@ -1,27 +1,26 @@
 # SURGERY EQ v1.0 — Spiral Ether Tech
 
-Windows-first native JUCE C++20 VST3 **development build**, evolved from the PRISM ROOTS PROTO 001 engine.
+Original Windows-first surgical equalization VST3 developed in C++20/JUCE.
 
-## Current functionality
-- Seven selectable frequency ROOT territories with two frequency-boundary handles each.
-- Measured frequency analyzer, ROOT SOLO, ROOT gain, ROOT/Global SPACE and stereo controls.
-- ROOT-only contextual menu: enabled, SOLO, EQ channel, compressor channel, SPACE presets.
-- Dynamic processing controlled through the explicit **DYN ON/OFF** button; COMP THRESHOLD is enabled only when DYN is active.
-- Hardware-style ON, SOLO and MONO switches.
-- Four initial chassis themes via the THEME button.
-- Existing host parameter IDs and VST3 bundle identity retained for backwards project compatibility.
+**Development branch:** `surgery-eq-v1.0`. This is an engineering build and is not declared production-ready until Windows CI and actual FL Studio verification pass.
 
-## What is *not* implemented yet
-- The planned 28 CARVE nodes, true source extraction and AI-based surgical analysis.
-- Calibrated SONAR thermal history/heatmaps and user-custom RGB palettes.
-- Independent full-window recoloring for every graph element.
-- Production release acceptance on FL Studio.
+## Built features
+- Seven ROOTS, two boundary handles each; fixed stereo/root EQ and compression engine
+- Four CARVE slots per ROOT (28 total), static and threshold-driven dynamic cuts with stereo/Mid/Side targeting
+- Direct graph CARVE frequency/depth dragging and four-slot parameter shelf
+- ROOT / CARVE / SPACE / DYN / ANALYZE UI modes
+- Stationary SONAR heat/persistence field from calibrated spectrum frames
+- Evidence-based, deterministic ASSIST candidate scan with explicit user approval to apply a correction
+- ON, SOLO, MONO and DYN buttons; root-level context menu without compressor model listings
+- Four chassis themes plus per-ROOT persisted RGB customization (palette and custom hex)
+- Windows VST3 packaging as `SURGERY EQ v1.0.vst3`
 
-See [SURGERY_EQ_V1_0_STATUS.md](SURGERY_EQ_V1_0_STATUS.md) for accurate status.
+This version **does not** contain an instrument-separating AI model, pretrained intelligence or completed EXTRACT engine.
+
+See [Audio Doctrine / UI Thesis](docs/SURGERY_EQ_V1_0_AUDIO_BIBLE.md) and [implementation status](SURGERY_EQ_V1_0_STATUS.md).
 
 ## Build
-
-Requires Visual Studio 2022 C++ workloads, CMake 3.24+, and network access to fetch JUCE 8.0.4.
+Windows x64, Visual Studio C++ workload, CMake 3.24+, JUCE 8.0.4 fetched by configure:
 
 ```powershell
 cmake -S . -B build -A x64 -DPRISMVST_BUILD_TESTS=ON
@@ -29,7 +28,5 @@ cmake --build build --config Release --parallel 2
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The Windows Actions workflow stages the bundle as `SURGERY EQ v1.0.vst3`. Verify the workflow result before installing.
-
 ## Compatibility
-Renaming the plugin's VST3 identifier would risk breaking existing DAW project recall. This development branch deliberately retains the previous identifier while changing the visible product name. Back up sessions and test reload behavior in FL Studio.
+VST3 bundle identity and historic host parameter IDs remain unchanged from ROOTS PROTO 001. Visible product name and artifact filename changed; FL Studio discovery and old-project recall require in-host confirmation. Back up prior projects before using this branch.
