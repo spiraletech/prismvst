@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(PRISMVST VERSION 1.0.1 LANGUAGES C CXX)
+project(PRISMVST VERSION 1.0.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -65,6 +65,9 @@ target_link_libraries(PRISMVST PRIVATE
 
 option(PRISMVST_BUILD_TESTS "Build DSP smoke tests" ON)
 if(PRISMVST_BUILD_TESTS)
+  add_executable(surgery_onyx_study Tests/OnyxStudy.cpp)
+  target_compile_features(surgery_onyx_study PRIVATE cxx_std_20)
+  add_test(NAME surgery_onyx_character_regression COMMAND surgery_onyx_study)
   enable_testing()
   juce_add_console_app(prismvst_tests PRODUCT_NAME "PRISMVST Tests")
   target_sources(prismvst_tests PRIVATE

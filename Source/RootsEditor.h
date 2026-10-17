@@ -96,13 +96,13 @@ private:
     int themeIndex_=0,mode_=0,carveSlot_=0;
     std::array<juce::TextButton,4> modeButtons_;
     std::array<juce::TextButton,4> carveSlotButtons_;
-    juce::Slider carveFrequency_,carveDepth_,carveQ_,carveThreshold_;
+    juce::Slider carveFrequency_,carveDepth_,carveQ_;
     std::array<juce::Slider,4> onyxSliders_;
     std::array<juce::Label,4> onyxLabels_;
     std::array<std::unique_ptr<SliderA>,4> onyxAttachments_;
     juce::TextButton carveOn_{"CARVE ON"},carveDynamic_{"DYNAMIC"};
-    juce::Label carveFrequencyLabel_,carveDepthLabel_,carveQLabel_,carveThresholdLabel_;
-    std::unique_ptr<SliderA> carveFrequencyA_,carveDepthA_,carveQA_,carveThresholdA_;
+    juce::Label carveFrequencyLabel_,carveDepthLabel_,carveQLabel_;
+    std::unique_ptr<SliderA> carveFrequencyA_,carveDepthA_,carveQA_;
     std::unique_ptr<ButtonA> carveOnA_,carveDynamicA_;
     juce::Label title_,selection_,status_,gainLabel_,thresholdLabel_,
         analyzerDepthLabel_,analyzerSlopeLabel_,analyzerMemoryLabel_,analyzerLegend_;

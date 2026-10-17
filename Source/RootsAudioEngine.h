@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <numbers>
 #include "RootsSpectrumColours.h"
+#include "SurgeryOnyx.h"
 
 namespace prism::roots::v2 {
 constexpr int kTerritories=7,kNodes=14;
@@ -15,7 +16,7 @@ enum class Domain:int {stereo=0,mid=1,side=2};
 enum class Compressor:int {off=0,optical3=1,optical4=2,tube3=3,fet4=4};
 enum class Detector:int {linked=0,dual=1,mid=2,side=3};
 struct Config {
-    double hz=1000.0,gainDb=0.0,q=1.0,space=50.0,thresholdDb=-18.0;
+    double hz=1000.0,gainDb=0.0,q=1.0,space=50.0,thresholdDb=0.0;
     Domain domain=Domain::stereo;
     Compressor comp=Compressor::off;
     Detector detector=Detector::linked;
@@ -77,9 +78,6 @@ public:
         correlationAlpha_=std::exp(-1.0/(0.025*sr_));
         sideAlpha_=std::exp(-1.0/(0.008*sr_));
         gainSmoothingAlpha_=std::exp(-1.0/(0.010*sr_));
-        airAlpha_=1.0-std::exp(-2.0*std::numbers::pi*4200.0/sr_);
-        presenceAlpha_=1.0-std::exp(-2.0*std::numbers::pi*1600.0/sr_);
-        dcAlpha_=1.0-std::exp(-2.0*std::numbers::pi*8.0/sr_);
         globalMidPower_=globalSidePower_=0.0;appliedSpace_=1.0;
         grMax_=0.0;meter_={};
         currentSolo_=-1;previousSolo_=-1;previousRequest_=-1;soloWet_=0;soloFadeLeft_=0;soloFadeSamples_=0;
@@ -90,7 +88,7 @@ public:
             node.midEq.reset();node.sideEq.reset();
             node.midTap.reset();node.sideTap.reset();
             node.e1=node.e2=node.sideEnergy=node.midEnergy=0.0;
-            node.onyxMid={};node.onyxSide={};
+            node.onyxMid.prepare(sr_);node.onyxSide.prepare(sr_);
             node.fx={node.config.sparkle,node.config.shine,node.config.smooth,node.config.tape};
             node.enableMix=node.config.enabled?1.0:0.0;
             node.monoMix=rootMono_[(size_t)(i/2)]?1.0:0.0;
@@ -98,7 +96,6 @@ public:
             node.threshold=node.config.thresholdDb;
             updateFilters(i);
             config(i,node.config);
-            node.currentSoftAlpha=node.softAlpha;
         }
         haveConfig_=true;
         for(int root=0;root<kTerritories;++root){
@@ -122,9 +119,6 @@ public:
         if(c.comp!=Compressor::off)n.profile=c.comp;
         n.attack=std::exp(-1.0/((n.profile==Compressor::fet4?0.0008:n.profile==Compressor::tube3?0.012:0.010)*sr_));
         n.release=std::exp(-1.0/((n.profile==Compressor::fet4?0.14:n.profile==Compressor::tube3?0.32:0.65)*sr_));
-        n.softAlpha=1.0-std::exp(-2.0*std::numbers::pi*(16000.0-13400.0*c.smooth)/sr_);
-        n.tapeDrive=1.0+3.5*c.tape;
-        n.tapeNorm=std::tanh(n.tapeDrive);
         if(changed){updateFilters(index);updateSoloBand(index/2);}
     }
     Config get(int index) const noexcept {return nodes_[(size_t)std::clamp(index,0,kNodes-1)].config;}
@@ -269,15 +263,15 @@ public:
         meter_.largestGrDb=greatestGr;
     }
 private:
-    struct OnyxMemory { double air=0.0,presence=0.0,soft=0.0,dc=0.0; };
+    using OnyxMemory=surgery::Onyx;
     struct Node {
         Config config{};
-        double attack=0.99,release=0.999,softAlpha=0.9,tapeDrive=1.0,tapeNorm=0.7615941559557649;
+        double attack=0.99,release=0.999;
         Filter midEq,sideEq,midTap,sideTap;
         double e1=0.0,e2=0.0,midEnergy=0.0,sideEnergy=0.0;
         OnyxMemory onyxMid{},onyxSide{};
         std::array<double,4> fx{};
-        double enableMix=1,monoMix=0,compMix=0,threshold=-18,currentSoftAlpha=0.9;
+        double enableMix=1,monoMix=0,compMix=0,threshold=0;
         Compressor profile=Compressor::optical3;
     };
     void applyRootEffects(int root, double bandMid, double bandSide,
@@ -292,7 +286,6 @@ private:
         node.monoMix+=a*((rootMono_[(size_t)root]?1.0:0.0)-node.monoMix);
         node.compMix+=a*((c.comp==Compressor::off?0.0:1.0)-node.compMix);
         node.threshold+=a*(c.thresholdDb-node.threshold);
-        node.currentSoftAlpha+=a*(node.softAlpha-node.currentSoftAlpha);
         const double tapM=c.domain==Domain::side?0.0:bandMid;
         const double tapS=c.domain==Domain::mid?0.0:bandSide;
         if(std::abs(c.space-50.0)>1e-5){
@@ -339,20 +332,7 @@ private:
         s=originalS+node.enableMix*(s-originalS);
     }
     double onyxSample(double x,OnyxMemory& state,const Node& node) const noexcept {
-        const double sparkle=node.fx[0],shine=node.fx[1],smooth=node.fx[2],tape=node.fx[3];
-        state.air+=airAlpha_*(x-state.air);
-        double y=x;
-        if(sparkle>1e-10)y+=sparkle*0.20*std::tanh((x-state.air)*(1.0+sparkle));
-        state.presence+=presenceAlpha_*(y-state.presence);
-        y+=shine*0.30*(y-state.presence);
-        state.soft+=node.currentSoftAlpha*(y-state.soft);
-        y+=smooth*0.88*(state.soft-y);
-        if(tape>0.0) {
-            y+=tape*(std::tanh(node.tapeDrive*y)/node.tapeNorm-y);
-            state.dc+=dcAlpha_*(y-state.dc);
-            y-=state.dc;
-        }
-        return y;
+        return state.sample(x,node.fx);
     }
     // Each root's two boundary handles determine the exact frequency
     // interval for BOTH the palette and the audible bandpass.
@@ -360,6 +340,8 @@ private:
         const auto a=nodes_[(size_t)(2*root)].config.hz;
         const auto b=nodes_[(size_t)(2*root+1)].config.hz;
         const double low=std::min(a,b),high=std::max(a,b);
+        auto& colour=nodes_[(size_t)(2*root)];
+        colour.onyxMid.setRootBand(low,high);colour.onyxSide.setRootBand(low,high);
         auto& tap=soloBands_[(size_t)root].filters;
         tap[0].setEdge(sr_,low,true); tap[1].setEdge(sr_,high,false);
         tap[2].setEdge(sr_,low,true); tap[3].setEdge(sr_,high,false);
@@ -415,7 +397,6 @@ private:
     std::array<bool,kTerritories> rootMono_{};
     std::array<double,kTerritories> smoothedRootDelta_{};
     double gainSmoothingAlpha_=0.99;
-    double airAlpha_=0.5,presenceAlpha_=0.2,dcAlpha_=0.001;
     int soloRoot_=-1;
     double sr_=48000.0,correlationAlpha_=0.999,sideAlpha_=0.99;
     double globalMidPower_=0.0,globalSidePower_=0.0,appliedSpace_=1.0,grMax_=0.0;

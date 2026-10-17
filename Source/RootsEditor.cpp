@@ -770,14 +770,14 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     }
     for(auto* label:{&title_,&selection_,&status_,&gainLabel_,
                      &thresholdLabel_,&carveFrequencyLabel_,&carveDepthLabel_,
-                     &carveQLabel_,&carveThresholdLabel_,&analyzerDepthLabel_,
+                     &carveQLabel_,&analyzerDepthLabel_,
                      &analyzerSlopeLabel_,&analyzerMemoryLabel_,&analyzerLegend_}){
         addAndMakeVisible(*label);
         label->setColour(juce::Label::textColourId,juce::Colour::fromRGB(205,224,229));
         label->setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::plain)));
         label->setJustificationType(juce::Justification::centredLeft);
     }
-    title_.setText("SURGERY EQ  /  v1.0.1",juce::dontSendNotification);
+    title_.setText("SURGERY EQ  /  v1.0.2",juce::dontSendNotification);
     analyzerLegend_.setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::bold)));
     analyzerLegend_.setText("CHROMATIC SONAR   /   FREQUENCY x ENERGY",
                             juce::dontSendNotification);
@@ -786,7 +786,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     status_.setFont(juce::Font(juce::FontOptions(11.5f,juce::Font::plain)));
     status_.setJustificationType(juce::Justification::centredRight);
     for(auto* s:{&gain_,&threshold_}){
-        addAndMakeVisible(*s);rotary(*s,"",s==&gain_?0.0:-18.0);
+        addAndMakeVisible(*s);rotary(*s,"",0.0);
         s->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour::fromRGB(143,192,204));
         s->setColour(juce::Slider::rotarySliderOutlineColourId,juce::Colour::fromRGB(38,55,65));
         s->setColour(juce::Slider::textBoxTextColourId,juce::Colour::fromRGB(239,243,245));
@@ -797,11 +797,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     gain_.setTooltip("Entire ROOT frequency range gain: -60 to +60 dB");
 
     thresholdLabel_.setText("COMP THRESHOLD",juce::dontSendNotification);
-    // Touching the threshold activates the root compressor in old OFF presets.
-    threshold_.onDragStart=[this] {
-        const auto id=PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp");
-        if(pval(processor_.apvts,id)<0.5f)change(processor_,id,4.0f);
-    };
+    threshold_.setTooltip("Compression stays OFF until you choose a COMPRESSION profile. Double-click resets to 0 dBFS.");
     for(auto* b:{&mono_,&on_,&solo_}){
         b->setClickingTogglesState(true);
         b->setColour(juce::TextButton::buttonColourId,juce::Colour::fromRGB(24,38,47));
@@ -823,12 +819,11 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         b.onClick=[this,i]{carveSlot_=i;bindCarve();graph_.setPresentation(themeIndex_,mode_,carveSlot_);};
         addAndMakeVisible(b);
     }
-    for(auto* s:{&carveFrequency_,&carveDepth_,&carveQ_,&carveThreshold_}){
+    for(auto* s:{&carveFrequency_,&carveDepth_,&carveQ_}){
         rotary(*s,"",0.0);addAndMakeVisible(*s);
     }
     carveDepth_.setDoubleClickReturnValue(true,0.0);
     carveQ_.setDoubleClickReturnValue(true,2.0);
-    carveThreshold_.setDoubleClickReturnValue(true,-24.0);
     carveFrequency_.setMouseDragSensitivity(2000);
     carveQ_.setMouseDragSensitivity(2800);
     carveQ_.setNumDecimalPlacesToDisplay(3);
@@ -836,8 +831,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     carveQ_.setTooltip("Ultra-surgical Q 0.300 to 96.000. Higher = tighter notch; 0-100% tightness shown above knob. SHIFT+wheel = fine Q.");
     carveFrequencyLabel_.setText("FREQUENCY Hz",juce::dontSendNotification);
     carveDepthLabel_.setText("CUT DEPTH dB",juce::dontSendNotification);
-    carveQLabel_.setText("Q / PRECISION",juce::dontSendNotification);
-    carveThresholdLabel_.setText("TRIGGER dBFS",juce::dontSendNotification);
+    carveQLabel_.setText("Q / TIGHTNESS",juce::dontSendNotification);
     for(auto* b:{&carveOn_,&carveDynamic_}){
         b->setClickingTogglesState(true);
         addAndMakeVisible(*b);
@@ -846,7 +840,9 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     for(int i=0;i<4;++i){
         auto& s=onyxSliders_[(size_t)i];
         rotary(s," %",0.0);s.setRange(0.0,100.0,0.1);
-        s.setMouseDragSensitivity(600);
+        s.setMouseDragSensitivity(1200);
+        static const char* tips[]{"Transient harmonic shimmer; fine low-level travel, zero is neutral.","Smooth linear presence shelf; adds openness without a saturator.","Dynamic high-frequency edge taming; preserves the dry attack.","Low-drive antialiased tape warmth with gentle high-frequency rounding."};
+        s.setTooltip(tips[i]);
         s.setDoubleClickReturnValue(true,0.0);
         addAndMakeVisible(s);
         onyxLabels_[(size_t)i].setText(names[(size_t)i],juce::dontSendNotification);
@@ -975,7 +971,7 @@ void RootsEditor::bindNode(int n){
 }
 void RootsEditor::bindCarve(){
     carveFrequencyA_.reset();carveDepthA_.reset();
-    carveQA_.reset();carveThresholdA_.reset();
+    carveQA_.reset();
     carveOnA_.reset();carveDynamicA_.reset();
     const int root=node_/2,slot=carveSlot_;
     const float a=pval(processor_.apvts,PRISMVSTAudioProcessor::rootsNodeId(root*2,"hz"));
@@ -1001,7 +997,6 @@ void RootsEditor::bindCarve(){
     carveFrequencyA_=std::make_unique<SliderA>(processor_.apvts,id("hz"),carveFrequency_);
     carveDepthA_=std::make_unique<SliderA>(processor_.apvts,id("depth"),carveDepth_);
     carveQA_=std::make_unique<SliderA>(processor_.apvts,id("q"),carveQ_);
-    carveThresholdA_=std::make_unique<SliderA>(processor_.apvts,id("threshold"),carveThreshold_);
     carveOnA_=std::make_unique<ButtonA>(processor_.apvts,id("on"),carveOn_);
     carveDynamicA_=std::make_unique<ButtonA>(processor_.apvts,id("dynamic"),carveDynamic_);
     carveOn_.setButtonText(pval(processor_.apvts,id("on"))>=0.5f?
@@ -1024,8 +1019,8 @@ void RootsEditor::setMode(int next){
         b.setColour(juce::TextButton::textColourOnId,juce::Colours::white);
     }
     const bool carve=mode_==1;
-    for(auto* s:{&carveFrequency_,&carveDepth_,&carveQ_,&carveThreshold_})s->setVisible(carve);
-    for(auto* l:{&carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_,&carveThresholdLabel_})l->setVisible(carve);
+    for(auto* s:{&carveFrequency_,&carveDepth_,&carveQ_})s->setVisible(carve);
+    for(auto* l:{&carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_})l->setVisible(carve);
     for(auto& b:carveSlotButtons_)b.setVisible(carve);
     carveOn_.setVisible(carve);carveDynamic_.setVisible(carve);
     analyzerLegend_.setVisible(mode_==3);
@@ -1077,18 +1072,16 @@ void RootsEditor::timerCallback(){
     lookAndFeel_.setTheme(themeIndex_);
     const auto labelColour=themeIndex_==1?juce::Colour(0xff17303c):juce::Colour(0xffc1d9e0);
     for(auto* label:{&title_,&selection_,&status_,&gainLabel_,&thresholdLabel_,
-                    &carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_,&carveThresholdLabel_,
+                    &carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_,
                     &analyzerDepthLabel_,&analyzerSlopeLabel_,&analyzerMemoryLabel_,&analyzerLegend_,
                     &compLabel_,&domainLabel_,&detectorLabel_,&outputLabel_})
         label->setColour(juce::Label::textColourId,labelColour);
     for(auto& label:onyxLabels_)label.setColour(juce::Label::textColourId,labelColour);
     static const char* themeNames[]{"ONYX","ETHER LAB","ALIEN GRID","CINEMA VOID"};
     themeButton_.setButtonText(juce::String("THEME / ")+themeNames[themeIndex_]);
-    // Show when compression is disabled; never present inactive controls as working.
-    const int comp=juce::roundToInt(pval(processor_.apvts,
-         PRISMVSTAudioProcessor::rootsRootControlId(node_/2,"comp")));
+    // Threshold remains editable while OFF without activating compression.
     threshold_.setEnabled(true);
-thresholdLabel_.setText(comp==0?"THRESHOLD / OFF":"COMP THRESHOLD",
+thresholdLabel_.setText("COMP THRESHOLD",
                             juce::dontSendNotification);
     updateRootButtons();
     const float factor=pval(processor_.apvts,
@@ -1219,16 +1212,16 @@ void RootsEditor::resized(){
     mono_.setBounds(left+6*cw,panelY+72,cw-2,25);
     for(int i=0;i<4;++i)
         carveSlotButtons_[(size_t)i].setBounds(255+i*62,panelY+1,56,27);
-    const std::array<juce::Slider*,4> cs{
-        &carveFrequency_,&carveDepth_,&carveQ_,&carveThreshold_
+    const std::array<juce::Slider*,3> cs{
+        &carveFrequency_,&carveDepth_,&carveQ_
     };
-    const std::array<juce::Label*,4> cl{
-        &carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_,&carveThresholdLabel_
+    const std::array<juce::Label*,3> cl{
+        &carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_
     };
-    for(int i=0;i<4;++i){
-        const int x=left+(i+1)*cw;
-        cl[(size_t)i]->setBounds(x,panelY+24,cw,18);
-        cs[(size_t)i]->setBounds(x,panelY+40,cw,74);
+    for(int i=0;i<3;++i){
+        const int x=left+cw+i*(5*cw/3);
+        cl[(size_t)i]->setBounds(x,panelY+24,5*cw/3,18);
+        cs[(size_t)i]->setBounds(x,panelY+40,5*cw/3,74);
     }
     carveOn_.setBounds(left,panelY+38,cw-2,25);
     carveDynamic_.setBounds(left,panelY+69,cw-2,25);

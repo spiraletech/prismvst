@@ -38,6 +38,51 @@ bool click(juce::Component& parent,const juce::String& caption){
 bool runQualityTests(){
     juce::ScopedJuceInitialiser_GUI gui;
     juce::MidiBuffer midi;
+    {
+        auto fresh=std::make_unique<PRISMVSTAudioProcessor>();
+        {
+            std::unique_ptr<juce::AudioProcessorEditor> factory(fresh->createEditor());
+            auto image=factory->createComponentSnapshot(factory->getLocalBounds());
+            juce::FileOutputStream file(juce::File::getCurrentWorkingDirectory().getChildFile("surgery-ui-factory-ROOT.png"));
+            file.setPosition(0);file.truncate();
+            if(!juce::PNGImageFormat().writeImageToStream(image,file))return false;
+        }
+        for(int root=0;root<7;++root){
+            auto comp=PRISMVSTAudioProcessor::rootsRootControlId(root,"comp");
+            auto threshold=PRISMVSTAudioProcessor::rootsRootControlId(root,"threshold");
+            if(fresh->apvts.getRawParameterValue(comp)->load()!=0
+               ||fresh->apvts.getRawParameterValue(threshold)->load()!=0)return false;
+            set(*fresh,threshold,-29.9f);
+            if(fresh->apvts.getRawParameterValue(comp)->load()!=0)return false;
+        }
+        std::unique_ptr<juce::AudioProcessorEditor> ui(fresh->createEditor());
+        bool thresholdFound=false;
+        for(auto* child:ui->getChildren())if(auto* label=dynamic_cast<juce::Label*>(child)){
+            if(label->getText()=="COMP THRESHOLD"){
+                for(auto* candidate:ui->getChildren())if(auto* slider=dynamic_cast<juce::Slider*>(candidate)){
+                    if(slider->getX()==label->getX()&&slider->isVisible()){
+                        thresholdFound=true;
+                        if(slider->onDragStart)slider->onDragStart();
+                        slider->setValue(-42,juce::sendNotificationSync);
+                        if(slider->getDoubleClickReturnValue()!=0)return false;
+                    }
+                }
+            }
+            if(label->getText()=="TRIGGER dBFS")return false;
+        }
+        if(!thresholdFound||fresh->apvts.getRawParameterValue(
+            PRISMVSTAudioProcessor::rootsRootControlId(0,"comp"))->load()!=0)return false;
+        auto hidden=PRISMVSTAudioProcessor::carveId(0,0,"threshold");
+        if(fresh->apvts.getRawParameterValue(hidden)==nullptr)return false;
+        set(*fresh,hidden,-37.2f);
+        set(*fresh,PRISMVSTAudioProcessor::rootsRootControlId(0,"comp"),3);
+        juce::MemoryBlock recalled;fresh->getStateInformation(recalled);
+        auto restored=std::make_unique<PRISMVSTAudioProcessor>();
+        restored->setStateInformation(recalled.getData(),(int)recalled.getSize());
+        if(std::abs(restored->apvts.getRawParameterValue(hidden)->load()+37.2f)>.11f
+           ||restored->apvts.getRawParameterValue(PRISMVSTAudioProcessor::rootsRootControlId(0,"comp"))->load()!=3)return false;
+        std::cout<<"QUALITY 1.0.2: all ROOTs default OFF/0 dBFS; threshold gesture stays OFF; hidden CARVE threshold and selected compressor recall\n";
+    }
     auto render=[&](int size){
         auto p=std::make_unique<PRISMVSTAudioProcessor>();
         set(*p,PRISMVSTAudioProcessor::rootsRootControlId(4,"comp"),4);
