@@ -6,6 +6,36 @@
 #include "OnyxRackSkin.h"
 class SurgeryLookAndFeel final : public juce::LookAndFeel_V4 {
 public:
+    SurgeryLookAndFeel(){
+        setColour(juce::PopupMenu::backgroundColourId,juce::Colour(0xff10191e));
+        setColour(juce::PopupMenu::textColourId,juce::Colour(0xffd7e4e8));
+        setColour(juce::PopupMenu::highlightedBackgroundColourId,juce::Colour(0xff153d47));
+        setColour(juce::PopupMenu::highlightedTextColourId,juce::Colour(0xff83e7ef));
+        setColour(juce::ComboBox::textColourId,juce::Colour(0xffd7e4e8));
+    }
+    juce::Font getComboBoxFont(juce::ComboBox&) override {return juce::Font(juce::FontOptions(13.0f));}
+    juce::Font getPopupMenuFont() override {return juce::Font(juce::FontOptions(13.0f));}
+    void positionComboBoxText(juce::ComboBox& box,juce::Label& label) override {
+        label.setBounds(10,1,juce::jmax(0,box.getWidth()-36),box.getHeight()-2);
+        label.setFont(getComboBoxFont(box));
+        label.setJustificationType(juce::Justification::centredLeft);
+    }
+    juce::PopupMenu::Options getOptionsForComboBoxPopupMenu(juce::ComboBox& box,juce::Label&) override {
+        // Target component carries host DPI and our uniform editor transform.
+        // No item-to-align: JUCE can place the complete list below, then fall
+        // back above/clamp to its display work area when space is insufficient.
+        return juce::PopupMenu::Options().withTargetComponent(&box)
+            .withMinimumWidth(box.getWidth()).withMaximumNumColumns(1)
+            .withStandardItemHeight(28).withInitiallySelectedItem(box.getSelectedId())
+            .withPreferredPopupDirection(juce::PopupMenu::Options::PopupDirection::downwards);
+    }
+    bool shouldPopupMenuScaleWithTargetComponent(const juce::PopupMenu::Options&) override {return true;}
+    void drawPopupMenuItem(juce::Graphics& g,const juce::Rectangle<int>& area,bool separator,bool active,
+                          bool highlighted,bool ticked,bool submenu,const juce::String& text,
+                          const juce::String& shortcut,const juce::Drawable* icon,const juce::Colour* colour) override {
+        juce::LookAndFeel_V4::drawPopupMenuItem(g,area,separator,active,highlighted||ticked,ticked,submenu,text,shortcut,icon,colour);
+        if(ticked&&!separator){g.setColour(juce::Colour(0xff43d6e4));g.fillRect(area.getX()+2,area.getY()+4,2,area.getHeight()-8);}
+    }
     void drawRotarySlider(juce::Graphics& g,int x,int y,int w,int h,float position,
                           float start,float end,juce::Slider&) override {
         surgery::rack::knob(g,x,y,w,h,position,start,end);

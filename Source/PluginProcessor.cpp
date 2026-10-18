@@ -524,7 +524,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             juce::NormalisableRange<float>(-60.0f,0.0f,0.1f),0.0f));
         p.push_back(std::make_unique<juce::AudioParameterChoice>(
             juce::ParameterID{id("comp"),1},label+"Compression Profile",
-            juce::StringArray{"OFF","OPTICAL 3:1","OPTICAL 4:1","CLB1 TUBE 3:1","FET 4:1"},0));
+            juce::StringArray{"OFF","OPTICAL 3:1","OPTICAL 4:1","CLB1 TUBE 3:1","FAST 4:1"},0));
         p.push_back(std::make_unique<juce::AudioParameterChoice>(
             juce::ParameterID{id("domain"),1},label+"EQ Domain",
             juce::StringArray{"STEREO","MID","SIDE"},0));
@@ -578,7 +578,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             juce::NormalisableRange<float>(0.0f,100.0f,0.1f),50.0f));
         p.push_back(std::make_unique<juce::AudioParameterChoice>(
             juce::ParameterID{id("comp"),1},name + "Compressor",
-            juce::StringArray{"OFF","OPTICAL 3:1","OPTICAL 4:1","CLB1 TUBE 3:1","FET 4:1"},0));
+            juce::StringArray{"OFF","OPTICAL 3:1","OPTICAL 4:1","CLB1 TUBE 3:1","FAST 4:1"},0));
         p.push_back(std::make_unique<juce::AudioParameterChoice>(
             juce::ParameterID{id("detector"),1},name + "Dynamics Domain",
             juce::StringArray{"STEREO LINK","DUAL MID/SIDE","MID ONLY","SIDE ONLY"},0));

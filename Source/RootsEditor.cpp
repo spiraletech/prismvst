@@ -817,7 +817,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         freezeButton_.setButtonText(graph_.isFrozen()?"RESUME":"FREEZE");
     };
     addAndMakeVisible(freezeButton_);
-    compressor_.addItemList({ "COMP OFF", "OPTICAL 3:1", "OPTICAL 4:1", "TUBE 3:1", "FET 4:1" },1);
+    compressor_.addItemList({ "COMP OFF", "OPTICAL 3:1", "OPTICAL 4:1", "TUBE 3:1", "FAST 4:1" },1);
     domain_.addItemList({ "STEREO", "MID", "SIDE" },1);
     detector_.addItemList({ "LINKED", "DUAL M/S", "MID ONLY", "SIDE ONLY" },1);
     for(auto* box:{&compressor_,&domain_,&detector_})addAndMakeVisible(*box);
