@@ -89,6 +89,7 @@ if(PRISMVST_BUILD_TESTS)
   juce_generate_juce_header(prismvst_tests)
   target_link_libraries(prismvst_tests PRIVATE SurgeryRackAssets)
   target_compile_definitions(prismvst_tests PRIVATE
+    JUCE_MODAL_LOOPS_PERMITTED=1
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0

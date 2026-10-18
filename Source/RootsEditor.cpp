@@ -236,7 +236,9 @@ void RootsGraph::paint(juce::Graphics& g){
             heatLevels_=bands_;heatValid_=true;
         }
         g.saveState();g.reduceClipRegion(filledPath);
-        g.drawImage(spectralHeat_,r);
+        // Image drawing multiplies by the CURRENT brush alpha. Territory
+        // shading left it at .025: reset before compositing cached pixels.
+        g.setOpacity(1.f);g.drawImage(spectralHeat_,r);
         g.restoreState();
     }
     // A single fine readout follows the spectrum edge, never a 2D waterfall.
@@ -308,7 +310,7 @@ void RootsGraph::paint(juce::Graphics& g){
     }
         responseOverlayKey_=overlayKey;responseOverlayValid_=true;
     }
-    g.drawImageAt(responseOverlay_,0,0);
+    g.setOpacity(1.f);g.drawImageAt(responseOverlay_,0,0);
     g.setColour(juce::Colour(0xffacc3cf));
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
     g.drawText("SYNESTHESIA V1 / FREQUENCY > HUE / LEVEL > LIGHT     CARVE / STATIC RESPONSE",
