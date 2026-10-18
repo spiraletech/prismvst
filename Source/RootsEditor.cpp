@@ -127,6 +127,7 @@ void RootsGraph::showRootMenu(int root){
     popup();
 }
 void RootsGraph::paint(juce::Graphics& g){
+    ++paintedFrames_;
     const auto full=getLocalBounds().toFloat();
     const auto r=area();
 
@@ -263,9 +264,11 @@ void RootsGraph::paint(juce::Graphics& g){
         int index=8+i*4;
         for(const char* suffix:{"on","hz","q","depth"})overlayKey[(size_t)index++]=pval(processor_.apvts,PRISMVSTAudioProcessor::carveId(selectedRoot,i,suffix));
     }
+    const float overlayScale=juce::jlimit(.5f,4.f,g.getInternalContext().getPhysicalPixelScaleFactor());
+    overlayKey[24]=overlayScale;
     if(!responseOverlayValid_||responseOverlayKey_!=overlayKey){
-        responseOverlay_=juce::Image(juce::Image::ARGB,getWidth(),getHeight(),true);
-        juce::Graphics overlayGraphics(responseOverlay_);
+        responseOverlay_=juce::Image(juce::Image::ARGB,juce::roundToInt(getWidth()*overlayScale),juce::roundToInt(getHeight()*overlayScale),true);
+        juce::Graphics overlayGraphics(responseOverlay_);overlayGraphics.addTransform(juce::AffineTransform::scale(overlayScale));
     for(int slot=0;slot<surgery::kSlots;++slot){
         const auto id=[selectedRoot,slot](const char* suffix){
             return PRISMVSTAudioProcessor::carveId(selectedRoot,slot,suffix);
@@ -310,7 +313,7 @@ void RootsGraph::paint(juce::Graphics& g){
     }
         responseOverlayKey_=overlayKey;responseOverlayValid_=true;
     }
-    g.setOpacity(1.f);g.drawImageAt(responseOverlay_,0,0);
+    g.setOpacity(1.f);g.drawImage(responseOverlay_,getLocalBounds().toFloat());
     g.setColour(juce::Colour(0xffacc3cf));
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
     g.drawText("SYNESTHESIA V1 / FREQUENCY > HUE / LEVEL > LIGHT     CARVE / STATIC RESPONSE",
@@ -739,7 +742,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         label->setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::plain)));
         label->setJustificationType(juce::Justification::centredLeft);
     }
-    title_.setText("SURGERY EQ  /  v1.0.4",juce::dontSendNotification);
+    title_.setText("SURGERY EQ  /  v1.0.5",juce::dontSendNotification);
     analyzerLegend_.setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::bold)));
     analyzerLegend_.setText("SYNESTHESIA V1   /   HUE x ENERGY",
                             juce::dontSendNotification);
@@ -1061,25 +1064,28 @@ thresholdLabel_.setText("COMP THRESHOLD",
     } else status_.setText(status,juce::dontSendNotification);
 }
 void RootsEditor::paint(juce::Graphics& g){
-    // The static hardware surface is rasterised once per size/tab, not at
-    // analyzer rate. Dirty child paints simply reuse this image.
-    if(rackBackground_.getWidth()!=getWidth()||rackBackground_.getHeight()!=getHeight()||backgroundMode_!=mode_){
-        rackBackground_=juce::Image(juce::Image::RGB,getWidth(),getHeight(),false);
-        juce::Graphics background(rackBackground_);paintRack(background);backgroundMode_=mode_;
+    // Cache in physical pixels. Crossing a DPI boundary or changing host UI
+    // scale rebuilds the surface even when logical editor dimensions match.
+    const float dpi=juce::jlimit(.5f,4.f,g.getInternalContext().getPhysicalPixelScaleFactor());
+    const int pw=juce::roundToInt(getWidth()*dpi),ph=juce::roundToInt(getHeight()*dpi);
+    if(rackBackground_.getWidth()!=pw||rackBackground_.getHeight()!=ph||backgroundMode_!=mode_||backgroundScale_!=dpi){
+        rackBackground_=juce::Image(juce::Image::RGB,pw,ph,false);
+        juce::Graphics background(rackBackground_);background.addTransform(juce::AffineTransform::scale(dpi));
+        paintRack(background);backgroundMode_=mode_;backgroundScale_=dpi;
     }
-    g.drawImageAt(rackBackground_,0,0);
+    g.setOpacity(1.f);g.drawImage(rackBackground_,getLocalBounds().toFloat());
 }
-void RootsEditor::resized(){layoutRack();}
+void RootsEditor::resized(){rackBackground_={};backgroundScale_=0;layoutRack();repaint();}
 
 void RootsEditor::paintRack(juce::Graphics& g){
     const int width=getWidth(),height=getHeight();
     g.fillAll(juce::Colour(0xff020709));
     g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
-    if(rackChassis_.isValid())g.drawImage(rackChassis_,getLocalBounds().toFloat());
+    surgery::rack::drawChassis(g,rackChassis_,width,height);
     g.setColour(juce::Colour(0xff080b0d));
-    juce::Font engraved(juce::FontOptions(std::max(12.f,std::min(width*.017f,height*.024f)),juce::Font::bold));
-    engraved.setExtraKerningFactor(.10f);g.setFont(engraved);
-    g.drawText("SPIRAL ETHER TECH",(int)(width*.32f),0,(int)(width*.36f),(int)(height*.033f),juce::Justification::centred);
+    juce::Font engraved(juce::FontOptions(18.0f,juce::Font::bold));
+    engraved.setExtraKerningFactor(.06f);g.setFont(engraved);
+    g.drawFittedText("SPIRAL ETHER TECH",surgery::rack::engravingArea(width).toNearestInt(),juce::Justification::centred,1);
     juce::Graphics::ScopedSaveState saved(g);
     g.addTransform(surgery::rack::contentTransform(width,height));
     surgery::rack::bezel(g,{12,7,1096,44},false,6);
@@ -1104,7 +1110,12 @@ void RootsEditor::layoutRack(){
     // Fixed design coordinates, uniformly scaled. JUCE inversely transforms
     // pointer/drag events, so graphics, hit targets and text remain aligned.
     const auto transform=surgery::rack::contentTransform(getWidth(),getHeight());
-    for(auto* child:getChildren())child->setTransform(transform);
+    for(auto* child:getChildren()){
+        // JUCE owns this host-sized resize handle; transforming it with the
+        // instrument panel made it float over controls after a window resize.
+        if(dynamic_cast<juce::ResizableCornerComponent*>(child)!=nullptr)child->setTransform({});
+        else child->setTransform(transform);
+    }
     for(auto* label:{&gainLabel_,&thresholdLabel_,&carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_,&analyzerDepthLabel_,&analyzerSlopeLabel_,&analyzerMemoryLabel_})
         label->setJustificationType(juce::Justification::centred);
     title_.setBounds(29,12,415,35);

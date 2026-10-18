@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include "SurgeryUI104.h"
 #include "SurgeryRecoveryTests.h"
+#include "SurgeryChassisTests.h"
 
 void startAllocationProbe() noexcept;
 std::size_t finishAllocationProbe() noexcept;
@@ -39,7 +40,7 @@ bool click(juce::Component& parent,const juce::String& caption){
 
 bool runQualityTests(){
     juce::ScopedJuceInitialiser_GUI gui;
-    if(!verifySonarRecovery())return false;
+    if(!verifySonarRecovery()||!verifyChassis105())return false;
     juce::MidiBuffer midi;
     {
         auto fresh=std::make_unique<PRISMVSTAudioProcessor>();

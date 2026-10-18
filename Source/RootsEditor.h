@@ -29,6 +29,7 @@ public:
     explicit RootsGraph(PRISMVSTAudioProcessor& owner);
     ~RootsGraph() override;
     void paint(juce::Graphics&) override;
+    std::uint64_t paintedFrames() const noexcept {return paintedFrames_;}
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
@@ -52,6 +53,7 @@ public:
         if(mode_!=mode||slot_!=slot){mode_=mode;slot_=slot;repaint();}
     }
 private:
+    std::uint64_t paintedFrames_=0;
     PRISMVSTAudioProcessor& processor_;
     std::array<float,PRISMVSTAudioProcessor::labBars> bands_{},peaks_{};
     int selected_=0,dragging_=-1,draggingCarve_=-1;
@@ -93,6 +95,7 @@ public:
     ~RootsEditor() override;
     void paint(juce::Graphics&) override;
     void resized() override;
+    juce::Point<int> backgroundRasterSize() const noexcept {return {rackBackground_.getWidth(),rackBackground_.getHeight()};}
 private:
     using SliderA=juce::AudioProcessorValueTreeState::SliderAttachment;
     void paintRack(juce::Graphics&);
@@ -103,6 +106,7 @@ private:
     SurgeryLookAndFeel lookAndFeel_;
     juce::Image rackChassis_,rackBackground_;
     int backgroundMode_=-1;
+    float backgroundScale_=0;
     std::array<RootSelectorButton,7> rootButtons_;
     juce::Slider gain_,threshold_,analyzerSlope_,analyzerMemory_;
     juce::ComboBox analyzerDepth_;

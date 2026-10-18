@@ -1,10 +1,12 @@
 #pragma once
 #include <JuceHeader.h>
 #include <cmath>
+#include "SurgeryChassisLayout.h"
 namespace surgery::rack {
 inline juce::AffineTransform contentTransform(int width,int height){
-    const float s=std::min(width*.90f/1120.f,height*.92f/755.f);
-    return juce::AffineTransform::scale(s).translated((width-1120*s)*.5f,(height-755*s)*.5f);
+    const auto area=instrumentArea(width,height);
+    const float s=std::min(area.getWidth()/1120.f,area.getHeight()/755.f);
+    return juce::AffineTransform::scale(s).translated(area.getCentreX()-560*s,area.getCentreY()-377.5f*s);
 }
 inline juce::Path cut(juce::Rectangle<float> r,float c=4){
     juce::Path p;

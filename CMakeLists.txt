@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(PRISMVST VERSION 1.0.4 LANGUAGES C CXX)
+project(PRISMVST VERSION 1.0.5 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -71,6 +71,7 @@ if(PRISMVST_BUILD_TESTS)
   target_compile_features(surgery_onyx_study PRIVATE cxx_std_20)
   add_test(NAME surgery_onyx_character_regression COMMAND surgery_onyx_study)
   enable_testing()
+  configure_file("${juce_SOURCE_DIR}/examples/Assets/singing.ogg" "${CMAKE_BINARY_DIR}/surgery-test-music.ogg" COPYONLY)
   juce_add_console_app(prismvst_tests PRODUCT_NAME "PRISMVST Tests")
   target_sources(prismvst_tests PRIVATE
     Tests/ProcessorTests.cpp
