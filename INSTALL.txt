@@ -1,0 +1,8 @@
+SURGERY EQ 1.0.4 - Windows x64 VST3
+
+Close your DAW. Back up your existing plugin outside scanned folders.
+Copy the complete SURGERY EQ v1.0.vst3 folder to:
+C:\Program Files\Common Files\VST3
+Rescan plugins, open SURGERY EQ, and verify the editor says v1.0.4.
+The bundle name is retained for project recall. Keep only one scanned copy.
+This is an unsigned development build. Test copies of existing projects first.

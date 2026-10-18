@@ -7,6 +7,7 @@
 #include <iostream>
 #include <cstring>
 #include <stdexcept>
+#include "SurgeryUI104.h"
 
 void startAllocationProbe() noexcept;
 std::size_t finishAllocationProbe() noexcept;
@@ -347,6 +348,7 @@ bool runQualityTests(){
         for(int y=0;y<rackReference.getHeight();++y)for(int x=0;x<rackReference.getWidth();++x)
             if(rackReference.getPixelAt(x,y)!=recalled.getPixelAt(x,y)){std::cerr<<"Legacy theme changed the UI\n";return false;}
     }
+    if(!verifyUI104(*p,*editor))return false;
     std::cout<<"QUALITY: all four modes rendered; legacy theme values preserve the sole ONYX UI\n";
     return true;
 }
