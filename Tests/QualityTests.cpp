@@ -40,6 +40,7 @@ bool runQualityTests(){
     juce::MidiBuffer midi;
     {
         auto fresh=std::make_unique<PRISMVSTAudioProcessor>();
+        fresh->prepareToPlay(48000,512);
         {
             std::unique_ptr<juce::AudioProcessorEditor> factory(fresh->createEditor());
             auto image=factory->createComponentSnapshot(factory->getLocalBounds());
@@ -272,7 +273,17 @@ bool runQualityTests(){
 
     // Exercise all actual interface modes and themes without changing their architecture.
     set(*p,"surgery_bypass",0);set(*p,gain,0);p->prepareToPlay(48000,512);
-    for(int n=0;n<12;++n){tone(block,n*4097);p->processBlock(block,midi);}
+    juce::Random previewNoise(44017);double lowNoise=0,midNoise=0;
+    for(int n=0;n<12;++n){
+        for(int i=0;i<block.getNumSamples();++i){
+            const double white=previewNoise.nextFloat()*2-1;
+            lowNoise+=.018*(white-lowNoise);midNoise+=.16*(white-midNoise);
+            const auto sample=(float)(.7*lowNoise+.13*midNoise+.018*white
+                +.06*std::sin((n*block.getNumSamples()+i)*juce::MathConstants<double>::twoPi*110/48000));
+            block.setSample(0,i,sample);block.setSample(1,i,sample*.85f);
+        }
+        p->processBlock(block,midi);
+    }
     juce::Thread::sleep(40); // bounded analyzer handoff for deterministic screenshot data
     std::unique_ptr<juce::AudioProcessorEditor> editor(p->createEditor());
     const char* modes[]={"ROOT","CARVE","ONYX","ANALYZE"};
@@ -290,6 +301,14 @@ bool runQualityTests(){
                 auto file2=juce::File::getCurrentWorkingDirectory().getChildFile("surgery-ui-CARVE-2x.png");
                 juce::FileOutputStream stream2(file2);stream2.setPosition(0);stream2.truncate();
                 if(!juce::PNGImageFormat().writeImageToStream(highDpi,stream2))return false;
+            }
+            if(theme==0){
+                editor->setSize(840,610);
+                auto minimum=editor->createComponentSnapshot(editor->getLocalBounds());
+                auto minFile=juce::File::getCurrentWorkingDirectory().getChildFile("surgery-ui-rack-min-"+juce::String(modes[mode])+".png");
+                juce::FileOutputStream minStream(minFile);minStream.setPosition(0);minStream.truncate();
+                if(!juce::PNGImageFormat().writeImageToStream(minimum,minStream))return false;
+                editor->setSize(width,755);
             }
         }
         if(!click(*editor,"THEME  /  ONYX")&&!click(*editor,"THEME / ONYX")

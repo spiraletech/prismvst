@@ -83,10 +83,13 @@ public:
     void resized() override;
 private:
     using SliderA=juce::AudioProcessorValueTreeState::SliderAttachment;
+    void paintRack(juce::Graphics&);
+    void layoutRack();
     using ButtonA=juce::AudioProcessorValueTreeState::ButtonAttachment;
     PRISMVSTAudioProcessor& processor_;
     RootsGraph graph_;
     SurgeryLookAndFeel lookAndFeel_;
+    juce::Image rackChassis_;
     std::array<RootSelectorButton,7> rootButtons_;
     juce::Slider gain_,threshold_,analyzerSlope_,analyzerMemory_;
     juce::ComboBox analyzerDepth_;

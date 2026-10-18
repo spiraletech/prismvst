@@ -1,6 +1,7 @@
 #include "RootsEditor.h"
 #include "RootsSpectrumColours.h"
 #include "SurgerySpectralColours.h"
+#include <BinaryData.h>
 #include <cmath>
 #include <numbers>
 
@@ -142,6 +143,10 @@ void RootsGraph::paint(juce::Graphics& g){
     g.setGradientFill(bg);g.fillRoundedRectangle(full.reduced(1.0f),10.0f);
     g.setColour(juce::Colour::fromRGB(58,74,86));
     g.drawRoundedRectangle(full.reduced(1.0f),10.0f,1.0f);
+    if(theme_==0){
+        g.setColour(juce::Colour(0xff71848a));g.strokePath(surgery::rack::cut(full.reduced(1.5f),10),juce::PathStrokeType(1.2f));
+        g.setColour(juce::Colour(0xff02090c));g.strokePath(surgery::rack::cut(full.reduced(4),8),juce::PathStrokeType(2));
+    }
     g.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::bold)));
     g.setColour(juce::Colour::fromRGB(145,172,182));
     // Measured frequency/intensity colouring, independent of ROOT or theme.
@@ -224,7 +229,7 @@ void RootsGraph::paint(juce::Graphics& g){
     filledPath.closeSubPath();
     g.saveState();
     g.reduceClipRegion(r.toNearestInt());
-    if(heatOn){
+    if(heatOn&&theme_!=0){
         // Frequency-addressed, measured-energy heat is clipped to ONE
         // closed dBFS spectrum, as in a parametric-EQ spectral background.
         // No theme/palette choice, scrolling spectrogram, or stacked bars.
@@ -283,6 +288,10 @@ void RootsGraph::paint(juce::Graphics& g){
         }
         g.restoreState();
     }
+    if(heatOn&&theme_==0){
+        juce::ColourGradient subtle(juce::Colour(0xff47b9cc).withAlpha(.09f),r.getX(),r.getY(),juce::Colours::transparentBlack,r.getX(),r.getBottom(),false);
+        g.setGradientFill(subtle);g.fillPath(filledPath);
+    }
     // A single fine readout follows the spectrum edge, never a 2D waterfall.
     juce::ColourGradient edge(
         juce::Colour(0xffffa5ad),r.getX(),r.getY(),
@@ -299,7 +308,10 @@ void RootsGraph::paint(juce::Graphics& g){
     g.setGradientFill(glow);
     g.strokePath(spectrumPath,juce::PathStrokeType(3.5f,
         juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
-    g.setGradientFill(edge);
+    if(theme_==0){
+        juce::ColourGradient rackEdge(juce::Colour(0xffff91bf),r.getX(),r.getY(),juce::Colour(0xffbdadff),r.getRight(),r.getY(),false);
+        g.setGradientFill(rackEdge);
+    }else g.setGradientFill(edge);
     g.strokePath(spectrumPath,juce::PathStrokeType(1.3f,
         juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
     // A restrained peak-hold readout; the audio measurements are unchanged.
@@ -446,6 +458,7 @@ void RootsGraph::paint(juce::Graphics& g){
         g.setColour(enabled?focusedColor.withAlpha(chosen?1.0f:0.75f):
                              juce::Colour(0xff68838a).withAlpha(chosen?0.95f:0.55f));
         g.drawRoundedRectangle(bounds.x,bounds.y,bounds.w,bounds.h,4.0f,chosen?2.0f:1.0f);
+        if(theme_==0)surgery::rack::bezel(g,{bounds.x,bounds.y,bounds.w,bounds.h},enabled&&chosen,2);
         g.setColour(enabled?juce::Colours::white:juce::Colour(0xff9bb0b6));
         g.setFont(juce::Font(juce::FontOptions(10.0f,juce::Font::bold)));
         const auto label="C"+juce::String(slot+1)+(enabled?"  ON":"  OFF");
@@ -751,6 +764,7 @@ void RootsGraph::popup(){
 RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
 : juce::AudioProcessorEditor(&p),processor_(p),graph_(p) {
     setLookAndFeel(&lookAndFeel_);
+    rackChassis_=juce::ImageCache::getFromMemory(BinaryData::chassis_png,BinaryData::chassis_pngSize);
 
     addAndMakeVisible(graph_);
     graph_.onSelectNode=[this](int n){bindNode(n);};
@@ -859,6 +873,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         themeButton_.setButtonText(juce::String("THEME  /  ")+names[themeIndex_]);
         graph_.repaint();
         timerCallback();
+        resized();
         repaint();
     };
     themeButton_.setButtonText("THEME  /  ONYX");
@@ -920,7 +935,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     addAndMakeVisible(output_);
     outputA_=std::make_unique<SliderA>(processor_.apvts,"surgery_output_db",output_);
     bindNode(0);setMode(0);
-    setResizable(true,true);setResizeLimits(840,610,1800,1100);setSize(1120,755);
+    setResizable(true,true);setResizeLimits(840,610,1800,1200);setSize(1320,880);
     timerCallback();startTimerHz(60);
 }
 RootsEditor::~RootsEditor(){stopTimer();setLookAndFeel(nullptr);}
@@ -1068,7 +1083,9 @@ void RootsEditor::timerCallback(){
     const float held=processor_.getPeakHoldDb();
     peakHold_.setButtonText((held>=0.0f?"CLIP ":"PEAK ")+juce::String(held,1)+" dB");
     peakHold_.setToggleState(held>=0.0f,juce::dontSendNotification);
+    const int previousTheme=themeIndex_;
     themeIndex_=juce::jlimit(0,3,juce::roundToInt(pval(processor_.apvts,"surgery_theme")));
+    if(previousTheme!=themeIndex_){resized();repaint();}
     lookAndFeel_.setTheme(themeIndex_);
     const auto labelColour=themeIndex_==1?juce::Colour(0xff17303c):juce::Colour(0xffc1d9e0);
     for(auto* label:{&title_,&selection_,&status_,&gainLabel_,&thresholdLabel_,
@@ -1115,6 +1132,7 @@ thresholdLabel_.setText("COMP THRESHOLD",
     } else status_.setText(status,juce::dontSendNotification);
 }
 void RootsEditor::paint(juce::Graphics& g){
+    if(themeIndex_==0){paintRack(g);return;}
     const auto w=(float)getWidth(),h=(float)getHeight();
     const bool lab=themeIndex_==1;
     const auto top=lab?juce::Colour(0xffe0e8e9):
@@ -1165,6 +1183,10 @@ void RootsEditor::paint(juce::Graphics& g){
 
 }
 void RootsEditor::resized(){
+    if(themeIndex_==0){layoutRack();return;}
+    for(auto* child:getChildren())child->setTransform({});
+    for(auto* label:{&gainLabel_,&thresholdLabel_,&carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_,&analyzerDepthLabel_,&analyzerSlopeLabel_,&analyzerMemoryLabel_})
+        label->setJustificationType(juce::Justification::centredLeft);
     const int w=getWidth(),h=getHeight();
     const auto headerLayout=surgery::ui::headerLayout(w);
     title_.setBounds(headerLayout.title.x,headerLayout.title.y,
@@ -1239,4 +1261,69 @@ void RootsEditor::resized(){
     analyzerMemory_.setBounds(left+4*cw,panelY+42,cw,75);
     heatToggle_.setBounds(left+6*cw,panelY+41,cw-2,28);
     freezeButton_.setBounds(left+6*cw,panelY+76,cw-2,28);
+}
+
+void RootsEditor::paintRack(juce::Graphics& g){
+    const int width=getWidth(),height=getHeight();
+    g.fillAll(juce::Colour(0xff020709));
+    g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+    if(rackChassis_.isValid())g.drawImage(rackChassis_,getLocalBounds().toFloat());
+    g.setColour(juce::Colour(0xff080b0d));
+    juce::Font engraved(juce::FontOptions(std::max(10.f,width*.0105f),juce::Font::bold));
+    engraved.setExtraKerningFactor(.18f);g.setFont(engraved);
+    g.drawText("SPIRAL ETHER TECH",(int)(width*.33f),1,(int)(width*.34f),(int)(height*.03f),juce::Justification::centred);
+    juce::Graphics::ScopedSaveState saved(g);
+    g.addTransform(surgery::rack::contentTransform(width,height));
+    surgery::rack::bezel(g,{12,7,1096,44},false,6);
+    surgery::rack::bezel(g,{12,55,1096,39},false,5);
+    surgery::rack::bezel(g,{12,525,1096,38},false,5);
+    surgery::rack::panel(g,{12,570,1096,151});
+    surgery::rack::bezel(g,{12,724,1096,29},false,4);
+    g.setColour(juce::Colour(0xffc8e5ed));
+    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+    g.drawText("SONAR ROOTS PROCESSOR",600,17,270,23,juce::Justification::centredRight);
+    if(mode_==2){
+        for(int i=1;i<4;++i){
+            float x=204+i*218.f;
+            g.setColour(juce::Colour(0xff324148));g.drawLine(x,591,x,700,.6f);
+            surgery::rack::screw(g,x,590,3);surgery::rack::screw(g,x,700,3);
+        }
+    }
+    if(mode_==1)surgery::rack::panel(g,{928,598,161,104});
+}
+
+void RootsEditor::layoutRack(){
+    // Fixed design coordinates, uniformly scaled. JUCE inversely transforms
+    // pointer/drag events, so graphics, hit targets and text remain aligned.
+    const auto transform=surgery::rack::contentTransform(getWidth(),getHeight());
+    for(auto* child:getChildren())child->setTransform(transform);
+    for(auto* label:{&gainLabel_,&thresholdLabel_,&carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_,&analyzerDepthLabel_,&analyzerSlopeLabel_,&analyzerMemoryLabel_})
+        label->setJustificationType(juce::Justification::centred);
+    title_.setBounds(29,12,415,35);themeButton_.setBounds(893,13,200,32);
+    for(int root=0;root<7;++root)rootButtons_[(size_t)root].setBounds(18+root*155,59,151,30);
+    graph_.setBounds(12,98,1096,421);
+    for(int i=0;i<4;++i)modeButtons_[(size_t)i].setBounds(18+i*273,529,267,30);
+    selection_.setBounds(28,573,220,23);
+    status_.setBounds(440,703,650,16);
+    on_.setBounds(28,610,146,28);solo_.setBounds(28,646,146,28);
+    gainLabel_.setBounds(186,588,142,18);gain_.setBounds(186,607,142,94);
+    thresholdLabel_.setBounds(340,588,142,18);threshold_.setBounds(340,607,142,94);
+    const std::array<juce::ComboBox*,3> boxes{&compressor_,&domain_,&detector_};
+    const std::array<juce::Label*,3> labels{&compLabel_,&domainLabel_,&detectorLabel_};
+    for(int i=0;i<3;++i){labels[(size_t)i]->setBounds(496+i*150,610,146,18);boxes[(size_t)i]->setBounds(496+i*150,633,144,34);}
+    mono_.setBounds(950,641,142,28);
+    carveOn_.setBounds(28,610,155,28);carveDynamic_.setBounds(28,646,155,28);
+    const std::array<juce::Slider*,3> cs{&carveFrequency_,&carveDepth_,&carveQ_};
+    const std::array<juce::Label*,3> cl{&carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_};
+    for(int i=0;i<3;++i){cl[(size_t)i]->setBounds(211+i*235,588,202,18);cs[(size_t)i]->setBounds(211+i*235,607,202,94);}
+    for(int i=0;i<4;++i)carveSlotButtons_[(size_t)i].setBounds(938+(i%2)*72,612+(i/2)*42,66,30);
+    for(int i=0;i<4;++i){onyxLabels_[(size_t)i].setBounds(204+i*218,588,218,18);onyxSliders_[(size_t)i].setBounds(204+i*218,607,218,94);}
+    analyzerLegend_.setBounds(28,618,239,58);
+    analyzerDepthLabel_.setBounds(285,612,175,18);analyzerDepth_.setBounds(285,638,175,34);
+    analyzerSlopeLabel_.setBounds(492,588,190,18);analyzerSlope_.setBounds(492,607,190,94);
+    analyzerMemoryLabel_.setBounds(697,588,190,18);analyzerMemory_.setBounds(697,607,190,94);
+    heatToggle_.setBounds(935,611,156,30);freezeButton_.setBounds(935,652,156,30);
+    bypass_.setBounds(20,727,78,23);compare_.setBounds(103,727,78,23);copy_.setBounds(186,727,110,23);
+    save_.setBounds(301,727,57,23);load_.setBounds(363,727,57,23);peakHold_.setBounds(425,727,120,23);
+    outputLabel_.setBounds(780,727,64,23);output_.setBounds(849,727,246,23);
 }

@@ -37,6 +37,8 @@ juce_add_plugin(PRISMVST
 )
 
 juce_generate_juce_header(PRISMVST)
+juce_add_binary_data(SurgeryRackAssets SOURCES Assets/OnyxRack/chassis.png)
+target_link_libraries(PRISMVST PRIVATE SurgeryRackAssets)
 
 target_sources(PRISMVST PRIVATE
   Source/PluginProcessor.cpp
@@ -85,6 +87,7 @@ if(PRISMVST_BUILD_TESTS)
     Source/SurgeryLookAndFeel.h
   )
   juce_generate_juce_header(prismvst_tests)
+  target_link_libraries(prismvst_tests PRIVATE SurgeryRackAssets)
   target_compile_definitions(prismvst_tests PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
