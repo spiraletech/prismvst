@@ -19,6 +19,10 @@ juce::String hzText(float f) {
     if(f<10.0f)return juce::String(f,2);
     return juce::String(juce::roundToInt(f));
 }
+juce::String pitchText(float hz){
+    const auto p=surgery::spectrum::pitchAt(hz);
+    return p.valid?juce::String(surgery::spectrum::noteNames[(size_t)p.note])+juce::String(p.octave):juce::String("--");
+}
 juce::Colour territory(int i){
     static constexpr unsigned hues[7]{
         0xFF6BBDD4u,0xFFDFA871u,0xFFE6BD6Au,0xFF8DCEA8u,
@@ -104,14 +108,7 @@ void RootsGraph::updateAnalyzer(
         pval(processor_.apvts,"aura_memory"));
     bands_=spectrumEnvelope_.frame();
     peaks_=pk;
-    // Holographic foil swipes only while measured post-DSP spectrum is active.
-    // No synthetic spectral peaks: a silent signal holds the decorative phase.
-    float loudest=-144.0f;
-    for(const float db:values)loudest=std::max(loudest,db);
-    if(loudest>-95.0f){
-        chromaPhase_+=0.0038f;
-        if(chromaPhase_>=1.0f)chromaPhase_-=1.0f;
-    }
+    // Fixed hues: only measured energy changes brightness. No optical swipe.
     repaint();
 }
 void RootsGraph::selectNode(int i){
@@ -229,89 +226,32 @@ void RootsGraph::paint(juce::Graphics& g){
     filledPath.closeSubPath();
     g.saveState();
     g.reduceClipRegion(r.toNearestInt());
-    if(heatOn&&theme_!=0){
-        // Frequency-addressed, measured-energy heat is clipped to ONE
-        // closed dBFS spectrum, as in a parametric-EQ spectral background.
-        // No theme/palette choice, scrolling spectrogram, or stacked bars.
-        g.saveState();
-        g.reduceClipRegion(filledPath);
-        juce::ColourGradient frequencyRamp(
-            juce::Colour(0xffef4357),r.getX(),r.getY(),
-            juce::Colour(0xff7194df),r.getRight(),r.getY(),false);
-        for(std::size_t i=1;i<surgery::spectrum::stops.size()-1;++i){
-            const auto& stop=surgery::spectrum::stops[i];
-            const auto& rgb=stop.value;
-            const auto tint=juce::Colour::fromFloatRGBA(rgb.r,rgb.g,rgb.b,1.0f);
-            frequencyRamp.addColour(surgery::spectrum::plotFraction(stop.hz),tint);
-        }
-        g.setGradientFill(frequencyRamp);
-        g.fillRect(r);
-        // Vertical shadow gives full-bodied colour at the envelope with
-        // darker energy below, without imposing one global rose/ROOT shade.
-        juce::ColourGradient shade(juce::Colours::transparentBlack,
-            r.getCentreX(),r.getY(),
-            juce::Colour(0xff050b16).withAlpha(0.80f),
-            r.getCentreX(),r.getBottom(),false);
-        shade.addColour(0.55,juce::Colour(0xff110e1f).withAlpha(0.25f));
-        g.setGradientFill(shade);
-        g.fillRect(r);
-        // Iridescent holographic foil: restrained cross-frequency diffraction
-        // and a smooth optical swipe. Each glint is multiplied by measured
-        // spectral energy: silence remains completely dark.
-        // Entire layer is clipped to the SINGLE dBFS envelope.
-        constexpr int spectralSlices=160;
-        for(int i=0;i<spectralSlices;++i){
-            const float u=((float)i+0.5f)/(float)spectralSlices;
-            const float hz=20.0f*std::pow(1000.0f,u);
-            const int bin=juce::jlimit(0,N-1,(int)(u*(float)N));
-            const float energy=surgery::spectrum::brightness(bands_[(size_t)bin]);
-            if(energy<0.009f)continue;
-            const auto base=surgery::spectrum::colourAt(hz);
-            const auto foil=surgery::spectrum::foil(hz,bands_[(size_t)bin],
-                                                    chromaPhase_);
-            const float x1=r.getX()+r.getWidth()*(float)i/spectralSlices;
-            const float x2=r.getX()+r.getWidth()*(float)(i+1)/spectralSlices;
-            const auto tint=juce::Colour::fromFloatRGBA(
-                base.r,base.g,base.b,0.065f+0.16f*energy);
-            g.setColour(tint);
-            g.fillRect(x1,r.getY(),x2-x1+0.4f,r.getHeight());
-            if(foil.strength>0.012f){
-                const auto highlight=juce::Colour::fromFloatRGBA(
-                    foil.colour.r,foil.colour.g,foil.colour.b,foil.strength);
-                juce::ColourGradient foilFade(
-                    highlight,x1,r.getY(),
-                    highlight.withAlpha(foil.strength*0.10f),
-                    x1,r.getBottom(),false);
-                g.setGradientFill(foilFade);
-                g.fillRect(x1,r.getY(),x2-x1+0.45f,r.getHeight());
-            }
+    if(heatOn){
+        // Stationary full-spectrum field, clipped to measured FFT envelope.
+        // Each strip uses its own calibrated band level, not a global tint.
+        g.saveState();g.reduceClipRegion(filledPath);
+        for(int i=0;i<N;++i){
+            const float hz=prism::analysis::LabBands::centreFrequency(i);
+            const float energy=surgery::spectrum::brightness(bands_[(size_t)i]);
+            if(energy<=0)continue;
+            const auto rgb=surgery::spectrum::colourAt(hz);
+            const float x1=r.getX()+r.getWidth()*(float)i/N;
+            const float x2=r.getX()+r.getWidth()*(float)(i+1)/N;
+            const auto tint=juce::Colour::fromFloatRGBA(rgb.r,rgb.g,rgb.b,.28f+.62f*energy);
+            juce::ColourGradient band(tint,x1,r.getY(),tint.withMultipliedAlpha(.30f),x1,r.getBottom(),false);
+            g.setGradientFill(band);g.fillRect(x1,r.getY(),x2-x1+.4f,r.getHeight());
         }
         g.restoreState();
     }
-    if(heatOn&&theme_==0){
-        juce::ColourGradient subtle(juce::Colour(0xff47b9cc).withAlpha(.09f),r.getX(),r.getY(),juce::Colours::transparentBlack,r.getX(),r.getBottom(),false);
-        g.setGradientFill(subtle);g.fillPath(filledPath);
-    }
     // A single fine readout follows the spectrum edge, never a 2D waterfall.
-    juce::ColourGradient edge(
-        juce::Colour(0xffffa5ad),r.getX(),r.getY(),
-        juce::Colour(0xffa8c6ff),r.getRight(),r.getY(),false);
-    edge.addColour(0.34,juce::Colour(0xffe4a7d4));
-    edge.addColour(0.66,juce::Colour(0xffff9bbb));
-    // Broad low-opacity pearlescent edge glow, then one crisp live contour.
-    juce::ColourGradient glow(
-        juce::Colour(0xffc2fff5).withAlpha(0.13f),
-        r.getX(),r.getY(),
-        juce::Colour(0xfff6c8ff).withAlpha(0.14f),
-        r.getRight(),r.getY(),false);
-    glow.addColour(0.48,juce::Colour(0xffddedff).withAlpha(0.19f));
-    g.setGradientFill(glow);
-    g.strokePath(spectrumPath,juce::PathStrokeType(3.5f,
-        juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
-    if(theme_==0){
-        juce::ColourGradient rackEdge(juce::Colour(0xffff91bf),r.getX(),r.getY(),juce::Colour(0xffbdadff),r.getRight(),r.getY(),false);
-        g.setGradientFill(rackEdge);
-    }else g.setGradientFill(edge);
+    juce::ColourGradient edge(juce::Colour(0xfff0b2bd),r.getX(),r.getY(),juce::Colour(0xffd9c9ef),r.getRight(),r.getY(),false);
+    if(heatOn){
+        for(const auto& stop:surgery::spectrum::stops){
+            const auto& c=stop.value;
+            edge.addColour(surgery::spectrum::plotFraction(stop.hz),juce::Colour::fromFloatRGBA(c.r,c.g,c.b,1));
+        }
+    }
+    g.setGradientFill(edge);
     g.strokePath(spectrumPath,juce::PathStrokeType(1.3f,
         juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
     // A restrained peak-hold readout; the audio measurements are unchanged.
@@ -365,7 +305,7 @@ void RootsGraph::paint(juce::Graphics& g){
     }
     g.setColour(juce::Colour(0xffacc3cf));
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
-    g.drawText("SONAR / IRIDESCENT ENERGY FIELD     CARVE / STATIC RESPONSE",
+    g.drawText("SYNESTHESIA V1 / FREQUENCY > HUE / LEVEL > LIGHT     CARVE / STATIC RESPONSE",
                juce::Rectangle<float>(r.getX(),r.getBottom()+23.0f,r.getWidth(),16.0f).toNearestInt(),
                juce::Justification::centredLeft);
     // Both boundary handles always live on one horizontal rail.
@@ -472,7 +412,7 @@ void RootsGraph::paint(juce::Graphics& g){
         g.setColour(juce::Colours::white.withAlpha(0.26f));
         g.drawVerticalLine(juce::roundToInt(mouse_.x),r.getY(),r.getBottom());
         g.drawHorizontalLine(juce::roundToInt(mouse_.y),r.getX(),r.getRight());
-        juce::String text=hzText(freq)+" Hz / "+
+        juce::String text=hzText(freq)+" Hz ~"+pitchText(freq)+" / "+
                 juce::String(bands_[(size_t)bar],1)+" dBFS / HOLD "+
                 juce::String(peaks_[(size_t)bar],1)+" dBFS";
         const int hoveredCarve=hitCarveNode(mouse_);
@@ -764,7 +704,7 @@ void RootsGraph::popup(){
 RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
 : juce::AudioProcessorEditor(&p),processor_(p),graph_(p) {
     setLookAndFeel(&lookAndFeel_);
-    rackChassis_=juce::ImageCache::getFromMemory(BinaryData::chassis_png,BinaryData::chassis_pngSize);
+    rackChassis_=juce::ImageCache::getFromMemory(BinaryData::chassis1_0_3_png,BinaryData::chassis1_0_3_pngSize);
 
     addAndMakeVisible(graph_);
     graph_.onSelectNode=[this](int n){bindNode(n);};
@@ -791,9 +731,9 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         label->setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::plain)));
         label->setJustificationType(juce::Justification::centredLeft);
     }
-    title_.setText("SURGERY EQ  /  v1.0.2",juce::dontSendNotification);
+    title_.setText("SURGERY EQ  /  v1.0.3",juce::dontSendNotification);
     analyzerLegend_.setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::bold)));
-    analyzerLegend_.setText("CHROMATIC SONAR   /   FREQUENCY x ENERGY",
+    analyzerLegend_.setText("SYNESTHESIA V1   /   HUE x ENERGY",
                             juce::dontSendNotification);
     title_.setFont(juce::Font(juce::FontOptions(24.0f,juce::Font::bold)));
     selection_.setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::bold)));
@@ -892,7 +832,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     }
     analyzerSlopeA_=std::make_unique<SliderA>(processor_.apvts,"analyzer_slope",analyzerSlope_);
     analyzerMemoryA_=std::make_unique<SliderA>(processor_.apvts,"aura_memory",analyzerMemory_);
-    heatToggle_.setTooltip("Show or hide frequency-coloured spectral activity from measured FFT levels");
+    heatToggle_.setTooltip("Synesthesia V1: stationary frequency-to-hue / measured dBFS-to-brightness. Full rainbow, no flashing. Prototype visual mapping, not human synesthesia detection.");
     heatToggle_.setClickingTogglesState(true);
     addAndMakeVisible(heatToggle_);
     heatA_=std::make_unique<ButtonA>(processor_.apvts,"aura_color",heatToggle_);
@@ -1124,10 +1064,10 @@ thresholdLabel_.setText("COMP THRESHOLD",
     if(mode_==3){
         const auto metrics=graph_.spectralMetrics();
         const juce::String line=metrics.signalPresent?
-            "POST FFT  /  PEAK "+hzText(metrics.loudestHz)+"Hz  "+
+            "SYN V1 / BIN ~"+hzText(metrics.loudestHz)+"Hz "+pitchText(metrics.loudestHz)+" / "+
             juce::String(metrics.loudestDb,1)+" dBFS  /  CENTROID ~"+
             hzText(metrics.approximateCentroidHz)+"Hz":
-            "POST FFT  /  SILENCE OR BELOW DISPLAY FLOOR";
+            "SYN V1 / SILENCE OR BELOW DISPLAY FLOOR";
         status_.setText(line,juce::dontSendNotification);
     } else status_.setText(status,juce::dontSendNotification);
 }
@@ -1269,9 +1209,9 @@ void RootsEditor::paintRack(juce::Graphics& g){
     g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
     if(rackChassis_.isValid())g.drawImage(rackChassis_,getLocalBounds().toFloat());
     g.setColour(juce::Colour(0xff080b0d));
-    juce::Font engraved(juce::FontOptions(std::max(10.f,width*.0105f),juce::Font::bold));
-    engraved.setExtraKerningFactor(.18f);g.setFont(engraved);
-    g.drawText("SPIRAL ETHER TECH",(int)(width*.33f),1,(int)(width*.34f),(int)(height*.03f),juce::Justification::centred);
+    juce::Font engraved(juce::FontOptions(std::max(12.f,std::min(width*.017f,height*.024f)),juce::Font::bold));
+    engraved.setExtraKerningFactor(.10f);g.setFont(engraved);
+    g.drawText("SPIRAL ETHER TECH",(int)(width*.32f),0,(int)(width*.36f),(int)(height*.033f),juce::Justification::centred);
     juce::Graphics::ScopedSaveState saved(g);
     g.addTransform(surgery::rack::contentTransform(width,height));
     surgery::rack::bezel(g,{12,7,1096,44},false,6);

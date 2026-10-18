@@ -8,20 +8,22 @@
 namespace surgery::spectrum {
 struct RGB {float r,g,b;};
 struct Stop {float hz;RGB value;};
-// Broad hue zones emulate the readably colour-coded frequency distribution
-// of modern spectrum analyzers, without copying a third-party GUI.
-inline constexpr std::array<Stop,8> stops{{
-    {20.0f,{0.93f,0.27f,0.36f}},     // sub: deep coral
-    {65.0f,{0.98f,0.32f,0.42f}},     // bass: warm red
-    {170.0f,{0.91f,0.32f,0.58f}},    // low: magenta
-    {420.0f,{0.78f,0.34f,0.69f}},    // lower mids: plum
-    {1200.0f,{0.90f,0.32f,0.64f}},   // mids: saturated rose
-    {3500.0f,{0.98f,0.39f,0.57f}},   // presence: pink/red
-    {8000.0f,{0.60f,0.47f,0.85f}},   // high: violet
-    {20000.0f,{0.43f,0.58f,0.86f}}   // air: indigo blue
+// Synesthesia V1: an explicit designed log-frequency -> colour correspondence.
+// It is not a biological synesthesia model, source classifier or optical sensor.
+inline constexpr std::array<Stop,10> stops{{
+    {20.0f,{0.93f,0.10f,0.17f}},
+    {60.0f,{1.00f,0.33f,0.05f}},
+    {160.0f,{1.00f,0.65f,0.03f}},
+    {350.0f,{0.95f,0.91f,0.05f}},
+    {750.0f,{0.18f,0.87f,0.32f}},
+    {1600.0f,{0.05f,0.88f,0.65f}},
+    {3500.0f,{0.04f,0.79f,0.95f}},
+    {7000.0f,{0.18f,0.39f,1.00f}},
+    {12000.0f,{0.55f,0.22f,0.95f}},
+    {20000.0f,{0.91f,0.16f,0.72f}}
 }};
 inline RGB colourAt(float hz) noexcept {
-    const float f=std::clamp(hz,20.0f,20000.0f);
+    const float f=std::clamp(std::isfinite(hz)?hz:20.0f,20.0f,20000.0f);
     for(std::size_t i=1;i<stops.size();++i){
         if(f>stops[i].hz)continue;
         const auto& a=stops[i-1];const auto& b=stops[i];
@@ -40,37 +42,18 @@ inline float brightness(float db) noexcept {
     const float u=std::clamp((db+108.0f)/102.0f,0.0f,1.0f);
     return std::pow(u,1.25f);
 }
-struct Foil {
-    RGB colour;
-    float strength;
-};
-// Holographic thin-film aesthetic: chroma shifts with spectral location and
-// display time; opacity is strictly modulated by real FFT dBFS energy.
-// It is visualization, not a measurement of physical optical interference.
-inline Foil foil(float hz,float db,float phase) noexcept {
-    constexpr float tau=6.28318530718f;
-    const float u=std::clamp(std::log(std::clamp(hz,20.0f,20000.0f)/20.0f)/
-                              std::log(1000.0f),0.0f,1.0f);
-    const float wrapped=phase-std::floor(phase);
-    const float diff=std::abs(u-wrapped);
-    const float swipeDistance=std::min(diff,1.0f-diff);
-    const float movingSwipe=std::exp(-125.0f*swipeDistance*swipeDistance);
-    const float interference=0.5f+0.5f*std::sin(tau*(u*4.75f-wrapped*1.55f));
-    const float glint=std::pow(interference,10.0f);
-    const float shift=tau*(u*2.4f+wrapped);
-    // Pale cyan/opal/rose/lavender diffraction, not static spectrum sections.
-    const RGB light{
-       0.67f+0.32f*(0.5f+0.5f*std::sin(shift+0.3f)),
-       0.69f+0.30f*(0.5f+0.5f*std::sin(shift+2.39f)),
-       0.72f+0.27f*(0.5f+0.5f*std::sin(shift+4.48f))
-    };
-    const float energy=brightness(db);
-    const float strength=energy*std::clamp(0.035f+0.25f*glint+
-            0.45f*movingSwipe,0.0f,0.75f);
-    return {light,strength};
+struct PitchReading {int note=0,octave=0;float cents=0;bool valid=false;};
+inline constexpr std::array<const char*,12> noteNames{"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
+// Nearest 12-TET label for an FFT band frequency, A4=440 Hz.
+// A label for an approximate bin is not a polyphonic pitch estimate.
+inline PitchReading pitchAt(float hz) noexcept {
+    if(!std::isfinite(hz)||hz<20||hz>20000)return {};
+    const double semitones=69+12*std::log2((double)hz/440);
+    const int midi=(int)std::round(semitones);
+    return {midi%12,midi/12-1,(float)((semitones-midi)*100),true};
 }
 inline float plotFraction(float hz) noexcept {
-    return std::clamp(std::log(std::clamp(hz,20.0f,20000.0f)/20.0f)/
+    return std::clamp(std::log(std::clamp(std::isfinite(hz)?hz:20.0f,20.0f,20000.0f)/20.0f)/
                       std::log(1000.0f),0.0f,1.0f);
 }
 } // namespace surgery::spectrum

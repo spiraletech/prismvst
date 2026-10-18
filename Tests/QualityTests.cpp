@@ -285,6 +285,7 @@ bool runQualityTests(){
         p->processBlock(block,midi);
     }
     juce::Thread::sleep(40); // bounded analyzer handoff for deterministic screenshot data
+    set(*p,"aura_color",1);
     std::unique_ptr<juce::AudioProcessorEditor> editor(p->createEditor());
     const char* modes[]={"ROOT","CARVE","ONYX","ANALYZE"};
     for(int theme=0;theme<4;++theme){
@@ -296,6 +297,25 @@ bool runQualityTests(){
             auto file=juce::File::getCurrentWorkingDirectory().getChildFile("surgery-ui-"+juce::String(theme)+"-"+modes[mode]+".png");
             juce::FileOutputStream stream(file);stream.setPosition(0);stream.truncate();
             if(!juce::PNGImageFormat().writeImageToStream(snapshot,stream))return false;
+            if(theme==0&&mode==3){
+                juce::TextButton* sonar=nullptr;
+                for(auto* child:editor->getChildren())if(auto* button=dynamic_cast<juce::TextButton*>(child))
+                    if(button->getButtonText().startsWith("SONAR "))sonar=button;
+                if(sonar==nullptr||!sonar->getToggleState())return false;
+                sonar->setToggleState(false,juce::sendNotificationSync);
+                if(p->apvts.getRawParameterValue("aura_color")->load()>.5f)return false;
+                auto off=editor->createComponentSnapshot(editor->getLocalBounds());
+                int changed=0;
+                for(int y=180;y<460;++y)for(int x=120;x<990;++x)
+                    if(snapshot.getPixelAt(x,y)!=off.getPixelAt(x,y))++changed;
+                if(changed<5000){std::cerr<<"SONAR ON has no visible heatmap: "<<changed<<" pixels\n";return false;}
+                juce::FileOutputStream offFile(juce::File::getCurrentWorkingDirectory().getChildFile("surgery-ui-sonar-OFF.png"));
+                offFile.setPosition(0);offFile.truncate();
+                if(!juce::PNGImageFormat().writeImageToStream(off,offFile))return false;
+                sonar->setToggleState(true,juce::sendNotificationSync);
+                if(p->apvts.getRawParameterValue("aura_color")->load()<.5f)return false;
+                std::cout<<"QUALITY 1.0.3: SONAR button enables visible full-spectrum fill ("<<changed<<" pixels), OFF hides it\n";
+            }
             if(theme==0&&mode==1){
                 auto highDpi=editor->createComponentSnapshot(editor->getLocalBounds(),true,2.0f);
                 auto file2=juce::File::getCurrentWorkingDirectory().getChildFile("surgery-ui-CARVE-2x.png");

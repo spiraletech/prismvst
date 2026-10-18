@@ -1,5 +1,9 @@
 # SURGERY EQ v1.0 — Spiral Ether Tech
 
+## 1.0.3 matte ONYX and Synesthesia V1
+
+See [SURGERY_1_0_3.md](SURGERY_1_0_3.md) for the larger top branding, matte brushed/patina chassis, stronger crimson side-rail speckles, restored SONAR fill and full-spectrum frequency-to-colour prototype. Audio processing and parameter compatibility are unchanged from 1.0.2.
+
 ## 1.0.2 control and ONYX revision
 
 See [SURGERY_1_0_2.md](SURGERY_1_0_2.md) for ROOT compression OFF / 0 dBFS defaults, removal of the visible CARVE trigger, compatible state recall, and the measured ONYX colour revision. The 1.0.1 quality repairs below remain included.

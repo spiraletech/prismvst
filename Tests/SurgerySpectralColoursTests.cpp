@@ -13,23 +13,18 @@ int main(){
     if(std::abs(mid.g-air.g)<0.10f)return 7;
     const auto lo=colourAt(0),hi=colourAt(40000);
     if(lo.r!=stops.front().value.r||hi.b!=stops.back().value.b)return 8;
-    // Pearlescent shimmer must be silent when audio is silent,
-    // responsive to measured energy, and animated only by display phase.
-    const auto silent=foil(700.0f,-144.0f,0.25f);
-    const auto soft=foil(700.0f,-64.0f,0.25f);
-    const auto loud=foil(700.0f,-9.0f,0.25f);
-    if(silent.strength!=0.0f)return 9;
-    if(!(soft.strength>0.0f&&loud.strength>soft.strength))return 10;
-    const auto moved=foil(700.0f,-9.0f,0.72f);
-    if(std::abs(moved.colour.r-loud.colour.r)<0.005f &&
-       std::abs(moved.colour.g-loud.colour.g)<0.005f)return 11;
+    const auto a4=pitchAt(440),a5=pitchAt(880),c4=pitchAt(261.625565f);
+    if(!a4.valid||a4.note!=9||a4.octave!=4||std::abs(a4.cents)>0.001)return 9;
+    if(a5.note!=9||a5.octave!=5||c4.note!=0||c4.octave!=4)return 10;
+    if(pitchAt(NAN).valid||pitchAt(0).valid||pitchAt(INFINITY).valid)return 11;
+    // Distinct warm, green, cyan and blue zones, not a rose-only palette.
+    const auto yellow=colourAt(350),green=colourAt(750),cyan=colourAt(3500),blue=colourAt(7000);
+    if(yellow.r<.8f||yellow.g<.8f||green.g<green.r*2||cyan.b<.8f||blue.b<blue.r*2)return 12;
     for(float hz=20.0f;hz<=20000.0f;hz*=1.27f){
-        const auto f=foil(hz,-12.0f,0.41f);
-        if(!std::isfinite(f.strength)||f.strength<0.0f||
-           f.strength>0.75f)return 12;
-        if(f.colour.r<0||f.colour.r>1||
-           f.colour.g<0||f.colour.g>1||
-           f.colour.b<0||f.colour.b>1)return 13;
+        const auto f=colourAt(hz),repeat=colourAt(hz);
+        if(!std::isfinite(f.r)||f.r<0||f.r>1||f.g<0||f.g>1||f.b<0||f.b>1)return 13;
+        if(f.r!=repeat.r||f.g!=repeat.g||f.b!=repeat.b)return 14;
     }
-    std::cout<<"Holographic hue, audio-gated shimmer and silent-field proofs passed\n";
+    if(!std::isfinite(colourAt(NAN).r)||!std::isfinite(plotFraction(NAN)))return 15;
+    std::cout<<"Synesthesia V1: full rainbow, fixed hues, level brightness, silence and approximate 12-TET labels passed\n";
 }

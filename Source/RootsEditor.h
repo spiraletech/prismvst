@@ -60,7 +60,6 @@ private:
     int theme_=0,mode_=0,slot_=0;
     surgery::LiveSpectrumEnvelope<PRISMVSTAudioProcessor::labBars> spectrumEnvelope_;
     bool hover_=false,frozen_=false;
-    float chromaPhase_=0.0f; // display-only foil phase; held during freeze
     juce::Point<float> mouse_;
     juce::Rectangle<float> area() const;
     float freqToX(float f) const;

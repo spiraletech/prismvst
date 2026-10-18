@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(PRISMVST VERSION 1.0.2 LANGUAGES C CXX)
+project(PRISMVST VERSION 1.0.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -37,7 +37,7 @@ juce_add_plugin(PRISMVST
 )
 
 juce_generate_juce_header(PRISMVST)
-juce_add_binary_data(SurgeryRackAssets SOURCES Assets/OnyxRack/chassis.png)
+juce_add_binary_data(SurgeryRackAssets SOURCES Assets/OnyxRack/chassis-1.0.3.png)
 target_link_libraries(PRISMVST PRIVATE SurgeryRackAssets)
 
 target_sources(PRISMVST PRIVATE

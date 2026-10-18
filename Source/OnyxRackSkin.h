@@ -20,14 +20,14 @@ inline void bezel(juce::Graphics& g,juce::Rectangle<float> r,bool lit=false,floa
         g.setColour(juce::Colour(0xff00e6ff).withAlpha(.10f));g.strokePath(p,juce::PathStrokeType(7));
         g.setColour(juce::Colour(0xff00e6ff).withAlpha(.23f));g.strokePath(p,juce::PathStrokeType(3.5f));
     }
-    juce::ColourGradient rim(juce::Colour(0xffd1d9d9),r.getX(),r.getY(),juce::Colour(0xff242f33),r.getX(),r.getBottom(),false);
-    rim.addColour(.08,juce::Colour(0xff4c6067));rim.addColour(.5,juce::Colour(0xff131d22));rim.addColour(.94,juce::Colour(0xff76838a));
+    juce::ColourGradient rim(juce::Colour(0xff899496),r.getX(),r.getY(),juce::Colour(0xff242f33),r.getX(),r.getBottom(),false);
+    rim.addColour(.08,juce::Colour(0xff4c6067));rim.addColour(.5,juce::Colour(0xff131d22));rim.addColour(.94,juce::Colour(0xff536166));
     g.setGradientFill(rim);g.strokePath(p,juce::PathStrokeType(1.4f));
     auto inner=cut(r.reduced(2),std::max(1.f,corner-1));
     juce::ColourGradient face(juce::Colour(lit?0xff14434e:0xff263139),r.getX(),r.getY()+2,juce::Colour(0xff02090d),r.getX(),r.getBottom()-2,false);
     face.addColour(.48,juce::Colour(0xff061219));g.setGradientFill(face);g.fillPath(inner);
     g.setColour(juce::Colour(lit?0xff00e6ff:0xff48575c));g.strokePath(inner,juce::PathStrokeType(lit?1.2f:.5f));
-    g.setColour(juce::Colours::white.withAlpha(lit?.6f:.17f));g.drawLine(r.getX()+6,r.getY()+3,r.getRight()-6,r.getY()+3,.7f);
+    g.setColour(juce::Colours::white.withAlpha(lit?.24f:.06f));g.drawLine(r.getX()+6,r.getY()+3,r.getRight()-6,r.getY()+3,.7f);
 }
 inline void screw(juce::Graphics& g,float x,float y,float radius=3.5f){
     g.setColour(juce::Colours::black);g.fillEllipse(x-radius-1,y-radius+1,2*radius+2,2*radius+2);
