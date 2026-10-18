@@ -11,16 +11,16 @@ struct Stop {float hz;RGB value;};
 // Synesthesia V1: an explicit designed log-frequency -> colour correspondence.
 // It is not a biological synesthesia model, source classifier or optical sensor.
 inline constexpr std::array<Stop,10> stops{{
-    {20.0f,{0.93f,0.10f,0.17f}},
-    {60.0f,{1.00f,0.33f,0.05f}},
-    {160.0f,{1.00f,0.65f,0.03f}},
-    {350.0f,{0.95f,0.91f,0.05f}},
-    {750.0f,{0.18f,0.87f,0.32f}},
-    {1600.0f,{0.05f,0.88f,0.65f}},
-    {3500.0f,{0.04f,0.79f,0.95f}},
-    {7000.0f,{0.18f,0.39f,1.00f}},
-    {12000.0f,{0.55f,0.22f,0.95f}},
-    {20000.0f,{0.91f,0.16f,0.72f}}
+    {20.0f,{0.32f,0.23f,0.25f}},
+    {60.0f,{0.37f,0.28f,0.26f}},
+    {160.0f,{0.40f,0.34f,0.27f}},
+    {350.0f,{0.33f,0.31f,0.28f}},
+    {750.0f,{0.24f,0.27f,0.28f}},
+    {1600.0f,{0.23f,0.29f,0.29f}},
+    {3500.0f,{0.25f,0.32f,0.33f}},
+    {7000.0f,{0.27f,0.29f,0.34f}},
+    {12000.0f,{0.31f,0.28f,0.35f}},
+    {20000.0f,{0.33f,0.28f,0.34f}}
 }};
 inline RGB colourAt(float hz) noexcept {
     const float f=std::clamp(std::isfinite(hz)?hz:20.0f,20.0f,20000.0f);

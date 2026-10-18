@@ -238,14 +238,7 @@ void RootsGraph::paint(juce::Graphics& g){
         g.restoreState();
     }
     // A single fine readout follows the spectrum edge, never a 2D waterfall.
-    juce::ColourGradient edge(juce::Colour(0xfff0b2bd),r.getX(),r.getY(),juce::Colour(0xffd9c9ef),r.getRight(),r.getY(),false);
-    if(heatOn){
-        for(const auto& stop:surgery::spectrum::stops){
-            const auto& c=stop.value;
-            edge.addColour(surgery::spectrum::plotFraction(stop.hz),juce::Colour::fromFloatRGBA(c.r,c.g,c.b,1));
-        }
-    }
-    g.setGradientFill(edge);
+    g.setColour(juce::Colour(0xffe3d4d8));
     g.strokePath(spectrumPath,juce::PathStrokeType(1.3f,
         juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
     // A restrained peak-hold readout; the audio measurements are unchanged.
