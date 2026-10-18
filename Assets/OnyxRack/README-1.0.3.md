@@ -1,5 +1,13 @@
 # Matte chassis — 1.0.3
 
+Latest correction: the lower strips below both yellow inserts are plain brushed
+metal with sparse tiny solid red dots. Circular fastener impressions and broad
+red blotches in these strips are removed. Large corner fasteners are unchanged.
+
+## Final sparse-dot corrective prompt
+
+Precise corrective edit, not a redesign. Keep exact 1536x1024 image, empty black interior, matte brushed frame, top plaque, yellow/black bars and four large corner screws unchanged. The user rejects the small screws/round impressions BELOW the yellow bars. On BOTH side rails, completely REPLACE the vertical strips below the yellow inserts (approximately x=1.5%-4.4% and x=95.6%-98.5%, y=43%-88%) with fresh, uninterrupted matte brushed gunmetal. Paint those strips from scratch: NO small screws, rivets, bolts, washers, holes, pits, round rings, countersinks, embossed circles, repeating round marks, or ghosts of previous fasteners anywhere in those lower strips. Use only fine LINEAR brushed grain and subtle diffuse tarnish. Remove all large red splashes/blotches from these lower strips too. After the strips are clean, add ONLY 10 to 15 TINY solid dark-crimson paint DOTS on each strip, irregularly scattered, each dot 1 to 3 pixels, widely spaced, total coverage well below 1%. Dots must be solid pinpricks without outlines, rings, shadows or metal highlights. No splatter patches or drips. Keep the yellow inserts and their existing red accents as they are. Do not alter top branding plaque, large corner screws, rails geometry, interior, lighting or any other region. The critical result is smooth screw-free lower side rails with just a SMALL AMOUNT of LITTLE red dots.
+
 Embedded artwork: `chassis-1.0.3.png`, 1536 x 1024. Edited with the built-in
 image_gen tool using the prior chassis as its edit target. All branding/text,
 controls, spectrum and heatmap are live JUCE rendering, not part of this bitmap.

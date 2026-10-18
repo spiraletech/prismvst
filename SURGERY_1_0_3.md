@@ -1,5 +1,9 @@
 # SURGERY EQ 1.0.3 — matte ONYX and Synesthesia V1
 
+Artwork correction: below the yellow bars, both lower side strips now use
+plain brushed metal and sparse tiny red paint dots, replacing remaining circular
+fastener impressions and larger red patches. No code or audio change.
+
 ## Chassis and branding
 
 The first/default ONYX rack theme retains its layout and live controls, with a
