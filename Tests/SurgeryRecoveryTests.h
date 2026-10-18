@@ -36,10 +36,13 @@ inline bool verifySonarRecovery(){
     };
     editor->addToDesktop(0);editor->setTopLeftPosition(30,30);editor->setVisible(true);
     std::ofstream evidence("surgery-sonar-recovery.csv");evidence<<"signal,tab,peak_hz,peak_db,heat_pixels_ge5,mean_contrast\n";
+    std::ofstream refresh("surgery-sonar-live-refresh.csv");refresh<<"signal,native_paints,elapsed_ms,paint_callbacks_per_second\n";
     float firstPeak=0;
     for(int signal:{1,2,3,4}){
-        graph->setFrozen(false);const auto paintsBefore=graph->paintedFrames();if(!feed(signal,signal==3?.8f:.3f,64))return false;
+        graph->setFrozen(false);const auto liveStart=std::chrono::steady_clock::now();const auto paintsBefore=graph->paintedFrames();if(!feed(signal,signal==3?.8f:.3f,64))return false;
         if(graph->paintedFrames()<=paintsBefore+2){std::cerr<<"Recovery: native window did not animate\n";return false;}
+        const double liveMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-liveStart).count();
+        refresh<<signal<<','<<graph->paintedFrames()-paintsBefore<<','<<liveMs<<','<<(graph->paintedFrames()-paintsBefore)*1000/liveMs<<'\n';
         const auto metrics=graph->spectralMetrics();
         if(!metrics.signalPresent||metrics.loudestDb<=-85){std::cerr<<"Recovery: live pipeline lacks signal "<<signal<<"\n";return false;}
         if(signal==1){firstPeak=metrics.loudestHz;if(std::abs(firstPeak-1000)>120)return false;}
@@ -57,7 +60,7 @@ inline bool verifySonarRecovery(){
             evidence<<signal<<','<<tab<<','<<metrics.loudestHz<<','<<metrics.loudestDb<<','<<visible<<','<<contrast/count<<'\n';
             if(signal==2&&(visible<10000||contrast/count<2)){std::cerr<<"Recovery: pink-noise heat is invisible\n";return false;}
             if(visible<80){std::cerr<<"Recovery: no visible heat for "<<signal<<' '<<tab<<"\n";return false;}
-            set("aura_color",1);
+            set("aura_color",1);graph->setFrozen(false);pump(25);
             if(!save(editor->createComponentSnapshot(editor->getLocalBounds()),"surgery-ui-recovery-signal"+juce::String(signal)+"-"+tab+".png"))return false;
         }
         // Selecting another ROOT changes presentation but never FFT buffers.

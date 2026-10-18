@@ -242,6 +242,17 @@ void RootsGraph::paint(juce::Graphics& g){
         g.setOpacity(1.f);g.drawImage(spectralHeat_,r);
         g.restoreState();
     }
+    // Two restrained, stationary glow layers follow ONLY the measured path.
+    // Existing attack/release supplies persistence; no clock-driven shimmer,
+    // independent objects or fabricated motion is introduced during silence.
+    const float luminous=surgery::spectrum::brightness(*std::max_element(bands_.begin(),bands_.end()));
+    if(heatOn&&luminous>0){
+        juce::ColourGradient foil(juce::Colour(0xffb29da5).withAlpha(.10f*luminous),r.getX(),r.getY(),
+                                  juce::Colour(0xff9baeb5).withAlpha(.12f*luminous),r.getRight(),r.getY(),false);
+        g.setGradientFill(foil);g.strokePath(spectrumPath,juce::PathStrokeType(4.2f,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
+        g.setColour(juce::Colour(0xffd3b8d1).withAlpha(.13f*luminous));
+        g.strokePath(spectrumPath,juce::PathStrokeType(2.4f,juce::PathStrokeType::curved,juce::PathStrokeType::rounded));
+    }
     // A single fine readout follows the spectrum edge, never a 2D waterfall.
     g.setColour(juce::Colour(0xffe3d4d8));
     g.strokePath(spectrumPath,juce::PathStrokeType(1.3f,
