@@ -303,6 +303,7 @@ bool runQualityTests(){
                     if(button->getButtonText().startsWith("SONAR "))sonar=button;
                 if(sonar==nullptr||!sonar->getToggleState())return false;
                 sonar->setToggleState(false,juce::sendNotificationSync);
+                juce::Thread::sleep(40);juce::Timer::callPendingTimersSynchronously();
                 if(p->apvts.getRawParameterValue("aura_color")->load()>.5f)return false;
                 auto off=editor->createComponentSnapshot(editor->getLocalBounds());
                 int changed=0;
@@ -313,6 +314,7 @@ bool runQualityTests(){
                 offFile.setPosition(0);offFile.truncate();
                 if(!juce::PNGImageFormat().writeImageToStream(off,offFile))return false;
                 sonar->setToggleState(true,juce::sendNotificationSync);
+                juce::Thread::sleep(40);juce::Timer::callPendingTimersSynchronously();
                 if(p->apvts.getRawParameterValue("aura_color")->load()<.5f)return false;
                 std::cout<<"QUALITY 1.0.3: SONAR button enables visible full-spectrum fill ("<<changed<<" pixels), OFF hides it\n";
             }
