@@ -76,6 +76,7 @@ if(PRISMVST_BUILD_TESTS)
   target_sources(prismvst_tests PRIVATE
     Tests/ProcessorTests.cpp
     Tests/QualityTests.cpp
+    Tests/SurgeryWeatherTests.cpp
     Tests/AllocationProbe.cpp
     Source/PluginProcessor.cpp
     Source/PluginProcessor.h
@@ -103,6 +104,7 @@ if(PRISMVST_BUILD_TESTS)
     target_link_options(prismvst_tests PRIVATE /STACK:8388608)
   endif()
   add_test(NAME prismvst_tests COMMAND prismvst_tests)
+  add_test(NAME surgery_weather_calibration COMMAND prismvst_tests --weather-calibration)
   # Independent native C++20 ROOTS core; deliberately not linked into v1.2 DSP.
   add_executable(prism_roots_tests Tests/RootsCoreTests.cpp Source/PrismRootsCore.h)
   target_compile_features(prism_roots_tests PRIVATE cxx_std_20)
