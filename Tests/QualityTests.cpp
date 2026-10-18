@@ -288,7 +288,7 @@ bool runQualityTests(){
     set(*p,"aura_color",1);
     std::unique_ptr<juce::AudioProcessorEditor> editor(p->createEditor());
     const char* modes[]={"ROOT","CARVE","ONYX","ANALYZE"};
-    for(int theme=0;theme<4;++theme){
+    for(int theme=0;theme<1;++theme){
         for(int mode=0;mode<4;++mode){
             if(!click(*editor,modes[mode]))return false;
             const int width=theme==0?1120:840;
@@ -333,11 +333,20 @@ bool runQualityTests(){
                 editor->setSize(width,755);
             }
         }
-        if(!click(*editor,"THEME  /  ONYX")&&!click(*editor,"THEME / ONYX")
-           &&!click(*editor,"THEME  /  ETHER LAB")&&!click(*editor,"THEME / ETHER LAB")
-           &&!click(*editor,"THEME  /  ALIEN GRID")&&!click(*editor,"THEME / ALIEN GRID")
-           &&!click(*editor,"THEME  /  CINEMA VOID")&&!click(*editor,"THEME / CINEMA VOID"))return false;
     }
-    std::cout<<"QUALITY: rendered 16 real editor views, all modes and themes\n";
+    // Old host/state theme values must never switch away from the current rack.
+    if(!click(*editor,"FREEZE"))return false;
+    juce::Thread::sleep(40);juce::Timer::callPendingTimersSynchronously();
+    auto rackReference=editor->createComponentSnapshot(editor->getLocalBounds());
+    for(int legacy=0;legacy<4;++legacy){
+        set(*p,"surgery_theme",(float)legacy);
+        juce::Thread::sleep(40);juce::Timer::callPendingTimersSynchronously();
+        auto recalled=editor->createComponentSnapshot(editor->getLocalBounds());
+        for(auto* child:editor->getChildren())if(auto* button=dynamic_cast<juce::TextButton*>(child))
+            if(button->getButtonText().startsWith("THEME"))return false;
+        for(int y=0;y<rackReference.getHeight();++y)for(int x=0;x<rackReference.getWidth();++x)
+            if(rackReference.getPixelAt(x,y)!=recalled.getPixelAt(x,y)){std::cerr<<"Legacy theme changed the UI\n";return false;}
+    }
+    std::cout<<"QUALITY: all four modes rendered; legacy theme values preserve the sole ONYX UI\n";
     return true;
 }

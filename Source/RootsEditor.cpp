@@ -128,19 +128,13 @@ void RootsGraph::paint(juce::Graphics& g){
     const auto full=getLocalBounds().toFloat();
     const auto r=area();
 
-    const juce::Colour top=theme_==1?juce::Colour(0xff152b31):
-                            theme_==2?juce::Colour(0xff092820):
-                            theme_==3?juce::Colour(0xff142038):
-                                       juce::Colour(0xff0e151c);
-    const juce::Colour bottom=theme_==2?juce::Colour(0xff030f0c):
-                               theme_==3?juce::Colour(0xff070d19):
-                                          juce::Colour(0xff03070c);
+    const juce::Colour top(0xff0e151c),bottom(0xff03070c);
     juce::ColourGradient bg(top,full.getX(),full.getY(),
                             bottom,full.getX(),full.getBottom(),false);
     g.setGradientFill(bg);g.fillRoundedRectangle(full.reduced(1.0f),10.0f);
     g.setColour(juce::Colour::fromRGB(58,74,86));
     g.drawRoundedRectangle(full.reduced(1.0f),10.0f,1.0f);
-    if(theme_==0){
+    {
         g.setColour(juce::Colour(0xff71848a));g.strokePath(surgery::rack::cut(full.reduced(1.5f),10),juce::PathStrokeType(1.2f));
         g.setColour(juce::Colour(0xff02090c));g.strokePath(surgery::rack::cut(full.reduced(4),8),juce::PathStrokeType(2));
     }
@@ -398,7 +392,7 @@ void RootsGraph::paint(juce::Graphics& g){
         g.setColour(enabled?focusedColor.withAlpha(chosen?1.0f:0.75f):
                              juce::Colour(0xff68838a).withAlpha(chosen?0.95f:0.55f));
         g.drawRoundedRectangle(bounds.x,bounds.y,bounds.w,bounds.h,4.0f,chosen?2.0f:1.0f);
-        if(theme_==0)surgery::rack::bezel(g,{bounds.x,bounds.y,bounds.w,bounds.h},enabled&&chosen,2);
+        surgery::rack::bezel(g,{bounds.x,bounds.y,bounds.w,bounds.h},enabled&&chosen,2);
         g.setColour(enabled?juce::Colours::white:juce::Colour(0xff9bb0b6));
         g.setFont(juce::Font(juce::FontOptions(10.0f,juce::Font::bold)));
         const auto label="C"+juce::String(slot+1)+(enabled?"  ON":"  OFF");
@@ -770,7 +764,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
     for(int i=0;i<4;++i){
         auto& b=carveSlotButtons_[(size_t)i];
         b.setButtonText("C"+juce::String(i+1));
-        b.onClick=[this,i]{carveSlot_=i;bindCarve();graph_.setPresentation(themeIndex_,mode_,carveSlot_);};
+        b.onClick=[this,i]{carveSlot_=i;bindCarve();graph_.setPresentation(mode_,carveSlot_);};
         addAndMakeVisible(b);
     }
     for(auto* s:{&carveFrequency_,&carveDepth_,&carveQ_}){
@@ -804,19 +798,6 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         onyxLabels_[(size_t)i].setColour(juce::Label::textColourId,juce::Colours::white);
         addAndMakeVisible(onyxLabels_[(size_t)i]);
     }
-    addAndMakeVisible(themeButton_);
-    themeButton_.onClick=[this]{
-        themeIndex_=(themeIndex_+1)%4;
-        change(processor_,"surgery_theme",(float)themeIndex_);
-        graph_.setPresentation(themeIndex_,mode_,carveSlot_);
-        static const char* names[]{"ONYX","ETHER LAB","ALIEN GRID","CINEMA VOID"};
-        themeButton_.setButtonText(juce::String("THEME  /  ")+names[themeIndex_]);
-        graph_.repaint();
-        timerCallback();
-        resized();
-        repaint();
-    };
-    themeButton_.setButtonText("THEME  /  ONYX");
     mono_.setTooltip("Frequency-selective MONO on the selected ROOT only");
     analyzerDepthLabel_.setText("VIEW RANGE",juce::dontSendNotification);
     analyzerSlopeLabel_.setText("PIVOT / dB PER OCT",juce::dontSendNotification);
@@ -961,7 +942,7 @@ void RootsEditor::bindCarve(){
         carveSlotButtons_[(size_t)i].setColour(juce::TextButton::buttonOnColourId,
             territory(root).withAlpha(0.66f));
     }
-    graph_.setPresentation(themeIndex_,mode_,carveSlot_);
+    graph_.setPresentation(mode_,carveSlot_);
 }
 void RootsEditor::setMode(int next){
     mode_=juce::jlimit(0,3,next);
@@ -1000,7 +981,7 @@ void RootsEditor::setMode(int next){
     analyzerMemoryLabel_.setVisible(analyze);
     heatToggle_.setVisible(analyze);
     freezeButton_.setVisible(analyze);
-    graph_.setPresentation(themeIndex_,mode_,carveSlot_);
+    graph_.setPresentation(mode_,carveSlot_);
     resized();
     timerCallback();
     repaint();
@@ -1023,19 +1004,13 @@ void RootsEditor::timerCallback(){
     const float held=processor_.getPeakHoldDb();
     peakHold_.setButtonText((held>=0.0f?"CLIP ":"PEAK ")+juce::String(held,1)+" dB");
     peakHold_.setToggleState(held>=0.0f,juce::dontSendNotification);
-    const int previousTheme=themeIndex_;
-    themeIndex_=juce::jlimit(0,3,juce::roundToInt(pval(processor_.apvts,"surgery_theme")));
-    if(previousTheme!=themeIndex_){resized();repaint();}
-    lookAndFeel_.setTheme(themeIndex_);
-    const auto labelColour=themeIndex_==1?juce::Colour(0xff17303c):juce::Colour(0xffc1d9e0);
+    const auto labelColour=juce::Colour(0xffc1d9e0);
     for(auto* label:{&title_,&selection_,&status_,&gainLabel_,&thresholdLabel_,
                     &carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_,
                     &analyzerDepthLabel_,&analyzerSlopeLabel_,&analyzerMemoryLabel_,&analyzerLegend_,
                     &compLabel_,&domainLabel_,&detectorLabel_,&outputLabel_})
         label->setColour(juce::Label::textColourId,labelColour);
     for(auto& label:onyxLabels_)label.setColour(juce::Label::textColourId,labelColour);
-    static const char* themeNames[]{"ONYX","ETHER LAB","ALIEN GRID","CINEMA VOID"};
-    themeButton_.setButtonText(juce::String("THEME / ")+themeNames[themeIndex_]);
     // Threshold remains editable while OFF without activating compression.
     threshold_.setEnabled(true);
 thresholdLabel_.setText("COMP THRESHOLD",
@@ -1051,7 +1026,7 @@ thresholdLabel_.setText("COMP THRESHOLD",
        "CARVE ON":"CARVE OFF");
     heatToggle_.setButtonText(pval(processor_.apvts,"aura_color")>=0.5f?
                               "SONAR ON":"SONAR OFF");
-    graph_.setPresentation(themeIndex_,mode_,carveSlot_);
+    graph_.setPresentation(mode_,carveSlot_);
     std::array<float,PRISMVSTAudioProcessor::labBars> bars{},peaks{};
     processor_.copyPrismLabBars(bars,peaks);
     graph_.updateAnalyzer(bars,peaks);
@@ -1071,137 +1046,8 @@ thresholdLabel_.setText("COMP THRESHOLD",
         status_.setText(line,juce::dontSendNotification);
     } else status_.setText(status,juce::dontSendNotification);
 }
-void RootsEditor::paint(juce::Graphics& g){
-    if(themeIndex_==0){paintRack(g);return;}
-    const auto w=(float)getWidth(),h=(float)getHeight();
-    const bool lab=themeIndex_==1;
-    const auto top=lab?juce::Colour(0xffe0e8e9):
-                   themeIndex_==2?juce::Colour(0xff102923):
-                   themeIndex_==3?juce::Colour(0xff263448):
-                                  juce::Colour(0xff1b2731);
-    const auto bottom=lab?juce::Colour(0xffa5b6bb):
-                      themeIndex_==2?juce::Colour(0xff071612):
-                      themeIndex_==3?juce::Colour(0xff0e1724):
-                                     juce::Colour(0xff0a121b);
-    juce::ColourGradient chassis(top,0,0,bottom,w,h,false);
-    chassis.addColour(.45,top.interpolatedWith(bottom,.32f));
-    g.setGradientFill(chassis);
-    g.fillRect(getLocalBounds());
-    const auto accent=themeIndex_==2?juce::Colour(0xff81dfbb):
-                      themeIndex_==3?juce::Colour(0xffe0a878):
-                                     juce::Colour(0xff84d1df);
-    // Hardware header: thin structural rails rather than ornamental neon.
-    const auto header=juce::Rectangle<float>(12,9,w-24,43);
-    g.setColour(lab?juce::Colour(0xffc2d1d4):juce::Colour(0xff121e27));
-    g.fillRoundedRectangle(header,5.0f);
-    g.setColour(accent.withAlpha(.58f));
-    g.drawRoundedRectangle(header,5.0f,1.0f);
-    g.fillRect(header.getX()+8,header.getBottom()-2,56.0f,2.0f);
-    // Reserved grouping lines, never crossing numeric fields or labels.
-    // Mode bank and modular instrument shelf.
-    const auto mode=juce::Rectangle<float>(12,h-226,w-24,42);
-    g.setColour(lab?juce::Colour(0xff7d969e):juce::Colour(0xff0a141d));
-    g.fillRoundedRectangle(mode,6.0f);
-    g.setColour(accent.withAlpha(.33f));
-    g.drawRoundedRectangle(mode,6.0f,1.0f);
-    const auto shelf=juce::Rectangle<float>(12,h-158,w-24,124);
-    g.setColour(lab?juce::Colour(0xff8a9fa5):juce::Colour(0xff14232c));
-    g.fillRoundedRectangle(shelf,7.0f);
-    g.setColour(accent.withAlpha(.44f));
-    g.drawRoundedRectangle(shelf,7.0f,1.1f);
-    // No internal vertical bars under control labels: one coherent shelf.
-    const auto label=lab?juce::Colour(0xff24404a):juce::Colour(0xff93b1bd);
-    g.setColour(label);
-    g.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::bold)));
-    const auto headerLayout=surgery::ui::headerLayout(getWidth());
-    g.drawFittedText("SPIRAL ETHER TECH  /  SONAR ROOTS PROCESSOR",
-               headerLayout.brand.x,headerLayout.brand.y,
-               headerLayout.brand.width,headerLayout.brand.height,
-               juce::Justification::centredRight,1);
-    g.setColour(label.withAlpha(.85f));
-    g.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::plain)));
-
-}
-void RootsEditor::resized(){
-    if(themeIndex_==0){layoutRack();return;}
-    for(auto* child:getChildren())child->setTransform({});
-    for(auto* label:{&gainLabel_,&thresholdLabel_,&carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_,&analyzerDepthLabel_,&analyzerSlopeLabel_,&analyzerMemoryLabel_})
-        label->setJustificationType(juce::Justification::centredLeft);
-    const int w=getWidth(),h=getHeight();
-    const auto headerLayout=surgery::ui::headerLayout(w);
-    title_.setBounds(headerLayout.title.x,headerLayout.title.y,
-                     headerLayout.title.width,headerLayout.title.height);
-    themeButton_.setBounds(headerLayout.theme.x,headerLayout.theme.y,
-                           headerLayout.theme.width,headerLayout.theme.height);
-    const int buttonY=headerLayout.rootsY,buttonGap=6,buttonX=18;
-    const int buttonW=(w-36-6*buttonGap)/7;
-    for(int root=0;root<7;++root)
-        rootButtons_[(size_t)root].setBounds(
-            buttonX+root*(buttonW+buttonGap),buttonY,buttonW,30);
-    graph_.setBounds(16,97,w-32,h-326);
-    const int modeTop=h-220;
-    const int modeGap=7;
-    const int modeWidth=(w-36-3*modeGap)/4;
-    for(int i=0;i<4;++i)
-        modeButtons_[(size_t)i].setBounds(18+i*(modeWidth+modeGap),modeTop,modeWidth,29);
-    const int panelY=h-153;
-    selection_.setBounds(32,panelY+4,220,27);
-    status_.setBounds(24,h-187,w-48,21);
-    bypass_.setBounds(18,h-29,82,24);
-    compare_.setBounds(106,h-29,76,24);copy_.setBounds(188,h-29,96,24);
-    save_.setBounds(290,h-29,54,24);load_.setBounds(350,h-29,54,24);
-    peakHold_.setBounds(410,h-29,116,24);
-    outputLabel_.setBounds(w-285,h-29,60,24);output_.setBounds(w-225,h-29,205,24);
-    const int left=24, usable=w-48, cw=usable/7;
-    const std::array<juce::ComboBox*,3> boxes{&compressor_,&domain_,&detector_};
-    const std::array<juce::Label*,3> captions{&compLabel_,&domainLabel_,&detectorLabel_};
-    for(int i=0;i<3;++i){
-        const int x=left+(i+3)*cw;
-        captions[(size_t)i]->setBounds(x,panelY+24,cw-6,20);
-        boxes[(size_t)i]->setBounds(x,panelY+49,cw-8,30);
-    }
-    struct Entry{juce::Slider* slider;juce::Label* label;};
-    const std::array<Entry,2> controls{{
-        {&gain_,&gainLabel_},{&threshold_,&thresholdLabel_}
-    }};
-    for(int i=0;i<2;++i){
-        const int x=left+(i+1)*cw;
-        controls[(size_t)i].label->setBounds(x,panelY+24,cw,18);
-        controls[(size_t)i].slider->setBounds(x,panelY+40,cw,74);
-    }
-    on_.setBounds(left,panelY+36,cw-2,25);
-    solo_.setBounds(left,panelY+66,cw-2,25);
-    mono_.setBounds(left+6*cw,panelY+72,cw-2,25);
-    for(int i=0;i<4;++i)
-        carveSlotButtons_[(size_t)i].setBounds(255+i*62,panelY+1,56,27);
-    const std::array<juce::Slider*,3> cs{
-        &carveFrequency_,&carveDepth_,&carveQ_
-    };
-    const std::array<juce::Label*,3> cl{
-        &carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_
-    };
-    for(int i=0;i<3;++i){
-        const int x=left+cw+i*(5*cw/3);
-        cl[(size_t)i]->setBounds(x,panelY+24,5*cw/3,18);
-        cs[(size_t)i]->setBounds(x,panelY+40,5*cw/3,74);
-    }
-    carveOn_.setBounds(left,panelY+38,cw-2,25);
-    carveDynamic_.setBounds(left,panelY+69,cw-2,25);
-    analyzerLegend_.setBounds(left+12,panelY+40,2*cw-12,38);
-    for(int i=0;i<4;++i){
-        const int x=left+(i+1)*cw;
-        onyxLabels_[(size_t)i].setBounds(x,panelY+24,cw,18);
-        onyxSliders_[(size_t)i].setBounds(x,panelY+40,cw,74);
-    }
-    analyzerDepthLabel_.setBounds(left+2*cw,panelY+27,cw,18);
-    analyzerDepth_.setBounds(left+2*cw,panelY+50,cw,28);
-    analyzerSlopeLabel_.setBounds(left+3*cw,panelY+23,cw,18);
-    analyzerSlope_.setBounds(left+3*cw,panelY+42,cw,75);
-    analyzerMemoryLabel_.setBounds(left+4*cw,panelY+23,cw,18);
-    analyzerMemory_.setBounds(left+4*cw,panelY+42,cw,75);
-    heatToggle_.setBounds(left+6*cw,panelY+41,cw-2,28);
-    freezeButton_.setBounds(left+6*cw,panelY+76,cw-2,28);
-}
+void RootsEditor::paint(juce::Graphics& g){paintRack(g);}
+void RootsEditor::resized(){layoutRack();}
 
 void RootsEditor::paintRack(juce::Graphics& g){
     const int width=getWidth(),height=getHeight();
@@ -1221,7 +1067,7 @@ void RootsEditor::paintRack(juce::Graphics& g){
     surgery::rack::bezel(g,{12,724,1096,29},false,4);
     g.setColour(juce::Colour(0xffc8e5ed));
     g.setFont(juce::Font(juce::FontOptions(10.0f)));
-    g.drawText("SONAR ROOTS PROCESSOR",600,17,270,23,juce::Justification::centredRight);
+    g.drawText("SONAR ROOTS PROCESSOR",800,17,285,23,juce::Justification::centredRight);
     if(mode_==2){
         for(int i=1;i<4;++i){
             float x=204+i*218.f;
@@ -1239,7 +1085,7 @@ void RootsEditor::layoutRack(){
     for(auto* child:getChildren())child->setTransform(transform);
     for(auto* label:{&gainLabel_,&thresholdLabel_,&carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_,&analyzerDepthLabel_,&analyzerSlopeLabel_,&analyzerMemoryLabel_})
         label->setJustificationType(juce::Justification::centred);
-    title_.setBounds(29,12,415,35);themeButton_.setBounds(893,13,200,32);
+    title_.setBounds(29,12,415,35);
     for(int root=0;root<7;++root)rootButtons_[(size_t)root].setBounds(18+root*155,59,151,30);
     graph_.setBounds(12,98,1096,421);
     for(int i=0;i<4;++i)modeButtons_[(size_t)i].setBounds(18+i*273,529,267,30);

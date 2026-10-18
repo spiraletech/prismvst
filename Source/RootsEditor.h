@@ -48,8 +48,8 @@ public:
     }
     void setFrozen(bool frozen) noexcept {frozen_=frozen;repaint();}
     bool isFrozen() const noexcept {return frozen_;}
-    void setPresentation(int theme,int mode,int slot) {
-        theme_=theme;mode_=mode;slot_=slot;repaint();
+    void setPresentation(int mode,int slot) {
+        mode_=mode;slot_=slot;repaint();
     }
 private:
     PRISMVSTAudioProcessor& processor_;
@@ -57,7 +57,7 @@ private:
     int selected_=0,dragging_=-1,draggingCarve_=-1;
     float dragStartX_=0.0f,dragStartHz_=0.0f;
     bool fineDragging_=false;
-    int theme_=0,mode_=0,slot_=0;
+    int mode_=0,slot_=0;
     surgery::LiveSpectrumEnvelope<PRISMVSTAudioProcessor::labBars> spectrumEnvelope_;
     bool hover_=false,frozen_=false;
     juce::Point<float> mouse_;
@@ -94,8 +94,7 @@ private:
     juce::ComboBox analyzerDepth_;
     juce::TextButton heatToggle_{"SONAR ON"},freezeButton_{"FREEZE"};
     juce::TextButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};
-    juce::TextButton themeButton_{"THEME"};
-    int themeIndex_=0,mode_=0,carveSlot_=0;
+    int mode_=0,carveSlot_=0;
     std::array<juce::TextButton,4> modeButtons_;
     std::array<juce::TextButton,4> carveSlotButtons_;
     juce::Slider carveFrequency_,carveDepth_,carveQ_;

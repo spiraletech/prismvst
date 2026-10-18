@@ -13,13 +13,13 @@ prominent on both yellow side inserts. The small screw/rivet rows along both
 vertical rails are removed and replaced by crimson paint speckles; the large
 corner fasteners remain. The top SPIRAL ETHER TECH lettering is about 50% larger,
 fitted to the plaque, with no animated light sweep. Control
-bevel highlights are quieter. Other themes remain available in the same order.
+bevel highlights are quieter. ONYX is the sole interface; theme switching and alternate skins are removed.
 
 ## SONAR correction
 
 The 1.0.2 rack skin skipped the full colour-fill renderer and substituted a
 very faint cyan fill. That made SONAR ON look almost like OFF. The bypass is
-removed. Every theme now renders the same visible frequency-addressed heatmap
+removed. The main UI now renders the same visible frequency-addressed heatmap
 when SONAR is ON. New instances still default ON; saved OFF settings remain OFF
 until explicitly toggled. No existing state is silently overwritten.
 
@@ -70,9 +70,13 @@ remain unchanged for project continuity. Keep the previous bundle for rollback.
 Run the existing 18 CTest suites and pluginval strictness 8. Colour tests cover
 the full hue range, finite bounds, silence gating, deterministic mapping and
 known A4/A5/C4 note labels. Actual editor renders cover SONAR ON/OFF, every
-mode/theme, minimum rack sizes, factory defaults and 2x scaling. Build-specific
+mode, minimum rack sizes, factory defaults and 2x scaling. Build-specific
 results and limits are included with the compiled download.
 
 The chassis was edited with the built-in image_gen tool via the imagegen skill.
 The old asset remains in source for provenance/rollback. See
 Assets/OnyxRack/README-1.0.3.md for the saved asset and exact final prompt.
+
+## Single main UI correction
+
+The matte ONYX rack with sparse red side-rail dots is now the only interface. The theme switch and alternate renderers have been removed. The legacy surgery_theme host parameter is retained solely for saved-project compatibility and has no visual effect at any value. Audio DSP is unchanged.
