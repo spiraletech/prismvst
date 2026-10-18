@@ -104,12 +104,14 @@ void RootsGraph::updateAnalyzer(
     // Analyzer worker owns the FFT. Only 256 display values arrive here.
     // Message-thread smoothing is fast-attack with calibrated decay; never
     // change the underlying audio or the diagnostic measurement data.
+    const auto previous=bands_;
+    const auto previousPeaks=peaks_;
     spectrumEnvelope_.update(values,1.0/60.0,
         pval(processor_.apvts,"aura_memory"));
     bands_=spectrumEnvelope_.frame();
     peaks_=pk;
-    // Fixed hues: only measured energy changes brightness. No optical swipe.
-    repaint();
+    // Retain 60 Hz decay semantics; settled/unchanged frames need no paint.
+    if(previous!=bands_||previousPeaks!=peaks_)repaint();
 }
 void RootsGraph::selectNode(int i){
     const int target=juce::jlimit(0,prism::roots::v2::kNodes-1,i);
@@ -221,20 +223,20 @@ void RootsGraph::paint(juce::Graphics& g){
     g.saveState();
     g.reduceClipRegion(r.toNearestInt());
     if(heatOn){
-        // Stationary full-spectrum field, clipped to measured FFT envelope.
-        // Each strip uses its own calibrated band level, not a global tint.
-        g.saveState();g.reduceClipRegion(filledPath);
-        for(int i=0;i<N;++i){
-            const float hz=prism::analysis::LabBands::centreFrequency(i);
-            const float energy=surgery::spectrum::brightness(bands_[(size_t)i]);
-            if(energy<=0)continue;
-            const auto rgb=surgery::spectrum::colourAt(hz);
-            const float x1=r.getX()+r.getWidth()*(float)i/N;
-            const float x2=r.getX()+r.getWidth()*(float)(i+1)/N;
-            const auto tint=juce::Colour::fromFloatRGBA(rgb.r,rgb.g,rgb.b,.28f+.62f*energy);
-            juce::ColourGradient band(tint,x1,r.getY(),tint.withMultipliedAlpha(.30f),x1,r.getBottom(),false);
-            g.setGradientFill(band);g.fillRect(x1,r.getY(),x2-x1+.4f,r.getHeight());
+        // One small, reusable colour field replaces 256 gradient draw calls
+        // through a complex path clip. The measured envelope is still exact.
+        if(!heatValid_||heatLevels_!=bands_){
+            juce::Image::BitmapData pixels(spectralHeat_,juce::Image::BitmapData::writeOnly);
+            for(int i=0;i<N;++i){
+                const float energy=surgery::spectrum::brightness(bands_[(size_t)i]);
+                const auto rgb=surgery::spectrum::colourAt(prism::analysis::LabBands::centreFrequency(i));
+                const auto tint=juce::Colour::fromFloatRGBA(rgb.r,rgb.g,rgb.b,energy>0?.28f+.62f*energy:0.f);
+                for(int y=0;y<64;++y)pixels.setPixelColour(i,y,tint.withMultipliedAlpha(1.f-.7f*y/63.f));
+            }
+            heatLevels_=bands_;heatValid_=true;
         }
+        g.saveState();g.reduceClipRegion(filledPath);
+        g.drawImage(spectralHeat_,r);
         g.restoreState();
     }
     // A single fine readout follows the spectrum edge, never a 2D waterfall.
@@ -254,6 +256,14 @@ void RootsGraph::paint(juce::Graphics& g){
     const float baseY=r.getCentreY()+23.0f;
     const float lowHz=param(selectedRoot*2,"hz");
     const float highHz=param(selectedRoot*2+1,"hz");
+    std::array<double,32> overlayKey{sr,(double)getWidth(),(double)getHeight(),(double)selectedRoot,lowHz,highHz,(double)slot_,(double)colour(selectedRoot).getARGB()};
+    for(int i=0;i<4;++i){
+        int index=8+i*4;
+        for(const char* suffix:{"on","hz","q","depth"})overlayKey[(size_t)index++]=pval(processor_.apvts,PRISMVSTAudioProcessor::carveId(selectedRoot,i,suffix));
+    }
+    if(!responseOverlayValid_||responseOverlayKey_!=overlayKey){
+        responseOverlay_=juce::Image(juce::Image::ARGB,getWidth(),getHeight(),true);
+        juce::Graphics overlayGraphics(responseOverlay_);
     for(int slot=0;slot<surgery::kSlots;++slot){
         const auto id=[selectedRoot,slot](const char* suffix){
             return PRISMVSTAudioProcessor::carveId(selectedRoot,slot,suffix);
@@ -264,7 +274,11 @@ void RootsGraph::paint(juce::Graphics& g){
         const double q=pval(processor_.apvts,id("q"));
         const double depth=pval(processor_.apvts,id("depth"));
         if(depth<0.001)continue;
-        juce::Path contour,footprint;
+        auto& cache=responseCache_[(size_t)slot];
+        const std::array<double,9> key{sr,fc,q,depth,lowHz,highHz,(double)getWidth(),(double)getHeight(),(double)selectedRoot};
+        auto& contour=cache.contour;auto& footprint=cache.footprint;
+        if(!cache.valid||cache.key!=key){
+        contour.clear();footprint.clear();
         const float firstX=freqToX(20.0f);
         footprint.startNewSubPath(firstX,baseY);
         // High Q requires sub-pixel-aware sampling; old 256 samples across
@@ -284,12 +298,17 @@ void RootsGraph::paint(juce::Graphics& g){
         }
         footprint.lineTo(freqToX(20000.0f),baseY);
         footprint.closeSubPath();
+        cache.key=key;cache.valid=true;
+        }
         const auto tint=colour(selectedRoot).brighter(slot==slot_?0.6f:0.10f);
-        g.setColour(tint.withAlpha(slot==slot_?0.20f:0.08f));
-        g.fillPath(footprint);
-        g.setColour(tint.withAlpha(slot==slot_?0.96f:0.58f));
-        g.strokePath(contour,juce::PathStrokeType(slot==slot_?2.4f:1.35f));
+        overlayGraphics.setColour(tint.withAlpha(slot==slot_?0.20f:0.08f));
+        overlayGraphics.fillPath(footprint);
+        overlayGraphics.setColour(tint.withAlpha(slot==slot_?0.96f:0.58f));
+        overlayGraphics.strokePath(contour,juce::PathStrokeType(slot==slot_?2.4f:1.35f));
     }
+        responseOverlayKey_=overlayKey;responseOverlayValid_=true;
+    }
+    g.drawImageAt(responseOverlay_,0,0);
     g.setColour(juce::Colour(0xffacc3cf));
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
     g.drawText("SYNESTHESIA V1 / FREQUENCY > HUE / LEVEL > LIGHT     CARVE / STATIC RESPONSE",
@@ -718,7 +737,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         label->setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::plain)));
         label->setJustificationType(juce::Justification::centredLeft);
     }
-    title_.setText("SURGERY EQ  /  v1.0.3",juce::dontSendNotification);
+    title_.setText("SURGERY EQ  /  v1.0.4",juce::dontSendNotification);
     analyzerLegend_.setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::bold)));
     analyzerLegend_.setText("SYNESTHESIA V1   /   HUE x ENERGY",
                             juce::dontSendNotification);
@@ -1039,7 +1058,15 @@ thresholdLabel_.setText("COMP THRESHOLD",
         status_.setText(line,juce::dontSendNotification);
     } else status_.setText(status,juce::dontSendNotification);
 }
-void RootsEditor::paint(juce::Graphics& g){paintRack(g);}
+void RootsEditor::paint(juce::Graphics& g){
+    // The static hardware surface is rasterised once per size/tab, not at
+    // analyzer rate. Dirty child paints simply reuse this image.
+    if(rackBackground_.getWidth()!=getWidth()||rackBackground_.getHeight()!=getHeight()||backgroundMode_!=mode_){
+        rackBackground_=juce::Image(juce::Image::RGB,getWidth(),getHeight(),false);
+        juce::Graphics background(rackBackground_);paintRack(background);backgroundMode_=mode_;
+    }
+    g.drawImageAt(rackBackground_,0,0);
+}
 void RootsEditor::resized(){layoutRack();}
 
 void RootsEditor::paintRack(juce::Graphics& g){

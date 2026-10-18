@@ -49,7 +49,7 @@ public:
     void setFrozen(bool frozen) noexcept {frozen_=frozen;repaint();}
     bool isFrozen() const noexcept {return frozen_;}
     void setPresentation(int mode,int slot) {
-        mode_=mode;slot_=slot;repaint();
+        if(mode_!=mode||slot_!=slot){mode_=mode;slot_=slot;repaint();}
     }
 private:
     PRISMVSTAudioProcessor& processor_;
@@ -61,6 +61,19 @@ private:
     surgery::LiveSpectrumEnvelope<PRISMVSTAudioProcessor::labBars> spectrumEnvelope_;
     bool hover_=false,frozen_=false;
     juce::Point<float> mouse_;
+    struct ResponseCache {
+        std::array<double,9> key{};
+        juce::Path contour,footprint;
+        bool valid=false;
+    };
+    std::array<ResponseCache,4> responseCache_;
+    juce::Image spectralHeat_{juce::Image::ARGB,PRISMVSTAudioProcessor::labBars,64,true};
+    std::array<float,PRISMVSTAudioProcessor::labBars> heatLevels_{};
+    bool heatValid_=false;
+    juce::Image responseOverlay_;
+    std::array<double,32> responseOverlayKey_{};
+    bool responseOverlayValid_=false;
+
     juce::Rectangle<float> area() const;
     float freqToX(float f) const;
     float xToFreq(float x) const;
@@ -88,7 +101,8 @@ private:
     PRISMVSTAudioProcessor& processor_;
     RootsGraph graph_;
     SurgeryLookAndFeel lookAndFeel_;
-    juce::Image rackChassis_;
+    juce::Image rackChassis_,rackBackground_;
+    int backgroundMode_=-1;
     std::array<RootSelectorButton,7> rootButtons_;
     juce::Slider gain_,threshold_,analyzerSlope_,analyzerMemory_;
     juce::ComboBox analyzerDepth_;
