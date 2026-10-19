@@ -17,14 +17,17 @@ public:
         for(int i=0;i<4;++i){screws_[(size_t)i]=juce::Image(juce::Image::RGB,40,40,false,juce::SoftwareImageType{});sample(screws_[(size_t)i],{i%2?917:3,i/2?630:11,40,40});}
     }
     struct State { double energy=0,glow=.012,phase=0,temperature=.5,level=0,bass=0,flux=0,width=0,flash=0,flashPosition=.5; };
-    struct Statistics { double meanDensity=0,litFraction=0,renderedLitFraction=0;float maximum=0; };
+    struct OpticalCell {float r=0,g=0,b=0,core=0;bool operator==(const OpticalCell&) const = default;};
+    struct Statistics { double meanDensity=0,litFraction=0,renderedLitFraction=0;float maximum=0;std::array<double,3> chamberOccupancy{};std::array<std::array<int,3>,3> colourFamilies{}; };
     static juce::Rectangle<float> top(int w) { return {70.f,6.f,w-140.f,28.f}; }
     static juce::Rectangle<float> side(int w,int h,bool right) { return {right?w-61.f:5.f,52.f,56.f,h-104.f}; }
     const State& state() const noexcept { return state_; }
     const auto& densityField() const noexcept {return density_;}
+    const auto& opticalField() const noexcept {return optics_;}
     Statistics statistics() const noexcept {
         Statistics out;for(float d:density_){out.meanDensity+=d;out.litFraction+=d>.05f?1:0;out.maximum=std::max(out.maximum,d);}
-        out.meanDensity/=density_.size();out.litFraction/=density_.size();out.renderedLitFraction=visiblePixels_/(double)density_.size();return out;
+        out.meanDensity/=density_.size();out.litFraction/=density_.size();out.renderedLitFraction=visiblePixels_/(double)density_.size();
+        for(int i=0;i<3;++i)out.chamberOccupancy[(size_t)i]=chamberVisible_[(size_t)i]/(double)(i==0?12288:9216);out.colourFamilies=colourFamilies_;return out;
     }
     // Existing Storm values only. SONAR OFF overrides visibility even while
     // frozen; it never alters the held field. No bright decorative base fill.
@@ -90,7 +93,7 @@ public:
             }
             dirty_=true;
         }
-        if(dirty_){activity_=0;visiblePixels_=0;render(topLiquid_,0);render(leftLiquid_,1);render(rightLiquid_,2);dirty_=false;pendingDt_=0;}
+        if(dirty_){activity_=0;visiblePixels_=0;chamberVisible_.fill(0);colourFamilies_={};render(topLiquid_,0);render(leftLiquid_,1);render(rightLiquid_,2);dirty_=false;pendingDt_=0;}
         // Rounded alpha is precomputed only when bounds change. Chrome/glass
         // reflections are static-cache work; no per-frame vector path clips.
         g.setOpacity(1);g.drawImage(topLiquid_,top(w));g.drawImage(leftLiquid_,side(w,h,false));g.drawImage(rightLiquid_,side(w,h,true));
@@ -99,6 +102,8 @@ private:
     State state_{};bool dirty_=true,enabled_=false,frozen_=false,reduced_=true;
     double pendingDt_=0,decay_=.18;float activity_=0;int visiblePixels_=0;
     std::array<float,30720> density_{};
+    std::array<OpticalCell,30720> optics_{};
+    std::array<int,3> chamberVisible_{};std::array<std::array<int,3>,3> colourFamilies_{};
     std::array<std::uint8_t,30720> masks_{};int maskWidth_=0,maskHeight_=0;
     juce::Image topLiquid_{juce::Image::ARGB,512,24,false};
     juce::Image leftLiquid_{juce::Image::ARGB,24,384,false},rightLiquid_{juce::Image::ARGB,24,384,false};
@@ -116,42 +121,62 @@ private:
         }
         return image;
     }
-    static juce::Colour currentColour(float u,int orientation,float centroid) {
-        if(orientation==1)return juce::Colour::fromHSV(.54f+.085f*centroid+.015f*std::sin(u*6),.85f,1,1);
-        if(orientation==2)return juce::Colour::fromHSV(std::fmod(.86f+.15f*centroid+.06f*u,1.f),.8f,1,1);
-        const std::array<juce::Colour,5> colours{juce::Colour(0xff27ddff),juce::Colour(0xff316bff),juce::Colour(0xffa076ff),juce::Colour(0xfff250c7),juce::Colour(0xffffa078)};
-        const float position=weather::unit(u+(centroid-.5f)*.18f)*4;const int a=std::min(3,(int)position);float t=position-a;t=t*t*(3-2*t);return colours[(size_t)a].interpolatedWith(colours[(size_t)a+1],t);
+    static juce::Colour plasmaColour(float balance) {
+        const std::array<juce::Colour,6> colours{juce::Colour(0xff27ddff),juce::Colour(0xff306bff),juce::Colour(0xff9e8bff),juce::Colour(0xffb07df4),juce::Colour(0xfff05bbf),juce::Colour(0xffffab8c)};
+        const float p=weather::unit(balance)*5;const int a=std::min(4,(int)p);float t=p-a;t=t*t*(3-2*t);return colours[(size_t)a].interpolatedWith(colours[(size_t)a+1],t);
     }
     void render(juce::Image& image,int orientation) {
         juce::Image::BitmapData output(image,juce::Image::BitmapData::writeOnly);
         const int length=orientation?image.getHeight():image.getWidth(),breadth=orientation?image.getWidth():image.getHeight();
         const int offset=orientation==0?0:orientation==1?12288:21504;
-        const float phase=(float)state_.phase,energy=(float)(state_.energy*state_.level),bass=(float)state_.bass,flux=(float)state_.flux,width=(float)state_.width;
-        const float spread=.065f+.22f*width,thickness=.022f+.032f*bass+(reduced_?.0015f:.009f)*flux;
+        const float phase=(float)state_.phase,phi=phase*juce::MathConstants<float>::twoPi;
+        const float energy=(float)(state_.energy*state_.level),bass=(float)state_.bass,flux=(float)state_.flux,width=(float)state_.width,centroid=(float)state_.temperature;
+        const float spread=.08f+.24f*width,bodyWidth=.075f+.055f*bass,coreWidth=.020f+.020f*bass;
+        const float agitation=flux*(reduced_?.005f:.04f),bias=orientation==1?-.045f:orientation==2?.045f:0;
         const double dt=frozen_?0:pendingDt_,attack=std::exp(-dt/.035),release=std::exp(-dt/decay_);
+        std::array<float,24> reflection{};
+        for(int j=0;j<breadth;++j){const float v=j/(float)(breadth-1),a=(v-.18f)/.035f,b=(v-.80f)/.025f;reflection[(size_t)j]=.12f/(1+a*a)+.05f/(1+b*b);}
         for(int i=0;i<length;++i){
-            const float u=i/(float)(length-1);const auto colour=currentColour(u,orientation,(float)state_.temperature);
-            std::array<float,3> centre{},pulse{};
-            for(int strand=0;strand<3;++strand){
-                const float direction=strand==1?-1.f:1.f;
-                centre[(size_t)strand]=.5f+spread*std::sin(u*(9+strand*3.f)+phase*direction*4+strand*2.1f)+.025f*flux*(reduced_?.12f:1.f)*std::sin(u*29-phase*3);
-                const float position=std::fmod(phase*(.7f+strand*.16f)+strand*.33f+orientation*.13f,1.f);
-                const float raw=std::abs(u-position),distance=std::min(raw,1-raw),q=distance/(.035f+.045f*bass),z=1+q*q;
-                pulse[(size_t)strand]=1/(z*z*z)*(strand==2?.15f+.65f*width:1.f);
+            const float u=i/(float)(length-1),bodyCentre=.5f+.16f*std::sin(u*10+phi)+agitation*std::sin(u*21-phi*2);
+            std::array<float,4> centre{},pulse{},weight{};std::array<juce::Colour,4> colours{};
+            const std::array<float,4> hue{.08f,.40f,.70f,.96f};
+            for(int strand=0;strand<4;++strand){
+                centre[(size_t)strand]=strand==0?bodyCentre:bodyCentre+spread*std::sin(u*(8+strand*2.f)+phi*(strand%2?1.f:-1.f)+strand*1.8f);
+                const float position=std::fmod(phase*(.75f+strand*.125f)+strand*.25f+orientation*.07f,1.f);
+                const float raw=std::abs(u-position),distance=std::min(raw,1-raw),q=distance/(.095f+.07f*bass),z=1+q*q;
+                pulse[(size_t)strand]=.22f+.78f/(z*z);
+                weight[(size_t)strand]=strand==0?1.3f:strand==1?.78f+.30f*(1-std::abs(centroid-.5f)*2):strand==2?.60f+.35f*centroid:.50f+.4f*flux+.25f*centroid;
+                colours[(size_t)strand]=plasmaColour(hue[(size_t)strand]+(centroid-.5f)*.16f-.08f*bass+.10f*flux+bias);
             }
-            const float flashQ=(u-(float)state_.flashPosition)/.045f,flash=.5f*(float)state_.flash/(1+flashQ*flashQ);
+            const auto bodyColour=plasmaColour(.45f+.35f*std::sin(u*10+phi)+(centroid-.5f)*.35f-.15f*bass+bias);
+            const auto hazeColour=plasmaColour(.42f+.30f*centroid+.1f*std::sin(u*5-phi));
+            const float bodyPulse=.35f+.65f*pulse[0],flashQ=(u-(float)state_.flashPosition)/.07f,flash=(float)state_.flash/(1+flashQ*flashQ);
             for(int j=0;j<breadth;++j){
-                const float v=j/(float)(breadth-1);float target=0;
-                for(int strand=0;strand<3;++strand){const float d=(v-centre[(size_t)strand])/thickness,z=1+d*d;target+=pulse[(size_t)strand]/(z*z*z);}
-                target=enabled_?weather::unit(energy*(1.1f+.55f*bass+.45f*flux)*target):0;
+                const float v=j/(float)(breadth-1),d=(v-bodyCentre)/bodyWidth,h=(v-bodyCentre)/(.18f+.06f*bass),hz=1+h*h;
+                const float body=1.75f*bodyPulse/(1+d*d*d*d*d*d),haze=.055f*bodyPulse/(hz*hz);
+                float mass=body+haze,red=body*bodyColour.getFloatRed()+haze*hazeColour.getFloatRed(),green=body*bodyColour.getFloatGreen()+haze*hazeColour.getFloatGreen(),blue=body*bodyColour.getFloatBlue()+haze*hazeColour.getFloatBlue(),core=0;
+                for(int strand=0;strand<4;++strand){
+                    const float radius=coreWidth*(strand==0?1.f:.72f),q=(v-centre[(size_t)strand])/radius,cz=1+q*q;
+                    const float ribbon=weight[(size_t)strand]*pulse[(size_t)strand]/(cz*cz*cz);
+                    mass+=ribbon;core+=ribbon;red+=ribbon*colours[(size_t)strand].getFloatRed();green+=ribbon*colours[(size_t)strand].getFloatGreen();blue+=ribbon*colours[(size_t)strand].getFloatBlue();
+                }
+                const float target=enabled_?weather::unit(std::min(.60f,energy*(1.05f+.45f*bass+.55f*flux))*mass):0;
                 const int ox=orientation?j:i,oy=orientation?i:j,index=offset+oy*image.getWidth()+ox;
-                auto& density=density_[(size_t)index];density=(float)(target+(density-target)*(target>density?attack:release));if(density<1.e-6f)density=0;
+                auto& density=density_[(size_t)index];auto& optical=optics_[(size_t)index];
+                const double response=target>density?attack:release;
+                auto follow=[&](float& shown,float goal){shown=(float)(goal+(shown-goal)*response);if(shown<1.e-6f)shown=0;};
+                follow(density,target);const float scale=mass>0?target/mass:0;
+                follow(optical.r,red*scale);follow(optical.g,green*scale);follow(optical.b,blue*scale);follow(optical.core,core*scale);
                 activity_=std::max(activity_,density);
-                const float illumination=enabled_?std::min(1.f,density*(.6f+.4f*(float)state_.glow)+flash*density):0;
-                const float alpha=masks_[(size_t)index]/255.f*weather::unit(3.f*std::sqrt(illumination));
-                visiblePixels_+=alpha>.10f?1:0;
-                const float white=weather::unit((illumination-.28f)*1.1f);
-                output.setPixelColour(ox,oy,juce::Colour::fromFloatRGBA(colour.getFloatRed()+(1-colour.getFloatRed())*white,colour.getFloatGreen()+(1-colour.getFloatGreen())*white,colour.getFloatBlue()+(1-colour.getFloatBlue())*white,alpha));
+                const float illumination=enabled_?std::max(0.f,density-.015f)*(.8f+.6f*(float)state_.glow)*(1+flash*2):0;
+                const float alpha=masks_[(size_t)index]/255.f*(illumination*4.8f/(1+illumination*4.8f));
+                if(alpha>.10f){++visiblePixels_;++chamberVisible_[(size_t)orientation];}
+                const float denominator=std::max(1.e-6f,density),white=weather::unit(optical.core*(.55f+.2f*flux)+flash*optical.core*2);
+                const float gloss=reflection[(size_t)j];
+                auto channel=[&](float c,float glass){c=weather::unit(c/denominator);return weather::unit((c+(1-c)*white)*(1-gloss)+glass*gloss);};
+                const float r=channel(optical.r,.85f),g=channel(optical.g,.95f),b=channel(optical.b,1);
+                if(alpha>.15f){auto& family=colourFamilies_[(size_t)orientation];if(b>r*1.2f&&g>r)++family[0];if(b>g*1.15f&&r>g*1.15f)++family[1];if(r>g*1.3f&&r>b*.8f)++family[2];}
+                output.setPixelColour(ox,oy,juce::Colour::fromFloatRGBA(r,g,b,alpha));
             }
         }
     }

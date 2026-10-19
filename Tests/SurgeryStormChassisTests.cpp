@@ -10,7 +10,7 @@ bool runStormChassisTests(){
     juce::ScopedJuceInitialiser_GUI gui;
     using surgery::rack::StormChassis;
     auto fail=[](const char* text){std::cerr<<"STORM CHASSIS FAIL: "<<text<<'\n';return false;};
-    StormChassis border;surgery::weather::Meaning signal;signal.level=.8f;signal.bass=.6f;signal.flux=.4f;signal.width=.5f;signal.centroid=.65f;
+    auto borderStorage=std::make_unique<StormChassis>();auto& border=*borderStorage;surgery::weather::Meaning signal;signal.level=.8f;signal.bass=.6f;signal.flux=.4f;signal.width=.5f;signal.centroid=.65f;
     const double expected=.30*.8+.35*.6+.20*.4+.15*.5;
     for(int i=0;i<120;++i)border.update(signal,1./60.,.5,false,false);
     auto held=border.state();
@@ -32,23 +32,32 @@ bool runStormChassisTests(){
         for(int y=interior.getY();y<interior.getBottom();++y)for(int x=interior.getX();x<interior.getRight();++x)
             if(image.getPixelAt(x,y).getAlpha()!=0)return fail("border overlaps instrument face");
     }
-    StormChassis hollow;
+    auto hollowStorage=std::make_unique<StormChassis>();auto& hollow=*hollowStorage;
     juce::Image vessel(juce::Image::ARGB,1120,755,true,juce::SoftwareImageType{});
     auto draw=[&](){vessel.clear(vessel.getBounds(),juce::Colours::transparentBlack);juce::Graphics g(vessel);hollow.paintLiquid(g,1120,755);};
-    for(int frame=0;frame<120;++frame){hollow.update(signal,1./60.,.3,false,false);draw();}
+    auto normal=signal;normal.level=.65f;normal.bass=.45f;normal.flux=.20f;normal.centroid=.5f;
+    for(int frame=0;frame<120;++frame){hollow.update(normal,1./60.,.3,false,false);draw();}
     const auto active=hollow.statistics();
-    if(active.maximum<.04||active.litFraction>.25||active.meanDensity>.04||active.renderedLitFraction>.45)return fail("chamber not mostly hollow / no visible current");
-    auto density=hollow.densityField();auto current=hollow.state();
+    std::cout<<"Normal occupancy "<<active.renderedLitFraction<<" chambers ";for(auto v:active.chamberOccupancy)std::cout<<v<<' ';std::cout<<" families ";for(auto f:active.colourFamilies)for(auto c:f)std::cout<<c<<' ';std::cout<<'\n';
+    std::ofstream truth("surgery-hollow-vessel.csv");truth<<"scene,mean_density,peak,rendered_lit_fraction,top_occupancy,left_occupancy,right_occupancy\n";
+    auto record=[&](const char* name,const auto& stats){truth<<name<<','<<stats.meanDensity<<','<<stats.maximum<<','<<stats.renderedLitFraction;for(auto v:stats.chamberOccupancy)truth<<','<<v;truth<<'\n';truth.flush();};record("normal",active);
+    if(active.maximum<.04||active.renderedLitFraction<.25||active.renderedLitFraction>.45)return fail("normal liquid occupancy outside 25-45 percent");
+    for(auto occupancy:active.chamberOccupancy)if(occupancy<.25||occupancy>.45)return fail("individual chamber normal occupancy outside target");
+    for(auto families:active.colourFamilies)for(auto count:families)if(count<12)return fail("a chamber lacks multicolour currents");
+    auto density=std::make_unique<std::array<float,30720>>(hollow.densityField());auto optics=std::make_unique<std::array<StormChassis::OpticalCell,30720>>(hollow.opticalField());auto current=hollow.state();
     for(int frame=0;frame<30;++frame){hollow.update(signal,1./60.,.3,true,false);draw();}
-    if(std::memcmp(&current,&hollow.state(),sizeof(current))||density!=hollow.densityField())return fail("Freeze advances plasma/trails");
+    if(std::memcmp(&current,&hollow.state(),sizeof(current))||*density!=hollow.densityField()||*optics!=hollow.opticalField())return fail("Freeze advances plasma/trails");
     hollow.update(signal,1./60.,.3,true,false,false);draw();
     for(int y=0;y<vessel.getHeight();++y)for(int x=0;x<vessel.getWidth();++x)if(vessel.getPixelAt(x,y).getAlpha()!=0)return fail("SONAR OFF leaves animated energy visible");
-    if(density!=hollow.densityField())return fail("OFF destroys frozen field");
+    if(*density!=hollow.densityField()||*optics!=hollow.opticalField())return fail("OFF destroys frozen field");
     for(int frame=0;frame<300;++frame){hollow.update({},.05,.3,false,false,true);draw();}
     if(hollow.statistics().maximum>1.e-5||hollow.state().energy!=0)return fail("silence retains energy or full motion");
     const auto quietPhase=hollow.state().phase;for(int i=0;i<20;++i)hollow.update({},.05,.3,false,false,true);
     if(hollow.state().phase!=quietPhase)return fail("silent independent motion");
-    std::ofstream truth("surgery-hollow-vessel.csv");truth<<"active_mean_density,active_lit_fraction,active_peak,rendered_lit_fraction,silent_peak\n"<<active.meanDensity<<','<<active.litFraction<<','<<active.maximum<<','<<active.renderedLitFraction<<','<<hollow.statistics().maximum<<'\n';
+    record("silence",hollow.statistics());
+    auto energetic=signal;energetic.level=.95f;energetic.bass=.85f;energetic.flux=.8f;energetic.width=.8f;
+    for(int i=0;i<120;++i){hollow.update(energetic,1./60.,.3,false,false);draw();}record("energetic",hollow.statistics());
+    if(hollow.statistics().meanDensity<=active.meanDensity||hollow.statistics().renderedLitFraction<=active.renderedLitFraction||hollow.statistics().renderedLitFraction>.70)return fail("energy does not increase body/bloom");
     std::ofstream csv("surgery-storm-chassis-performance.csv");csv<<"scale,median_ms,p95_ms,max_ms,dynamic_texture_pixels,raw_fixed_texture_bytes\n";
     for(float scale:{1.f,1.25f,1.5f}){
         juce::Image target(juce::Image::RGB,(int)(1120*scale),(int)(755*scale),true);std::vector<double> times;
@@ -57,7 +66,7 @@ bool runStormChassisTests(){
             {juce::Graphics g(target);g.addTransform(juce::AffineTransform::scale(scale));border.paintLiquid(g,1120,755);}
             if(frame>=10)times.push_back(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count());
         }
-        std::sort(times.begin(),times.end());csv<<scale<<','<<times[times.size()/2]<<','<<times[times.size()*95/100]<<','<<times.back()<<",30720,307968\n";
+        std::sort(times.begin(),times.end());csv<<scale<<','<<times[times.size()/2]<<','<<times[times.size()*95/100]<<','<<times.back()<<",30720,799488\n";
     }
     std::cout<<"STORM CHASSIS: weighted energy/glow equations, Freeze, reduced motion, silence, allocation-free state update, five editor sizes with untouched interior, and 100/125/150% border timings passed\n";
     return true;
