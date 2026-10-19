@@ -4,6 +4,7 @@
 #include <fstream>
 #include <thread>
 #include <numeric>
+#include <chrono>
 bool runWeatherCalibration(){
     using namespace surgery::weather;
     juce::dsp::FFT fft(12);juce::dsp::WindowingFunction<float> hann(fftLength,juce::dsp::WindowingFunction<float>::hann);
@@ -58,11 +59,26 @@ bool runWeatherCalibration(){
     std::uint64_t last=0;double lastTime=-100;int events=0;
     for(int i=0;i<1200;++i){combined[85]=(i%16<2?1000.f:0.f);auto out=measurement.process(combined.data(),{},10+i*.008,.008);if(out.event!=last){if(out.eventSeconds-lastTime<.749)return fail("flash refractory interval");lastTime=out.eventSeconds;last=out.event;++events;}}
     if(events<2||events>15)return fail("transient sensitivity/rate");
+    combined.fill(1.e-30f);auto tiny=measurement.process(combined.data(),{},30,.008);
+    if(tiny.fullPower!=0||tiny.analysisPower!=0||tiny.level!=0)return fail("subnormal measurement output");
+    combined[10]=std::numeric_limits<float>::quiet_NaN();combined[20]=std::numeric_limits<float>::infinity();
+    auto invalid=measurement.process(combined.data(),{},std::numeric_limits<double>::quiet_NaN(),std::numeric_limits<double>::infinity());
+    if(!std::isfinite(invalid.amplitudeDb)||!std::isfinite(invalid.flux)||invalid.analysisPower!=0)return fail("nonfinite input containment");
     SnapshotQueue<Snapshot> queue;Snapshot value;for(int i=0;i<7;++i){value.sequence=i;if(!queue.push(value))return fail("queue capacity");}
     if(queue.push(value)||!queue.latest(value)||value.sequence!=6)return fail("queue overflow/latest");
     std::atomic<bool> done=false,bad=false;std::thread producer([&]{for(int i=1;i<30000;++i){Snapshot v;v.sequence=i;v.fullPower=(float)i;queue.push(v);}done=true;});
-    while(!done||queue.latest(value)){if(queue.latest(value)&&value.fullPower!=(float)value.sequence)bad=true;}
+    while(!done.load()){if(queue.latest(value)&&value.fullPower!=(float)value.sequence)bad=true;}
+    while(queue.latest(value))if(value.fullPower!=(float)value.sequence)bad=true;
     producer.join();if(bad)return fail("torn snapshot");
+    std::ofstream performance("surgery-weather-measurement-performance.csv");performance<<"sample_rate,mean_ms,estimated_one_core_percent_at_native_hop\n";
+    for(double rate:{44100.,48000.,96000.,192000.}){
+        measurement.reset(rate,sum,energy);measurement.boundaries(edges);combined.fill(100);
+        for(int i=0;i<fftLength;++i){left[(size_t)i]=.1f;right[(size_t)i]=-.1f;}
+        const auto start=std::chrono::steady_clock::now();double checksum=0;
+        for(int n=0;n<600;++n){const auto sums=stereoSums(left.data(),right.data(),fftLength);const auto out=measurement.process(combined.data(),sums,n*384/rate,384/rate);checksum+=out.centroidHz;}
+        const double meanMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count()/600;
+        if(!std::isfinite(checksum))return fail("feature benchmark finite");performance<<rate<<','<<meanMs<<','<<meanMs*(rate/384)/10<<'\n';
+    }
     std::cout<<"WEATHER: coherent/DC/Nyquist amplitude, Parseval white/pink/sine power, 4 rates, ROOT energy conservation, M/S/correlation, stable sustained flux, refractory events and bounded SPSC passed; measurement bytes "<<sizeof(Measurement)<<" queue bytes "<<sizeof(queue)<<'\n';
     return true;
 }

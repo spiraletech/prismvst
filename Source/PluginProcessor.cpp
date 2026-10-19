@@ -265,6 +265,8 @@ PRISMVSTAudioProcessor::PRISMVSTAudioProcessor()
     engineMode = apvts.getRawParameterValue("roots_engine_mode");
     bypassValue = apvts.getRawParameterValue("surgery_bypass");
     trimValue = apvts.getRawParameterValue("surgery_output_db");
+    weatherModeValue_=apvts.getRawParameterValue("sonar_weather_mode");
+    weatherFillValue_=apvts.getRawParameterValue("aura_color");
 
     for (auto& v : spectrum)
         v.store(kFloorDb);
@@ -645,6 +647,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
     p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID { "surgery_bypass", 1 }, "Surgery Bypass", false));
     p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "surgery_output_db", 1 }, "Surgery Output Trim",
         juce::NormalisableRange<float>(-24.0f, 12.0f, 0.01f), 0.0f));
+    // Optional visual-only append: historical IDs, ordering and defaults stay intact.
+    p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"sonar_weather_mode",1},"SONAR Visual Mode",juce::StringArray{"STANDARD","STORM SYMBIOTE"},0));
+    p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"sonar_reduced_motion",1},"SONAR Reduced Motion",true));
     return { p.begin(), p.end() };
 }
 
@@ -728,6 +733,7 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
     for (auto& v : spectrum)
         v.store(kFloorDb);
     labAnalyzer.reset();
+    prepareWeatherAnalysis();
     for (auto& v : labDb) v.store(prism::analysis::LabBands::floorDb);
     for (auto& v : labPeakDb) v.store(prism::analysis::LabBands::floorDb);
 
@@ -1047,6 +1053,7 @@ void PRISMVSTAudioProcessor::renderSpectrumFrame()
 
         spectrum[(size_t)i].store(toDb(peakMagnitude + 1.0e-12f));
     }
+    publishWeatherAnalysis();
 }
 
 void PRISMVSTAudioProcessor::copySpectrum(std::array<float, spectrumBins>& destination) const noexcept
@@ -1274,6 +1281,9 @@ void PRISMVSTAudioProcessor::setStateInformation(const void* data, int size)
                     auto* parameter=xml->createNewChildElement("PARAM");
                     parameter->setAttribute("id",id);parameter->setAttribute("value",0.0);
                 }
+            // Older sessions never opt into a new visual mode implicitly.
+            for(const auto* id:{"sonar_weather_mode","sonar_reduced_motion"})
+                if(xml->getChildByAttribute("id",id)==nullptr){auto* parameter=xml->createNewChildElement("PARAM");parameter->setAttribute("id",id);parameter->setAttribute("value",juce::String(id)=="sonar_reduced_motion"?1.0:0.0);}
             apvts.replaceState(juce::ValueTree::fromXml(*xml));
             sanitizeCrossovers();
             // Resolve old sessions that persisted more than one SOLO flag.

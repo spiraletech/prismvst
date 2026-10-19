@@ -41,10 +41,12 @@ void rotary(juce::Slider& s,juce::String suffix,double resetValue) {
 }
 }
 RootsGraph::RootsGraph(PRISMVSTAudioProcessor& owner):processor_(owner) {
+    processor_.beginWeatherConsumer();
     bands_.fill(-144.0f);peaks_.fill(-144.0f);
     setMouseCursor(juce::MouseCursor::CrosshairCursor);
 }
 RootsGraph::~RootsGraph(){
+    processor_.endWeatherConsumer();
     if(dragging_>=0)
         if(auto* parameter=processor_.apvts.getParameter(PRISMVSTAudioProcessor::rootsNodeId(dragging_,"hz")))
             parameter->endChangeGesture();
@@ -100,6 +102,8 @@ juce::Colour RootsGraph::colour(int root) const {
 void RootsGraph::updateAnalyzer(
     const std::array<float,PRISMVSTAudioProcessor::labBars>& values,
     const std::array<float,PRISMVSTAudioProcessor::labBars>& pk){
+    const std::array<float,3> options{pval(processor_.apvts,"aura_color"),pval(processor_.apvts,"analyzer_depth"),pval(processor_.apvts,"analyzer_slope")};
+    if(options!=paintOptions_){paintOptions_=options;repaint();}
     if(frozen_)return;
     // Analyzer worker owns the FFT. Only 256 display values arrive here.
     // Message-thread smoothing is fast-attack with calibrated decay; never
@@ -112,6 +116,22 @@ void RootsGraph::updateAnalyzer(
     peaks_=pk;
     // Retain 60 Hz decay semantics; settled/unchanged frames need no paint.
     if(previous!=bands_||previousPeaks!=peaks_)repaint();
+}
+void RootsGraph::updateWeather(const surgery::weather::Snapshot* snapshot,double elapsed,bool active,bool reduced,double memory){
+    if(!active){
+        if(weatherActive_){weatherActive_=false;weatherInterpretation_.quiet();weatherField_.clear();repaint();}
+        weatherInterpretation_.update(elapsed,memory,true);return;
+    }
+    if(frozen_)return;
+    if(!weatherActive_){weatherActive_=true;weatherInterpretation_.quiet();weatherField_.clear();weatherImage_.clear(weatherImage_.getBounds(),juce::Colour(0xff0b1118));repaint();}
+    if(snapshot)weatherInterpretation_.accept(*snapshot);
+    if(!weatherField_.update(weatherInterpretation_,elapsed,memory,reduced))return;
+    {
+        juce::Image::BitmapData pixels(weatherImage_,juce::Image::BitmapData::writeOnly);
+        const auto& field=weatherField_.pixels();
+        for(int y=0;y<64;++y)for(int x=0;x<128;++x){const auto c=field[(size_t)(y*128+x)];pixels.setPixelColour(x,y,juce::Colour(c.r,c.g,c.b));}
+    }
+    repaint();
 }
 void RootsGraph::selectNode(int i){
     const int target=juce::jlimit(0,prism::roots::v2::kNodes-1,i);
@@ -143,6 +163,10 @@ void RootsGraph::paint(juce::Graphics& g){
     }
     g.setFont(juce::Font(juce::FontOptions(11.0f,juce::Font::bold)));
     g.setColour(juce::Colour::fromRGB(145,172,182));
+    if(weatherActive_){
+        juce::Graphics::ScopedSaveState layer(g);g.reduceClipRegion(r.toNearestInt());
+        g.setOpacity(1.f);g.drawImage(weatherImage_,r);
+    }
     // Measured frequency/intensity colouring, independent of ROOT or theme.
     g.drawText(frozen_?"SONAR / FROZEN":"SONAR / LIVE FREQUENCY ENERGY",
                juce::Rectangle<float>(r.getX(),7.0f,r.getWidth(),16.0f).toNearestInt(),juce::Justification::centredLeft);
@@ -327,7 +351,12 @@ void RootsGraph::paint(juce::Graphics& g){
     g.setOpacity(1.f);g.drawImage(responseOverlay_,getLocalBounds().toFloat());
     g.setColour(juce::Colour(0xffacc3cf));
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
-    g.drawText("SYNESTHESIA V1 / FREQUENCY > HUE / LEVEL > LIGHT     CARVE / STATIC RESPONSE",
+    const auto& meaning=weatherInterpretation_.state();
+    const auto& measured=weatherInterpretation_.measured();
+    const juce::String caption=weatherActive_?
+        "SONAR 2.1 / "+juce::String(surgery::weather::mood(meaning))+" / R"+juce::String(selected_/2+1)+" PWR "+juce::String(surgery::weather::dbPower(measured.power[(size_t)(selected_/2)]),1)+" dBFS  B "+juce::String(meaning.bass,2)+"  C "+juce::String(meaning.centroid,2)+"  F "+juce::String(meaning.flux,2)+"  W "+juce::String(meaning.width,2)+"  R "+juce::String(meaning.rate,2)+"  D "+juce::String(meaning.density,2)+"  CORR "+juce::String(measured.correlation,2)+(measured.correlation<-.2f?" / MONO CAUTION":""):
+        "SYNESTHESIA V1 / FREQUENCY > HUE / LEVEL > LIGHT     CARVE / STATIC RESPONSE";
+    g.drawText(caption,
                juce::Rectangle<float>(r.getX(),r.getBottom()+23.0f,r.getWidth(),16.0f).toNearestInt(),
                juce::Justification::centredLeft);
     // Both boundary handles always live on one horizontal rail.
@@ -753,7 +782,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         label->setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::plain)));
         label->setJustificationType(juce::Justification::centredLeft);
     }
-    title_.setText("SURGERY EQ  /  v1.0.5",juce::dontSendNotification);
+    title_.setText("SURGERY EQ  /  v1.0.6",juce::dontSendNotification);
     analyzerLegend_.setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::bold)));
     analyzerLegend_.setText("SYNESTHESIA V1   /   HUE x ENERGY",
                             juce::dontSendNotification);
@@ -852,6 +881,13 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         freezeButton_.setButtonText(graph_.isFrozen()?"RESUME":"FREEZE");
     };
     addAndMakeVisible(freezeButton_);
+    weatherMode_.addItemList({"STANDARD","STORM SYMBIOTE"},1);addAndMakeVisible(weatherMode_);
+    weatherMode_.setTooltip("Optional creative acoustic-feature weather. The accurate spectrum and all audio processing remain unchanged.");
+    weatherModeA_=std::make_unique<ComboA>(processor_.apvts,"sonar_weather_mode",weatherMode_);
+    reducedMotion_.setClickingTogglesState(true);addAndMakeVisible(reducedMotion_);
+    reducedMotion_.setTooltip("Suppresses weather drift and lightning. Enabled by default. Full motion still limits local flashes to one per 0.75 seconds.");
+    reducedMotionA_=std::make_unique<ButtonA>(processor_.apvts,"sonar_reduced_motion",reducedMotion_);
+    analyzerLegend_.setText("SONAR 2.1 / VISUAL MODE",juce::dontSendNotification);
     compressor_.addItemList({ "COMP OFF", "OPTICAL 3:1", "OPTICAL 4:1", "TUBE 3:1", "FAST 4:1" },1);
     domain_.addItemList({ "STEREO", "MID", "SIDE" },1);
     detector_.addItemList({ "LINKED", "DUAL M/S", "MID ONLY", "SIDE ONLY" },1);
@@ -988,6 +1024,7 @@ void RootsEditor::setMode(int next){
     for(auto& b:carveSlotButtons_)b.setVisible(carve);
     carveOn_.setVisible(carve);carveDynamic_.setVisible(carve);
     analyzerLegend_.setVisible(mode_==3);
+    weatherMode_.setVisible(mode_==3);reducedMotion_.setVisible(mode_==3);
     for(auto* box:{&compressor_,&domain_,&detector_})box->setVisible(mode_==0);
     for(auto* label:{&compLabel_,&domainLabel_,&detectorLabel_})label->setVisible(mode_==0);
     gain_.setVisible(mode_==0);gainLabel_.setVisible(mode_==0);
@@ -1058,6 +1095,11 @@ thresholdLabel_.setText("COMP THRESHOLD",
     std::array<float,PRISMVSTAudioProcessor::labBars> bars{},peaks{};
     processor_.copyPrismLabBars(bars,peaks);
     graph_.updateAnalyzer(bars,peaks);
+    const double now=juce::Time::getMillisecondCounterHiRes()/1000.;
+    const double elapsed=weatherTick_>0?now-weatherTick_:1./60.;weatherTick_=now;
+    surgery::weather::Snapshot weatherSnapshot;
+    const bool newWeather=processor_.readWeather(weatherSnapshot);
+    graph_.updateWeather(newWeather?&weatherSnapshot:nullptr,elapsed,pval(processor_.apvts,"sonar_weather_mode")>=.5f&&pval(processor_.apvts,"aura_color")>=.5f,pval(processor_.apvts,"sonar_reduced_motion")>=.5f,pval(processor_.apvts,"aura_memory"));
     const auto state=processor_.getRootsMeter();
     const juce::String status=
         "IN "+juce::String(processor_.getInputPeakDb(),1)+" dBFS  /  OUT "+
@@ -1148,7 +1190,8 @@ void RootsEditor::layoutRack(){
     for(int i=0;i<3;++i){cl[(size_t)i]->setBounds(211+i*235,588,202,18);cs[(size_t)i]->setBounds(211+i*235,607,202,94);}
     for(int i=0;i<4;++i)carveSlotButtons_[(size_t)i].setBounds(938+(i%2)*72,612+(i/2)*42,66,30);
     for(int i=0;i<4;++i){onyxLabels_[(size_t)i].setBounds(204+i*218,588,218,18);onyxSliders_[(size_t)i].setBounds(204+i*218,607,218,94);}
-    analyzerLegend_.setBounds(28,618,239,58);
+    analyzerLegend_.setBounds(28,606,239,20);
+    weatherMode_.setBounds(28,631,228,32);reducedMotion_.setBounds(28,673,228,26);
     analyzerDepthLabel_.setBounds(285,612,175,18);analyzerDepth_.setBounds(285,638,175,34);
     analyzerSlopeLabel_.setBounds(492,588,190,18);analyzerSlope_.setBounds(492,607,190,94);
     analyzerMemoryLabel_.setBounds(697,588,190,18);analyzerMemory_.setBounds(697,607,190,94);

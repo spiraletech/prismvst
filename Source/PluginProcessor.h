@@ -1,4 +1,5 @@
 #pragma once
+#include "SurgeryWeatherMeasurement.h"
 #include <JuceHeader.h>
 #include <array>
 #include <atomic>
@@ -61,6 +62,10 @@ public:
     void copySpectrum(std::array<float, spectrumBins>& destination) const noexcept;
     void copyPrismLabBars(std::array<float, labBars>& db,
                           std::array<float, labBars>& peakDb) const noexcept;
+    // UI-thread consumer; producer is the existing analysis worker.
+    bool readWeather(surgery::weather::Snapshot& frame) noexcept {return weatherSnapshots_.latest(frame);}
+    void beginWeatherConsumer() noexcept {if(weatherConsumers_.load()==0){surgery::weather::Snapshot discard;weatherSnapshots_.latest(discard);}weatherConsumers_.fetch_add(1);}
+    void endWeatherConsumer() noexcept {weatherConsumers_.fetch_sub(1);}
     float getStereoActivity(int section) const noexcept
     {
         return stereoActivity[(size_t)juce::jlimit(0, numSections - 1, section)].load();
@@ -202,6 +207,15 @@ private:
     std::array<std::atomic<float>, labBars> labDb {};
     std::array<std::atomic<float>, labBars> labPeakDb {};
 
+    surgery::weather::Measurement weatherMeasurement_;
+    surgery::weather::SnapshotQueue<surgery::weather::Snapshot> weatherSnapshots_;
+    std::atomic<unsigned> weatherConsumers_{0};
+    std::atomic<float>* weatherModeValue_=nullptr;
+    std::atomic<float>* weatherFillValue_=nullptr;
+    double weatherWindowSum_=4096,weatherWindowEnergy_=6144,weatherSeconds_=0;
+    bool weatherWasEnabled_=false;
+    void prepareWeatherAnalysis();
+    void publishWeatherAnalysis();
     double currentSampleRate = 44100.0;
     double integratedEnergy = 0.0;
     uint64_t integratedSamples = 0;

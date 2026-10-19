@@ -76,7 +76,9 @@ inline bool verifyUI104(PRISMVSTAudioProcessor& processor,juce::AudioProcessorEd
         }
     }
     editor.removeFromDesktop();
-    if(menus!=4)return false;
+    if(menus!=5)return false;
+    if(auto* parameter=processor.apvts.getParameter("sonar_weather_mode"))parameter->setValueNotifyingHost(0);
+    graph->updateWeather(nullptr,1./60.,false,true,.18);
     auto second=std::make_unique<PRISMVSTAudioProcessor>();second->prepareToPlay(48000,512);
     std::unique_ptr<juce::AudioProcessorEditor> other(second->createEditor());
     RootsGraph* graph2=nullptr;
@@ -126,6 +128,6 @@ inline bool verifyUI104(PRISMVSTAudioProcessor& processor,juce::AudioProcessorEd
             if(!save(capture,"surgery-ui-104-"+juce::String(mode)+"-"+juce::String((int)(scale*100))+".png"))return false;
         }
     }
-    std::cout<<"GUI104: four menu models/selection notifications, three render scales, all tabs and two instances passed; offscreen timings exclude host compositor\n";
+    std::cout<<"GUI104: five menu models/selection notifications, three render scales, all tabs and two instances passed; offscreen timings exclude host compositor\n";
     return true;
 }

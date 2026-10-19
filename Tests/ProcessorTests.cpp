@@ -61,9 +61,11 @@ bool finiteBuffer(const juce::AudioBuffer<float>& buffer)
 
 bool runQualityTests();
 bool runWeatherCalibration();
+bool runWeatherFieldTests();
 int main(int argc,char** argv)
 {
     if(argc>1&&juce::String(argv[1])=="--weather-calibration")return runWeatherCalibration()?0:71;
+    if(argc>1&&juce::String(argv[1])=="--weather-field")return runWeatherFieldTests()?0:72;
     juce::ScopedJuceInitialiser_GUI gui;
     // Keep ROOTS distinct in FL Studio's plugin database / VST3 identity.
     {

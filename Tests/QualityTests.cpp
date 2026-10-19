@@ -10,6 +10,7 @@
 #include "SurgeryUI104.h"
 #include "SurgeryRecoveryTests.h"
 #include "SurgeryChassisTests.h"
+#include "SurgeryWeatherUITests.h"
 
 void startAllocationProbe() noexcept;
 std::size_t finishAllocationProbe() noexcept;
@@ -40,7 +41,7 @@ bool click(juce::Component& parent,const juce::String& caption){
 
 bool runQualityTests(){
     juce::ScopedJuceInitialiser_GUI gui;
-    if(!verifySonarRecovery()||!verifyChassis105())return false;
+    if(!verifySonarRecovery()||!verifyChassis105()||!verifyWeatherUI())return false;
     juce::MidiBuffer midi;
     {
         auto fresh=std::make_unique<PRISMVSTAudioProcessor>();
@@ -289,7 +290,7 @@ bool runQualityTests(){
         p->processBlock(block,midi);
     }
     juce::Thread::sleep(40); // bounded analyzer handoff for deterministic screenshot data
-    set(*p,"aura_color",1);
+    set(*p,"aura_color",1);set(*p,"sonar_weather_mode",0);
     std::unique_ptr<juce::AudioProcessorEditor> editor(p->createEditor());
     const char* modes[]={"ROOT","CARVE","ONYX","ANALYZE"};
     for(int theme=0;theme<1;++theme){

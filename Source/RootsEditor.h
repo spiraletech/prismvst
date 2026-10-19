@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "SurgerySpectrumFill.h"
+#include "SurgeryWeatherField.h"
 #include "SurgeryLookAndFeel.h"
 #include "SurgeryHeaderLayout.h"
 #include "SurgeryNodeFocus.h"
@@ -39,6 +40,11 @@ public:
     void mouseWheelMove(const juce::MouseEvent&,const juce::MouseWheelDetails&) override;
     void updateAnalyzer(const std::array<float,PRISMVSTAudioProcessor::labBars>&,
                         const std::array<float,PRISMVSTAudioProcessor::labBars>&);
+    void updateWeather(const surgery::weather::Snapshot*,double elapsed,bool active,bool reduced,double memory);
+    const surgery::weather::Meaning& weatherMeaning() const noexcept {return weatherInterpretation_.state();}
+    const surgery::weather::Snapshot& weatherMeasured() const noexcept {return weatherInterpretation_.measured();}
+    bool weatherActive() const noexcept {return weatherActive_;}
+    const surgery::weather::Field& weatherField() const noexcept {return weatherField_;}
     std::function<void(int)> onSelectNode;
     std::function<void(int)> onSelectCarve;
     int selectedNode() const noexcept{return selected_;}
@@ -72,6 +78,11 @@ private:
     juce::Image spectralHeat_{juce::Image::ARGB,PRISMVSTAudioProcessor::labBars,64,true};
     std::array<float,PRISMVSTAudioProcessor::labBars> heatLevels_{};
     bool heatValid_=false;
+    std::array<float,3> paintOptions_{};
+    surgery::weather::Interpretation weatherInterpretation_;
+    surgery::weather::Field weatherField_;
+    juce::Image weatherImage_{juce::Image::RGB,128,64,true};
+    bool weatherActive_=false;
     juce::Image responseOverlay_;
     std::array<double,32> responseOverlayKey_{};
     bool responseOverlayValid_=false;
@@ -109,7 +120,11 @@ private:
     float backgroundScale_=0;
     std::array<RootSelectorButton,7> rootButtons_;
     juce::Slider gain_,threshold_,analyzerSlope_,analyzerMemory_;
-    juce::ComboBox analyzerDepth_;
+    juce::ComboBox analyzerDepth_,weatherMode_;
+    juce::TextButton reducedMotion_{"REDUCED MOTION"};
+    double weatherTick_=0;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> weatherModeA_;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> reducedMotionA_;
     juce::TextButton heatToggle_{"SONAR ON"},freezeButton_{"FREEZE"};
     juce::TextButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};
     int mode_=0,carveSlot_=0;

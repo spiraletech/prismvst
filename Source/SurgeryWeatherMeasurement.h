@@ -16,9 +16,9 @@ struct Snapshot {
     std::array<float,14> boundaries{};
     double seconds=0;
     std::uint64_t sequence=0,event=0;
-    float fullPower=0,analysisPower=0,unassignedPower=0,centroidHz=0,centroid=0;
+    float fullPower=0,analysisPower=0,unassignedPower=0,centroidHz=0,centroid=0,bandwidthHz=20000;
     float amplitudeDb=-160,width=0,correlation=0,bass=0,flux=0,density=0,level=0;
-    float eventStrength=0,eventPosition=.5f;
+    float eventStrength=0,eventPosition=.5f,fluxPosition=.5f;
     double eventSeconds=-100;
 };
 // Single analysis-worker producer / single UI consumer. Ownership transfers
@@ -64,10 +64,11 @@ public:
     // segment is split equally among covering territories, so sum weights<=1
     // even for overlapping/reversed ROOT intervals. Gaps stay unassigned.
     void boundaries(const std::array<float,14>& hz) noexcept {
-        if(weightsValid_&&hz==lastBounds_)return;
-        lastBounds_=hz;weightsValid_=true;const double high=std::min(20000.,rate_*.5),df=rate_/fftLength;
+        auto clean=hz;for(auto& f:clean)f=(float)std::clamp(std::isfinite(f)?(double)f:20.,20.,std::min(20000.,rate_*.5));
+        if(weightsValid_&&clean==lastBounds_)return;
+        lastBounds_=clean;weightsValid_=true;const double high=std::min(20000.,rate_*.5),df=rate_/fftLength;
         std::array<double,16> edges{};edges[0]=20;edges[1]=high;
-        for(int i=0;i<14;++i)edges[(size_t)i+2]=std::clamp(std::isfinite(hz[(size_t)i])?(double)hz[(size_t)i]:20.,20.,high);
+        for(int i=0;i<14;++i)edges[(size_t)i+2]=std::clamp((double)clean[(size_t)i],20.,high);
         std::sort(edges.begin(),edges.end());
         for(int k=0;k<bins;++k){
             auto& weights=rootWeights_[(size_t)k];weights.fill(0);
@@ -93,15 +94,18 @@ public:
         }
     }
     Snapshot process(const float* magnitudes,const StereoSums& stereo,double seconds,double dt) noexcept {
+        seconds=std::isfinite(seconds)?std::max(0.,seconds):0.;dt=std::isfinite(dt)?std::clamp(dt,.0005,.2):.008;
         Snapshot out;out.seconds=seconds;out.sequence=++sequence_;
         std::array<double,256> bandPower{};std::array<double,bins> powers{};double full=0,total=0,moment=0,amplitude=0;
         const double df=rate_/fftLength,high=std::min(20000.,rate_*.5);
+        out.bandwidthHz=(float)high;
         for(int i=0;i<14;++i)out.boundaries[(size_t)i]=(float)std::clamp((double)lastBounds_[(size_t)i],20.,high);
         for(int k=0;k<bins;++k){
             const double magnitude=std::isfinite(magnitudes[k])?std::clamp((double)magnitudes[k],0.,1.e12):0.;
             const double sided=(k==0||k==bins-1)?1.:2.;
             // Parseval / periodogram band power, NOT coherent-tone amplitude.
-            const double power=sided*magnitude*magnitude/(fftLength*windowEnergy_);
+            const double rawPower=sided*magnitude*magnitude/(fftLength*windowEnergy_);
+            const double power=rawPower<1.e-24?0:rawPower; // below reporting floor; avoid subnormal output
             powers[(size_t)k]=power;full+=power;const double energy=power*analysisWeights_[(size_t)k];total+=energy;moment+=energy*(k*df);
             amplitude=std::max(amplitude,sided*magnitude/windowSum_);
             for(int r=0;r<7;++r)out.power[(size_t)r]+=(float)(power*rootWeights_[(size_t)k][(size_t)r]);
@@ -122,7 +126,7 @@ public:
             const double delta=std::max(0.f,m-previous_[(size_t)i]);flux+=delta*delta;position+=delta*delta*(i+.5)/256.;previous_[(size_t)i]=m;
             occupied+=bandPower[(size_t)i]>std::max(1.e-12,total*.002)?1:0;
         }
-        out.density=occupied/256.f;const double eventPosition=flux>0?position/flux:.5;
+        out.density=occupied/256.f;const double eventPosition=flux>0?position/flux:.5;out.fluxPosition=(float)eventPosition;
         flux*=.008/std::clamp(dt,.0005,.2); // comparable reference hop duration
         double mean=0,variance=0;for(int i=0;i<historyCount_;++i)mean+=history_[(size_t)i];mean/=std::max(1,historyCount_);
         for(int i=0;i<historyCount_;++i)variance+=(history_[(size_t)i]-mean)*(history_[(size_t)i]-mean);variance/=std::max(1,historyCount_);
@@ -131,7 +135,7 @@ public:
         if(total>1.e-9&&flux>threshold&&seconds-lastEvent_>=.75){lastEvent_=seconds;++event_;lastStrength_=unit(flux/(threshold*3));lastPosition_=(float)eventPosition;}
         // Winsorised rolling baseline: exceptional onsets cannot dominate it.
         const double bounded=std::min(flux,std::max(.001,mean+3*std::sqrt(variance)));
-        history_[(size_t)historyIndex_]=(float)bounded;historyIndex_=(historyIndex_+1)%64;historyCount_=std::min(64,historyCount_+1);
+        history_[(size_t)historyIndex_]=bounded<1.e-12?0:(float)bounded;historyIndex_=(historyIndex_+1)%64;historyCount_=std::min(64,historyCount_+1);
         out.event=event_;out.eventSeconds=lastEvent_;out.eventStrength=lastStrength_;out.eventPosition=lastPosition_;
         return out;
     }
