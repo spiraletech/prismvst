@@ -52,6 +52,45 @@ int main()
                 return 2;
             }
 
+    // Host project/preset restore must preserve legacy parameter IDs and values.
+    // A regression here silently changes the sound of previously saved sessions.
+    struct SavedParameter { const char* id; float value; };
+    constexpr SavedParameter saved[] {
+        { "band1_freq", 173.0f },
+        { "band3_gain", -4.25f },
+        { "band6_dyn_range", 7.5f },
+        { "onyx", 0.42f },
+        { "master_trim", -2.0f }
+    };
+
+    for (const auto& entry : saved)
+    {
+        auto* param = p.apvts.getParameter(entry.id);
+        if (param == nullptr) {
+            std::cerr << "Missing legacy parameter: " << entry.id << "\\n";
+            return 3;
+        }
+        param->setValueNotifyingHost(param->convertTo0to1(entry.value));
+    }
+
+    juce::MemoryBlock serialized;
+    p.getStateInformation(serialized);
+    if (serialized.getSize() == 0) {
+        std::cerr << "Empty serialized state\\n";
+        return 4;
+    }
+
+    PRISMVSTAudioProcessor restored;
+    restored.setStateInformation(serialized.getData(), (int) serialized.getSize());
+    for (const auto& entry : saved)
+    {
+        const auto* value = restored.apvts.getRawParameterValue(entry.id);
+        if (value == nullptr || !near(value->load(), entry.value, 0.025f)) {
+            std::cerr << "Preset round-trip mismatch: " << entry.id << "\\n";
+            return 5;
+        }
+    }
+
     std::cout << "PRISMVST DSP smoke tests passed\n";
     return 0;
 }
