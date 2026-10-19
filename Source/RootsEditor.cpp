@@ -782,7 +782,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         label->setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::plain)));
         label->setJustificationType(juce::Justification::centredLeft);
     }
-    title_.setText("SURGERY EQ  /  v1.0.7",juce::dontSendNotification);
+    title_.setText("SURGERY EQ  /  v1.0.8",juce::dontSendNotification);
     analyzerLegend_.setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::bold)));
     analyzerLegend_.setText("SYNESTHESIA V1   /   HUE x ENERGY",
                             juce::dontSendNotification);
@@ -1100,7 +1100,7 @@ thresholdLabel_.setText("COMP THRESHOLD",
     surgery::weather::Snapshot weatherSnapshot;
     const bool newWeather=processor_.readWeather(weatherSnapshot);
     graph_.updateWeather(newWeather?&weatherSnapshot:nullptr,elapsed,pval(processor_.apvts,"sonar_weather_mode")>=.5f&&pval(processor_.apvts,"aura_color")>=.5f,pval(processor_.apvts,"sonar_reduced_motion")>=.5f,pval(processor_.apvts,"aura_memory"));
-    if(stormChassis_.update(graph_.weatherMeaning(),elapsed,pval(processor_.apvts,"aura_memory"),graph_.isFrozen(),pval(processor_.apvts,"sonar_reduced_motion")>=.5f)){
+    if(stormChassis_.update(graph_.weatherMeaning(),elapsed,pval(processor_.apvts,"aura_memory"),graph_.isFrozen(),pval(processor_.apvts,"sonar_reduced_motion")>=.5f,pval(processor_.apvts,"sonar_weather_mode")>=.5f&&pval(processor_.apvts,"aura_color")>=.5f)){
         repaint(surgery::rack::StormChassis::top(getWidth()).expanded(6).toNearestInt());
         for(bool right:{false,true})repaint(surgery::rack::StormChassis::side(getWidth(),getHeight(),right).expanded(6).toNearestInt());
     }

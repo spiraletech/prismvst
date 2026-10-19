@@ -46,7 +46,7 @@ inline bool verifyChassis105(){
                     error+=std::abs(a.getRed()-b.getRed())+std::abs(a.getGreen()-b.getGreen())+std::abs(a.getBlue()-b.getBlue());count+=3;
                 }
             error/=count;if(error>12){std::cerr<<"Chassis: corner proportions changed "<<error<<'\n';return false;}
-            for(auto point:{juce::Point<float>(30,size.y*.5f),juce::Point<float>(size.x-30.f,size.y*.5f),juce::Point<float>(size.x*.5f,20),juce::Point<float>(size.x*.5f,size.y-4.f)})
+            for(auto point:{juce::Point<float>(2,size.y*.5f),juce::Point<float>(size.x-3.f,size.y*.5f),juce::Point<float>(size.x*.5f,3),juce::Point<float>(size.x*.5f,size.y-4.f)})
                 if(shot.getPixelAt((int)(point.x*scale),(int)(point.y*scale)).getBrightness()<.08f){std::cerr<<"Chassis: disconnected carbon/glass edge\n";return false;}
             const auto top=surgery::rack::StormChassis::top(size.x);
             if(top.getCentreX()!=size.x*.5f||top.getBottom()>40)return false;

@@ -50,7 +50,7 @@ inline bool verifyWeatherUI(){
             right=kind==2?.16*std::sin(juce::MathConstants<double>::twoPi*660*t):kind==3?-value:value;
             if(kind==5){const double position=sample*musicReader->sampleRate/48000.;const int a=(int)std::fmod(position,music.getNumSamples()),b=(a+1)%music.getNumSamples();const double fraction=position-std::floor(position);value=.7*((1-fraction)*music.getSample(0,a)+fraction*music.getSample(0,b));right=.7*((1-fraction)*music.getSample(1,a)+fraction*music.getSample(1,b));}
             block.setSample(0,i,(float)value);block.setSample(1,i,(float)right);
-        }p->processBlock(block,midi);if(n%4==3){pump(16);if(kind==4&&!lightningCaptured&&graph->weatherMeaning().flash>.01f){lightningCaptured=save(editor->createComponentSnapshot(editor->getLocalBounds()),"surgery-ui-weather-onset.png");}}}pump(90);
+        }p->processBlock(block,midi);if(n%4==3){pump(16);if(kind==5&&n%8==7)save(editor->createComponentSnapshot(editor->getLocalBounds()),"surgery-ui-vessel-motion-"+juce::String(n/8).paddedLeft('0',2)+".png");if(kind==4&&!lightningCaptured&&graph->weatherMeaning().flash>.01f){lightningCaptured=save(editor->createComponentSnapshot(editor->getLocalBounds()),"surgery-ui-weather-onset.png");}}}pump(90);
     };
     feed(0,48);if(!graph->spectralMetrics().signalPresent||graph->weatherActive())return fail("standard regression");
     if(!save(editor->createComponentSnapshot(editor->getLocalBounds()),"surgery-ui-weather-standard.png"))return false;
