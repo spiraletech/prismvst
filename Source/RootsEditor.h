@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 #include "SurgerySpectrumFill.h"
 #include "SurgeryWeatherField.h"
+#include "SurgeryStormChassis.h"
 #include "SurgeryLookAndFeel.h"
 #include "SurgeryHeaderLayout.h"
 #include "SurgeryNodeFocus.h"
@@ -118,6 +119,7 @@ private:
     juce::Image rackChassis_,rackBackground_;
     int backgroundMode_=-1;
     float backgroundScale_=0;
+    surgery::rack::StormChassis stormChassis_;
     std::array<RootSelectorButton,7> rootButtons_;
     juce::Slider gain_,threshold_,analyzerSlope_,analyzerMemory_;
     juce::ComboBox analyzerDepth_,weatherMode_;

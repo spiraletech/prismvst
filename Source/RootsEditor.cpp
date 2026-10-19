@@ -782,7 +782,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         label->setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::plain)));
         label->setJustificationType(juce::Justification::centredLeft);
     }
-    title_.setText("SURGERY EQ  /  v1.0.6",juce::dontSendNotification);
+    title_.setText("SURGERY EQ  /  v1.0.7",juce::dontSendNotification);
     analyzerLegend_.setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::bold)));
     analyzerLegend_.setText("SYNESTHESIA V1   /   HUE x ENERGY",
                             juce::dontSendNotification);
@@ -1100,6 +1100,10 @@ thresholdLabel_.setText("COMP THRESHOLD",
     surgery::weather::Snapshot weatherSnapshot;
     const bool newWeather=processor_.readWeather(weatherSnapshot);
     graph_.updateWeather(newWeather?&weatherSnapshot:nullptr,elapsed,pval(processor_.apvts,"sonar_weather_mode")>=.5f&&pval(processor_.apvts,"aura_color")>=.5f,pval(processor_.apvts,"sonar_reduced_motion")>=.5f,pval(processor_.apvts,"aura_memory"));
+    if(stormChassis_.update(graph_.weatherMeaning(),elapsed,pval(processor_.apvts,"aura_memory"),graph_.isFrozen(),pval(processor_.apvts,"sonar_reduced_motion")>=.5f)){
+        repaint(surgery::rack::StormChassis::top(getWidth()).expanded(6).toNearestInt());
+        for(bool right:{false,true})repaint(surgery::rack::StormChassis::side(getWidth(),getHeight(),right).expanded(6).toNearestInt());
+    }
     const auto state=processor_.getRootsMeter();
     const juce::String status=
         "IN "+juce::String(processor_.getInputPeakDb(),1)+" dBFS  /  OUT "+
@@ -1127,6 +1131,7 @@ void RootsEditor::paint(juce::Graphics& g){
         paintRack(background);backgroundMode_=mode_;backgroundScale_=dpi;
     }
     g.setOpacity(1.f);g.drawImage(rackBackground_,getLocalBounds().toFloat());
+    stormChassis_.paintLiquid(g,getWidth(),getHeight());
 }
 void RootsEditor::resized(){rackBackground_={};backgroundScale_=0;layoutRack();repaint();}
 
@@ -1134,11 +1139,10 @@ void RootsEditor::paintRack(juce::Graphics& g){
     const int width=getWidth(),height=getHeight();
     g.fillAll(juce::Colour(0xff020709));
     g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
-    surgery::rack::drawChassis(g,rackChassis_,width,height);
-    g.setColour(juce::Colour(0xff080b0d));
-    juce::Font engraved(juce::FontOptions(18.0f,juce::Font::bold));
-    engraved.setExtraKerningFactor(.06f);g.setFont(engraved);
-    g.drawFittedText("SPIRAL ETHER TECH",surgery::rack::engravingArea(width).toNearestInt(),juce::Justification::centred,1);
+    // Preserve the old dark interior bitmap exactly; no original outer rail
+    // or hardware is drawn. All replacement decoration is outside the face.
+    g.drawImage(rackChassis_,72,72,width-144,height-144,96,96,1344,832);
+    stormChassis_.paintStatic(g,width,height);
     juce::Graphics::ScopedSaveState saved(g);
     g.addTransform(surgery::rack::contentTransform(width,height));
     surgery::rack::bezel(g,{12,7,1096,44},false,6);

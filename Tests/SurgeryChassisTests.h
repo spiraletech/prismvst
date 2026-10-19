@@ -36,7 +36,7 @@ inline bool verifyChassis105(){
             if(std::abs(raster.x-juce::roundToInt(size.x*scale))>2||std::abs(raster.y-juce::roundToInt(size.y*scale))>2){
                 std::cerr<<"Chassis: stale DPI cache "<<raster.x<<','<<raster.y<<" scale "<<scale<<'\n';return false;
             }
-            double error=0;int count=0;const int corner=juce::roundToInt(72*scale);
+            double error=0;int count=0;const int corner=juce::roundToInt(46*scale);
             if(reference[(size_t)index].isNull())reference[(size_t)index]=shot;
             const auto& ref=reference[(size_t)index];
             for(int right=0;right<2;++right)for(int bottom=0;bottom<2;++bottom)
@@ -46,9 +46,11 @@ inline bool verifyChassis105(){
                     error+=std::abs(a.getRed()-b.getRed())+std::abs(a.getGreen()-b.getGreen())+std::abs(a.getBlue()-b.getBlue());count+=3;
                 }
             error/=count;if(error>12){std::cerr<<"Chassis: corner proportions changed "<<error<<'\n';return false;}
-            for(auto point:{juce::Point<float>(30,size.y*.5f),juce::Point<float>(size.x-30.f,size.y*.5f),juce::Point<float>(size.x*.5f,12),juce::Point<float>(size.x*.5f,size.y-20.f)})
-                if(shot.getPixelAt((int)(point.x*scale),(int)(point.y*scale)).getBrightness()<.08f){std::cerr<<"Chassis: disconnected metal edge\n";return false;}
-            const auto engraving=surgery::rack::engravingArea(size.x);if(engraving.getCentreX()!=size.x*.5f||engraving.getBottom()>30)return false;
+            for(auto point:{juce::Point<float>(30,size.y*.5f),juce::Point<float>(size.x-30.f,size.y*.5f),juce::Point<float>(size.x*.5f,20),juce::Point<float>(size.x*.5f,size.y-4.f)})
+                if(shot.getPixelAt((int)(point.x*scale),(int)(point.y*scale)).getBrightness()<.08f){std::cerr<<"Chassis: disconnected carbon/glass edge\n";return false;}
+            const auto top=surgery::rack::StormChassis::top(size.x);
+            if(top.getCentreX()!=size.x*.5f||top.getBottom()>40)return false;
+            for(bool right:{false,true}){const auto tube=surgery::rack::StormChassis::side(size.x,size.y,right);if(tube.getY()!=52||tube.getBottom()!=size.y-52)return false;}
             const auto name="surgery-ui-chassis-"+juce::String(size.x)+"x"+juce::String(size.y)+"-"+juce::String((int)(scale*100))+".png";
             juce::FileOutputStream out(juce::File::getCurrentWorkingDirectory().getChildFile(name));out.setPosition(0);out.truncate();
             if(!juce::PNGImageFormat().writeImageToStream(shot,out))return false;
@@ -58,6 +60,6 @@ inline bool verifyChassis105(){
     // Fast repeated logical resizes/moves while audio continues. Snapshot cost
     // above includes cold cache regeneration; steady paints are benchmarked separately.
     for(int n=0;n<16;++n){editor->setSize(840+n*48,610+n*28);editor->setTopLeftPosition(n*2,n);audio.clear();processor->processBlock(audio,midi);}
-    std::cout<<"CHASSIS105: 15 size/DPI captures, fixed square corners, connected borders, centred engraving, control containment and cache dimensions passed\n";
+    std::cout<<"STORM CHASSIS: 15 size/DPI captures, fixed X-head corners, connected glass/carbon edges, centred chamber, control containment and cache dimensions passed\n";
     return true;
 }

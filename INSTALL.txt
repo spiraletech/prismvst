@@ -1,12 +1,16 @@
-SURGERY EQ 1.0.6 - Windows x64 VST3
+SURGERY EQ 1.0.7 - Windows x64 VST3
 
 Close your DAW. Back up your existing plugin outside scanned folders.
 Copy the complete SURGERY EQ v1.0.vst3 folder to:
 C:\Program Files\Common Files\VST3
-Rescan plugins, open SURGERY EQ, and verify the editor says v1.0.6.
+Rescan plugins, open SURGERY EQ, and verify the editor says v1.0.7.
 The bundle name is retained for project recall. Keep only one scanned copy.
 This is an unsigned development build. Test copies of existing projects first.
 
 SONAR 2.1: ANALYZE > VISUAL MODE > STORM SYMBIOTE.
 STANDARD is the default. SONAR OFF hides visual fills but retains the accurate trace.
 REDUCED MOTION defaults ON and suppresses drift/lightning.
+
+JUKE JUICE frame: reference-based carbon/glass border with four corner X screws.
+Reactive motion reads existing Storm values and respects Freeze/Reduced Motion.
+No new controls, parameters or audio processing.
