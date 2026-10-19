@@ -113,6 +113,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
         juce::ParameterID { "onyx_density", 2 }, "ONYX Density",
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.35f));
 
+    p.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "onyx_tone", 1 }, "ONYX Tone",
+        juce::NormalisableRange<float>(-1.0f, 1.0f, 0.001f), 0.0f));
+
     p.push_back(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID { "solfeggio_grid", 2 }, "Solfeggio Grid", false));
 
@@ -168,6 +172,7 @@ void PRISMVSTAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBloc
         *loudShelf[(size_t)c].coefficients = *shC;
     }
 
+    onyxToneLowpass.fill(0.0f);
     fftWritePos = 0;
     fftData.fill(0.0f);
     for (auto& v : spectrum)
@@ -263,6 +268,11 @@ void PRISMVSTAudioProcessor::processOnyx(juce::AudioBuffer<float>& buffer)
     const float drive = toGain(driveDb) * (1.0f + amount * 1.75f);
     const float bias = read(apvts, "onyx_bias") * 0.18f * amount;
     const float density = read(apvts, "onyx_density");
+    // Single ONYX macro: blend a gentle brightness lift as saturation grows.
+    // The hidden tone parameter remains host-accessible for fine adjustment.
+    const float tone = juce::jlimit(-1.0f, 1.0f,
+        read(apvts, "onyx_tone") + 0.15f * amount);
+    const float lpAlpha = 1.0f - std::exp(-2.0f * juce::MathConstants<float>::pi * 1800.0f / (float)currentSampleRate);
     const float wet = juce::jlimit(0.0f, 1.0f, amount * (0.55f + 0.45f * density));
     const float norm = std::tanh(drive + std::abs(bias));
 
@@ -277,7 +287,12 @@ void PRISMVSTAudioProcessor::processOnyx(juce::AudioBuffer<float>& buffer)
             shaped -= std::tanh(bias) / juce::jmax(0.001f, norm);
 
             const float dense = 0.5f * (shaped + std::tanh(shaped * (1.0f + density * 2.5f)));
-            x[i] = dry + wet * (dense - dry);
+            auto& low = onyxToneLowpass[(size_t)c];
+            low += lpAlpha * (dense - low);
+            const float dark = juce::jmax(0.0f, -tone);
+            const float bright = juce::jmax(0.0f, tone);
+            const float toned = dense + dark * (low - dense) + bright * 0.35f * (dense - low);
+            x[i] = dry + wet * ((tone == 0.0f ? dense : toned) - dry);
         }
     }
 }

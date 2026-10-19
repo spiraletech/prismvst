@@ -75,6 +75,7 @@ private:
     void updateBandCoefficients(int bandIndex);
     void processDynamicEq(juce::AudioBuffer<float>& buffer);
     void processOnyx(juce::AudioBuffer<float>& buffer);
+    std::array<float, 2> onyxToneLowpass { 0.0f, 0.0f };
     void updateMeters(const juce::AudioBuffer<float>& buffer);
     void pushAnalyzerSamples(const juce::AudioBuffer<float>& buffer);
     void renderSpectrumFrame();
