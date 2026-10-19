@@ -1,7 +1,7 @@
 #pragma once
 #include "SurgeryWeatherMeasurement.h"
 namespace surgery::weather {
-struct Meaning {float bass=0,centroid=0,flux=0,width=0,rate=0,density=0,level=0,storm=0,flash=0,flashPosition=.5f;};
+struct Meaning {float bass=0,centroid=0,flux=0,width=0,rate=0,density=0,level=0,storm=0,flash=0,flashPosition=.5f;std::array<float,4> musicEnergy{};float rms=0,crest=0;};
 inline const char* mood(const Meaning& f) noexcept {
     if(f.level<.03f)return "CALM";
     const std::array<float,5> scores{
@@ -30,8 +30,11 @@ public:
         const bool fresh=age_<.25&&input_.analysisPower>1.e-12f;
         const float release=(float)(.15+.65*memoryUnit(memory));
         auto smooth=[&](float& shown,float target){const double tau=target>shown?.025:release;shown=unit(target+(shown-target)*std::exp(-dt/tau));if(shown<1.e-8f)shown=0;};
-        smooth(f_.bass,fresh?input_.bass:0);smooth(f_.centroid,fresh?input_.centroid:0);
+        const bool hasMusicBands=std::any_of(input_.musicEnergy.begin(),input_.musicEnergy.end(),[](float e){return e>0;});
+        smooth(f_.bass,fresh?(hasMusicBands?input_.musicEnergy[0]:input_.bass):0);smooth(f_.centroid,fresh?input_.centroid:0);
         smooth(f_.flux,fresh?input_.flux:0);smooth(f_.width,fresh?input_.width:0);
+        for(int b=0;b<4;++b)smooth(f_.musicEnergy[(size_t)b],fresh?input_.musicEnergy[(size_t)b]:0);
+        smooth(f_.rms,fresh?unit(input_.rms):0);smooth(f_.crest,fresh?input_.transient:0);
         smooth(f_.density,fresh?input_.density:0);smooth(f_.level,fresh?input_.level:0);
         int count=0;for(auto t:eventTimes_)count+=time_-t<4&&t>=0?1:0;smooth(f_.rate,fresh?unit(count/(4./.75)):0);
         for(int i=0;i<7;++i)smooth(root_[(size_t)i],fresh?input_.rootIntensity[(size_t)i]:0);

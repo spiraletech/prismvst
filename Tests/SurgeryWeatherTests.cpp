@@ -39,6 +39,7 @@ bool runWeatherCalibration(){
             for(int i=0;i<fftLength;++i)expected+=.5*(left[(size_t)i]*left[(size_t)i]+right[(size_t)i]*right[(size_t)i])*window[(size_t)i]*window[(size_t)i];expected/=energy;
             if(std::abs(out.fullPower-expected)>std::max(2.e-8,expected*2.e-4))return fail("broadband Parseval power");
             if(scenario<3&&std::abs(out.amplitudeDb-20*std::log10(.25))>.015)return fail("tone/DC/Nyquist amplitude scaling");
+            if(scenario==0&&(std::abs(out.rms-.25/std::sqrt(2.))>.0001||std::abs(out.crestDb-3.0103)>.01||out.musicEnergy[2]<.7f||out.musicEnergy[0]>.05f))return fail("shared RMS/crest/music-band calibration");
             if(scenario==0&&(std::abs(out.centroidHz-hz)>rate/fftLength*.1||out.width>.001||out.correlation<.999))return fail("coherent sine centroid/stereo");
             if(scenario==3&&(out.analysisPower!=0||out.level!=0||out.bass!=0||out.density!=0))return fail("silence has activity");
             if(scenario==6&&(out.width<.999||out.correlation>-.999))return fail("antiphase stereo");

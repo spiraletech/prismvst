@@ -24,7 +24,7 @@ inline bool verifyUI104(PRISMVSTAudioProcessor& processor,juce::AudioProcessorEd
     for(auto* c:editor.getChildren())if(auto* g=dynamic_cast<RootsGraph*>(c))graph=g;
     if(!graph)return false;
     graph->setFrozen(false);
-    // Exercise all four native JUCE popups, their anchors, selected states and
+    // Exercise all six native JUCE popups, their anchors, selected states and
     // transformed rendering at 100/125/150%; no platform pixel offsets.
     int menus=0;
     editor.addToDesktop(0);editor.setTopLeftPosition(70,70);editor.setVisible(true);
@@ -76,8 +76,10 @@ inline bool verifyUI104(PRISMVSTAudioProcessor& processor,juce::AudioProcessorEd
         }
     }
     editor.removeFromDesktop();
-    if(menus!=5)return false;
+    if(menus!=6){std::cerr<<"Expected six popups, found "<<menus<<"\n";return false;}
     if(auto* parameter=processor.apvts.getParameter("sonar_weather_mode"))parameter->setValueNotifyingHost(0);
+    if(auto* parameter=processor.apvts.getParameter("sonar_visual_style"))parameter->setValueNotifyingHost(0);
+    if(auto* parameter=processor.apvts.getParameter("juke_mode"))parameter->setValueNotifyingHost(1);
     graph->updateWeather(nullptr,1./60.,false,true,.18);
     auto second=std::make_unique<PRISMVSTAudioProcessor>();second->prepareToPlay(48000,512);
     std::unique_ptr<juce::AudioProcessorEditor> other(second->createEditor());

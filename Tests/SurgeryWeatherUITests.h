@@ -13,11 +13,11 @@ inline bool verifyWeatherUI(){
     juce::MidiBuffer midi;juce::Random random(2106);
     // Core samples must remain bit-exact with OFF/standard/weather at every rate.
     std::ofstream audioReport("surgery-weather-audio-null.csv");audioReport<<"rate,mode,max_sample_difference,audio_allocations,lab_difference\n";
-    for(double rate:{44100.,48000.,96000.,192000.})for(int mode=0;mode<3;++mode){
+    for(double rate:{44100.,48000.,96000.,192000.})for(int mode=0;mode<8;++mode){
         auto reference=std::make_unique<PRISMVSTAudioProcessor>(),visual=std::make_unique<PRISMVSTAudioProcessor>();
         reference->prepareToPlay(rate,512);visual->prepareToPlay(rate,512);
         std::unique_ptr<juce::AudioProcessorEditor> weatherEditor(visual->createEditor());
-        set(*visual,"sonar_weather_mode",mode==2?1.f:0.f);set(*visual,"aura_color",mode==0?0.f:1.f);set(*visual,"sonar_reduced_motion",mode%2);
+        set(*visual,"sonar_weather_mode",0);set(*visual,"sonar_visual_style",(float)mode);set(*visual,"juke_mode",(float)(mode%6));set(*visual,"aura_color",mode==0?0.f:1.f);set(*visual,"sonar_reduced_motion",mode%2);
         juce::AudioBuffer<float> a(2,512),b(2,512);double difference=0;std::size_t allocations=0;
         for(int block=0;block<40;++block){
             for(int ch=0;ch<2;++ch)for(int i=0;i<512;++i){const float v=(float)(.12*std::sin((block*512+i)*juce::MathConstants<double>::twoPi*1000/rate))+(random.nextFloat()*2-1)*.02f;a.setSample(ch,i,v);b.setSample(ch,i,v);}
@@ -32,6 +32,8 @@ inline bool verifyWeatherUI(){
     }
     auto p=std::make_unique<PRISMVSTAudioProcessor>();p->prepareToPlay(48000,512);
     if(p->apvts.getRawParameterValue("sonar_weather_mode")->load()!=0||p->apvts.getRawParameterValue("sonar_reduced_motion")->load()!=1)return fail("optional/default settings");
+    const auto* legacyChoice=dynamic_cast<juce::AudioParameterChoice*>(p->apvts.getParameter("sonar_weather_mode"));
+    if(!legacyChoice||legacyChoice->choices.size()!=2||legacyChoice->convertTo0to1(1)!=1||p->apvts.getRawParameterValue("sonar_visual_style")->load()!=0||p->apvts.getRawParameterValue("juke_mode")->load()!=0)return fail("legacy normalized choice / fresh defaults");
     std::unique_ptr<juce::AudioProcessorEditor> editor(p->createEditor());editor->setSize(1120,755);
     RootsGraph* graph=nullptr;for(auto* child:editor->getChildren())if(auto* g=dynamic_cast<RootsGraph*>(child))graph=g;if(!graph)return false;
     editor->addToDesktop(0);editor->setTopLeftPosition(20,20);editor->setVisible(true);
@@ -90,12 +92,42 @@ inline bool verifyWeatherUI(){
     juce::MemoryBlock state;p->getStateInformation(state);auto restored=std::make_unique<PRISMVSTAudioProcessor>();restored->setStateInformation(state.getData(),(int)state.getSize());
     if(restored->apvts.getRawParameterValue("sonar_weather_mode")->load()!=1||restored->apvts.getRawParameterValue("sonar_reduced_motion")->load()!=0)return fail("mode state recall");
     auto xml=juce::AudioProcessor::getXmlFromBinary(state.getData(),(int)state.getSize());
-    for(const char* id:{"sonar_weather_mode","sonar_reduced_motion"})if(auto* child=xml->getChildByAttribute("id",id))xml->removeChildElement(child,true);
+    auto oldVisual=std::make_unique<juce::XmlElement>(*xml);
+    for(const char* id:{"sonar_visual_style","juke_mode"})if(auto* child=oldVisual->getChildByAttribute("id",id))oldVisual->removeChildElement(child,true);
+    juce::MemoryBlock oldVisualState;juce::AudioProcessor::copyXmlToBinary(*oldVisual,oldVisualState);restored->setStateInformation(oldVisualState.getData(),(int)oldVisualState.getSize());
+    if(restored->apvts.getRawParameterValue("sonar_weather_mode")->load()!=1||restored->apvts.getRawParameterValue("juke_mode")->load()!=2)return fail("1.0.10 Storm session migration");
+    for(const char* id:{"sonar_weather_mode","sonar_reduced_motion","sonar_visual_style","juke_mode"})if(auto* child=xml->getChildByAttribute("id",id))xml->removeChildElement(child,true);
     juce::MemoryBlock legacy;juce::AudioProcessor::copyXmlToBinary(*xml,legacy);restored->setStateInformation(legacy.getData(),(int)legacy.getSize());
-    if(restored->apvts.getRawParameterValue("sonar_weather_mode")->load()!=0||restored->apvts.getRawParameterValue("sonar_reduced_motion")->load()!=1)return fail("old session changed default mode");
+    if(restored->apvts.getRawParameterValue("sonar_weather_mode")->load()!=0||restored->apvts.getRawParameterValue("sonar_reduced_motion")->load()!=1||restored->apvts.getRawParameterValue("juke_mode")->load()!=5)return fail("old session changed default mode");
     set(*p,"sonar_weather_mode",1);set(*p,"aura_color",1);feed(6,80);pump(4000);
     if(graph->weatherMeaning().level>.001f)return fail("live silence creates weather energy");
     if(!save(editor->createComponentSnapshot(editor->getLocalBounds()),"surgery-ui-weather-silence.png"))return false;
+    // All visible choices are automatable and recalled independently.
+    if(!mode("ANALYZE"))return fail("Analyze selector");
+    juce::ComboBox *sonarBox=nullptr,*jukeBox=nullptr;
+    for(auto* child:editor->getChildren())if(auto* box=dynamic_cast<juce::ComboBox*>(child)){
+        if(box->getNumItems()==8&&box->getItemText(7)=="Standard+")sonarBox=box;
+        if(box->getNumItems()==6&&box->getItemText(0)=="Real Jukebox")jukeBox=box;
+    }
+    if(!sonarBox||!jukeBox||sonarBox->getBounds().intersects(jukeBox->getBounds()))return fail("independent dropdown layout");
+    set(*p,"sonar_weather_mode",1);set(*p,"sonar_visual_style",6);pump(40);
+    if(p->apvts.getRawParameterValue("sonar_weather_mode")->load()!=1)return fail("host style update rewrites legacy automation");
+    set(*p,"sonar_visual_style",0);pump(40);if(sonarBox->getSelectedId()!=2)return fail("legacy Storm selector display");
+    sonarBox->setSelectedId(1,juce::sendNotificationSync);pump(40);
+    if(p->apvts.getRawParameterValue("sonar_weather_mode")->load()!=0)return fail("explicit Standard gesture leaves legacy Storm enabled");
+    set(*p,"sonar_weather_mode",0);set(*p,"sonar_visual_style",0);set(*p,"juke_mode",0);set(*p,"aura_color",0);feed(4,60);
+    if(graph->weatherActive()||graph->weatherMeaning().level<.01f)return fail("JUKE cannot run independently of SONAR");
+    for(int j=0;j<6;++j){set(*p,"juke_mode",(float)j);feed(4,24);save(editor->createComponentSnapshot(editor->getLocalBounds()),"surgery-ui-111-juke-"+juce::String(j)+".png");}
+    set(*p,"juke_mode",5);set(*p,"aura_color",1);
+    std::ofstream modesReport("surgery-visual-modes.csv");modesReport<<"style,active,level\n";
+    for(int v=0;v<8;++v){set(*p,"sonar_visual_style",(float)v);feed(4,48);
+        if(graph->weatherActive()!=(v>0))return fail("analyzer mode activation / JUKE independence");
+        modesReport<<v<<','<<graph->weatherActive()<<','<<graph->weatherMeaning().level<<'\n';
+        save(editor->createComponentSnapshot(editor->getLocalBounds()),"surgery-ui-111-sonar-"+juce::String(v)+".png");
+    }
+    set(*p,"sonar_visual_style",6);set(*p,"juke_mode",3);p->getStateInformation(state);restored->setStateInformation(state.getData(),(int)state.getSize());
+    if(restored->apvts.getRawParameterValue("sonar_visual_style")->load()!=6||restored->apvts.getRawParameterValue("juke_mode")->load()!=3)return fail("expanded mode recall");
+    // Re-run bit-exact audio and allocation checks across every new mode.
     editor->removeFromDesktop();
     // Benchmark update/simulation/upload + graph drawing, including two independent fields.
     restored->prepareToPlay(48000,512);std::unique_ptr<juce::AudioProcessorEditor> editor2(restored->createEditor());RootsGraph* graph2=nullptr;
@@ -118,7 +150,7 @@ inline bool verifyWeatherUI(){
         std::sort(samples.begin(),samples.end());double mean=0;for(auto x:samples)mean+=x;mean/=samples.size();
         timing<<instances<<','<<scale<<','<<samples[samples.size()/2]<<','<<samples[samples.size()*95/100]<<','<<samples.back()<<','<<mean<<','<<cpu/samples.size()<<'\n';
     }
-    std::cout<<"WEATHER UI: 4 rates x OFF/standard/storm bit-exact audio/FFT, no callback allocations, live acoustic response, stereo warning, four tabs/scales, freeze, old/new recall and two-instance weather benchmark passed\n";
+    std::cout<<"WEATHER UI: 4 rates x eight styles/six JUKE choices cycled, bit-exact audio/FFT, no callback allocations, live acoustic response, stereo warning, four tabs/scales, freeze, old/new recall and two-instance weather benchmark passed\n";
     return true;
 }
 

@@ -66,6 +66,16 @@ bool runStormChassisTests(){
     auto energetic=signal;energetic.level=.95f;energetic.bass=.85f;energetic.flux=.8f;energetic.width=.8f;
     for(int i=0;i<120;++i){hollow.update(energetic,1./60.,.3,false,false);draw();}record("energetic",hollow.statistics());
     if(hollow.statistics().meanDensity<=active.meanDensity||hollow.statistics().renderedLitFraction<=active.renderedLitFraction||hollow.statistics().renderedLitFraction>.70)return fail("energy does not increase body/bloom");
+    std::array<std::uint64_t,5> signatures{};
+    for(int mode=0;mode<5;++mode){auto container=std::make_unique<StormChassis>();
+        for(int frame=0;frame<80;++frame){container->update(signal,1./60.,.18,false,false,true,mode);vessel.clear(vessel.getBounds());juce::Graphics g(vessel);container->paintLiquid(g,1120,755);}
+        std::uint64_t hash=1469598103934665603ull;
+        for(int x=100;x<1020;x+=3)for(int y=8;y<32;++y){hash^=vessel.getPixelAt(x,y).getARGB();hash*=1099511628211ull;}
+        signatures[(size_t)mode]=hash;for(int previous=0;previous<mode;++previous)if(signatures[(size_t)previous]==hash)return fail("JUKE personalities are visually identical");
+        auto heldDensity=std::make_unique<std::array<float,30720>>(container->densityField());
+        container->update({},.1,.18,true,false,true,5);vessel.clear(vessel.getBounds());{juce::Graphics g(vessel);container->paintLiquid(g,1120,755);}
+        if(*heldDensity!=container->densityField()||container->statistics().renderedLitFraction!=0)return fail("independent JUKE Off fails while frozen");
+    }
     std::ofstream csv("surgery-storm-chassis-performance.csv");csv<<"scale,median_ms,p95_ms,max_ms,dynamic_texture_pixels,raw_fixed_texture_bytes\n";
     for(float scale:{1.f,1.25f,1.5f}){
         juce::Image target(juce::Image::RGB,(int)(1120*scale),(int)(755*scale),true);std::vector<double> times;

@@ -1,5 +1,6 @@
 #pragma once
 #include "SurgeryWeatherInterpretation.h"
+#include "SurgerySynesthesia.h"
 namespace surgery::weather {
 struct LinearRGB {float r=0,g=0,b=0;};
 struct Pixel {std::uint8_t r=0,g=0,b=0;};
@@ -22,11 +23,11 @@ public:
         }
         pixels_.fill({11,17,24});
     }
-    bool update(Interpretation& interpretation,double elapsed,double memory,bool reduced) noexcept {
+    bool update(Interpretation& interpretation,double elapsed,double memory,bool reduced,bool advance=true) noexcept {
         // Elapsed-time analytic damping; long UI stalls are bounded and aged
         // snapshots naturally release to silence. No frame-count physics.
         const double dt=std::clamp(std::isfinite(elapsed)?elapsed:0.,0.,60.);
-        const auto f=interpretation.update(dt,memory,reduced);
+        const auto f=advance?interpretation.update(dt,memory,reduced):interpretation.state();
         if(f.level<1.e-5f&&activity_<1.e-5f)return false;
         activity_=0;
         const auto& input=interpretation.measured();const auto& rootsU=interpretation.rootIntensity();
@@ -40,7 +41,7 @@ public:
             const double span=.15+.65*f.width;lateral[(size_t)x]=(float)std::exp(-std::pow((u-.5)/span,2));
             ripple[(size_t)x]=(float)std::exp(-std::pow((u-input.fluxPosition)/.14,2));
             flash[(size_t)x]=f.flash*(float)std::exp(-std::pow((u-f.flashPosition)/.12,2));
-            colours[(size_t)x]=pastel(unit(f.centroid+(u-.5)*.12));
+            const auto tint=synesthesia::read(f,(float)u,.10f);colours[(size_t)x]={linear(tint.r),linear(tint.g),linear(tint.b)};
         }
         for(int y=0;y<height;++y){const double v=y/(double)(height-1),centre=.76-.24*f.bass,spread=.14+.23*std::pow(f.bass,1.5);cloud[(size_t)y]=(float)std::exp(-std::pow((v-centre)/spread,2));}
         const float mass=.30f+.70f*std::pow(f.bass,1.5f);

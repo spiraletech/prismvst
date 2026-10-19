@@ -1,18 +1,25 @@
-SURGERY EQ 1.0.10 - Windows x64 VST3
+SURGERY EQ 1.0.11 - Windows x64 VST3
 
-Close your DAW. Back up your existing plugin outside scanned folders.
-Copy the complete SURGERY EQ v1.0.vst3 folder to:
+Close your DAW and back up the previous bundle outside scanned folders.
+Copy the COMPLETE SURGERY EQ v1.0.vst3 folder into:
 C:\Program Files\Common Files\VST3
-Rescan plugins, open SURGERY EQ, and verify the editor says v1.0.10.
-The bundle name is retained for project recall. Keep only one scanned copy.
-This is an unsigned development build. Test copies of existing projects first.
+Rescan and verify v1.0.11. Keep one scanned copy. Bundle/class IDs are retained.
+Unsigned development build; test copies of production projects first.
 
-SONAR 2.1: ANALYZE > VISUAL MODE > STORM SYMBIOTE.
-STANDARD is the default. SONAR OFF hides visual fills but retains the accurate trace.
-REDUCED MOTION defaults ON and suppresses drift/lightning.
+ANALYZE > VISUAL MODE selects Standard, Storm Symbiote, Synesthesia,
+Brooding, Pulse, Aura, Focus or Standard+. Standard remains the default.
+SONAR ON/OFF gates analyzer colour/weather overlays; the accurate trace remains.
 
-JUKE JUICE correction: hollow glass vessels with a continuous synesthesia river and internal colour streams.
-Enable STORM SYMBIOTE + SONAR ON for reactive energy. Silence leaves empty glass.
-Freeze holds current/trails; Reduced Motion slows drift while retaining light response.
-SONAR OFF immediately hides energy, including while frozen.
-Main analyzer, controls, features, parameters and audio processing are unchanged.
+ANALYZE > JUKE MODE independently selects Real Jukebox, Storm Tube,
+Symbiote Flow, Pulse Rail, Ambient Idle or Off. Real Jukebox is the fresh-instance
+default. JUKE Off hides all tube energy; the manufactured glass/carbon remains.
+SONAR OFF does not turn off JUKE; use JUKE MODE > Off for the border.
+
+Freeze holds both visual simulations. Off controls override visibility while
+frozen. Reduced Motion defaults ON and preserves light response with less drift
+and turbulence. Silence leaves faint casing reflections after decay.
+
+Old sessions retain the two-choice SONAR automation parameter. The expanded
+selector uses a new appended parameter; old projects with Storm+SONAR ON recall
+Symbiote Flow, otherwise JUKE Off. Existing controls/geometry and DSP are retained.
+See VISUAL_MODES_1_0_11.md and BUILD-NOTES.txt for validation and limitations.

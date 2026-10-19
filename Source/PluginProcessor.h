@@ -212,6 +212,8 @@ private:
     std::atomic<unsigned> weatherConsumers_{0};
     std::atomic<float>* weatherModeValue_=nullptr;
     std::atomic<float>* weatherFillValue_=nullptr;
+    std::atomic<float>* visualStyleValue_=nullptr;
+    std::atomic<float>* jukeModeValue_=nullptr;
     double weatherWindowSum_=4096,weatherWindowEnergy_=6144,weatherSeconds_=0;
     bool weatherWasEnabled_=false;
     void prepareWeatherAnalysis();

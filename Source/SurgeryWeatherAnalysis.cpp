@@ -12,7 +12,7 @@ void PRISMVSTAudioProcessor::prepareWeatherAnalysis(){
 void PRISMVSTAudioProcessor::publishWeatherAnalysis(){
     const double dt=fftHopSize/std::max(1.,currentSampleRate);weatherSeconds_+=dt;
     const bool enabled=weatherConsumers_.load(std::memory_order_relaxed)>0
-        &&weatherModeValue_->load(std::memory_order_relaxed)>=.5f&&weatherFillValue_->load(std::memory_order_relaxed)>=.5f;
+        &&((weatherFillValue_->load(std::memory_order_relaxed)>=.5f&&(weatherModeValue_->load(std::memory_order_relaxed)>=.5f||visualStyleValue_->load(std::memory_order_relaxed)>=.5f))||jukeModeValue_->load(std::memory_order_relaxed)<4.5f);
     if(!enabled){weatherWasEnabled_=false;return;}
     if(!weatherWasEnabled_){weatherMeasurement_.reset(currentSampleRate,weatherWindowSum_,weatherWindowEnergy_);weatherWasEnabled_=true;}
     std::array<float,14> boundaries{};

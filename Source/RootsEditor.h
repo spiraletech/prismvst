@@ -4,6 +4,7 @@
 #include "SurgerySpectrumFill.h"
 #include "SurgeryWeatherField.h"
 #include "SurgeryStormChassis.h"
+#include "SurgeryVisualModes.h"
 #include "SurgeryLookAndFeel.h"
 #include "SurgeryHeaderLayout.h"
 #include "SurgeryNodeFocus.h"
@@ -26,6 +27,20 @@ public:
     }
 };
 
+// New selector keeps legacy normalized automation intact. Host/state updates
+// never mutate the legacy lane; only an explicit dropdown gesture clears it.
+class SurgeryVisualChoiceAttachment final {
+public:
+    SurgeryVisualChoiceAttachment(juce::RangedAudioParameter& parameter,juce::RangedAudioParameter& legacy,juce::ComboBox& box)
+        : box_(box),legacy_(legacy),attachment_(parameter,[this](float v){box_.setSelectedId(juce::roundToInt(v)+1,juce::dontSendNotification);},nullptr) {
+        attachment_.sendInitialUpdate();
+        box_.onChange=[this]{legacy_.beginChangeGesture();legacy_.setValueNotifyingHost(0);legacy_.endChangeGesture();attachment_.setValueAsCompleteGesture((float)(box_.getSelectedId()-1));};
+    }
+    ~SurgeryVisualChoiceAttachment(){box_.onChange=nullptr;}
+private:
+    juce::ComboBox& box_;juce::RangedAudioParameter& legacy_;juce::ParameterAttachment attachment_;
+};
+
 class RootsGraph final : public juce::Component {
 public:
     explicit RootsGraph(PRISMVSTAudioProcessor& owner);
@@ -41,7 +56,7 @@ public:
     void mouseWheelMove(const juce::MouseEvent&,const juce::MouseWheelDetails&) override;
     void updateAnalyzer(const std::array<float,PRISMVSTAudioProcessor::labBars>&,
                         const std::array<float,PRISMVSTAudioProcessor::labBars>&);
-    void updateWeather(const surgery::weather::Snapshot*,double elapsed,bool active,bool reduced,double memory);
+    void updateWeather(const surgery::weather::Snapshot*,double elapsed,bool active,bool reduced,double memory,int style=1);
     const surgery::weather::Meaning& weatherMeaning() const noexcept {return weatherInterpretation_.state();}
     const surgery::weather::Snapshot& weatherMeasured() const noexcept {return weatherInterpretation_.measured();}
     bool weatherActive() const noexcept {return weatherActive_;}
@@ -83,7 +98,7 @@ private:
     surgery::weather::Interpretation weatherInterpretation_;
     surgery::weather::Field weatherField_;
     juce::Image weatherImage_{juce::Image::RGB,128,64,true};
-    bool weatherActive_=false;
+    bool weatherActive_=false;int weatherStyle_=0;float visualPhase_=0;
     juce::Image responseOverlay_;
     std::array<double,32> responseOverlayKey_{};
     bool responseOverlayValid_=false;
@@ -122,10 +137,12 @@ private:
     surgery::rack::StormChassis stormChassis_;
     std::array<RootSelectorButton,7> rootButtons_;
     juce::Slider gain_,threshold_,analyzerSlope_,analyzerMemory_;
-    juce::ComboBox analyzerDepth_,weatherMode_;
+    juce::ComboBox analyzerDepth_,weatherMode_,jukeMode_;
+    juce::Label jukeModeLabel_;
     juce::TextButton reducedMotion_{"REDUCED MOTION"};
     double weatherTick_=0;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> weatherModeA_;
+    std::unique_ptr<SurgeryVisualChoiceAttachment> weatherModeA_;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> jukeModeA_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> reducedMotionA_;
     juce::TextButton heatToggle_{"SONAR ON"},freezeButton_{"FREEZE"};
     juce::TextButton mono_{"MONO"},on_{"ON"},solo_{"SOLO"};

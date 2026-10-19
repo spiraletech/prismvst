@@ -266,6 +266,7 @@ PRISMVSTAudioProcessor::PRISMVSTAudioProcessor()
     bypassValue = apvts.getRawParameterValue("surgery_bypass");
     trimValue = apvts.getRawParameterValue("surgery_output_db");
     weatherModeValue_=apvts.getRawParameterValue("sonar_weather_mode");
+    visualStyleValue_=apvts.getRawParameterValue("sonar_visual_style");jukeModeValue_=apvts.getRawParameterValue("juke_mode");
     weatherFillValue_=apvts.getRawParameterValue("aura_color");
 
     for (auto& v : spectrum)
@@ -650,6 +651,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
     // Optional visual-only append: historical IDs, ordering and defaults stay intact.
     p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"sonar_weather_mode",1},"SONAR Visual Mode",juce::StringArray{"STANDARD","STORM SYMBIOTE"},0));
     p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"sonar_reduced_motion",1},"SONAR Reduced Motion",true));
+    p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"sonar_visual_style",1},"SONAR Visual Style",juce::StringArray{"Standard","Storm Symbiote","Synesthesia","Brooding","Pulse","Aura","Focus","Standard+"},0));
+    p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"juke_mode",1},"JUKE Mode",juce::StringArray{"Real Jukebox","Storm Tube","Symbiote Flow","Pulse Rail","Ambient Idle","Off"},0));
     return { p.begin(), p.end() };
 }
 
@@ -1284,6 +1287,10 @@ void PRISMVSTAudioProcessor::setStateInformation(const void* data, int size)
             // Older sessions never opt into a new visual mode implicitly.
             for(const auto* id:{"sonar_weather_mode","sonar_reduced_motion"})
                 if(xml->getChildByAttribute("id",id)==nullptr){auto* parameter=xml->createNewChildElement("PARAM");parameter->setAttribute("id",id);parameter->setAttribute("value",juce::String(id)=="sonar_reduced_motion"?1.0:0.0);}
+            // Retain legacy two-choice automation unchanged. Missing new
+            // selectors recall the old visuals rather than opting in silently.
+            if(xml->getChildByAttribute("id","sonar_visual_style")==nullptr){auto* v=xml->createNewChildElement("PARAM");v->setAttribute("id","sonar_visual_style");v->setAttribute("value",0.0);}
+            if(xml->getChildByAttribute("id","juke_mode")==nullptr){auto* v=xml->createNewChildElement("PARAM");v->setAttribute("id","juke_mode");const auto* old=xml->getChildByAttribute("id","sonar_weather_mode");v->setAttribute("value",old&&old->getDoubleAttribute("value")>=.5&&xml->getChildByAttribute("id","aura_color")&&xml->getChildByAttribute("id","aura_color")->getDoubleAttribute("value")>=.5?2.0:5.0);}
             apvts.replaceState(juce::ValueTree::fromXml(*xml));
             sanitizeCrossovers();
             // Resolve old sessions that persisted more than one SOLO flag.

@@ -3,6 +3,7 @@
 #include <BinaryData.h>
 #include "SurgeryChassisLayout.h"
 #include "SurgeryWeatherInterpretation.h"
+#include "SurgerySynesthesia.h"
 
 namespace surgery::rack {
 // JUKE JUICE: a border-only renderer. No parameters, analyzer writes or DSP.
@@ -31,9 +32,10 @@ public:
     }
     // Existing Storm values only. SONAR OFF overrides visibility even while
     // frozen; it never alters the held field. No bright decorative base fill.
-    bool update(const weather::Meaning& measured,double dt,double decay,bool frozen,bool reduced,bool active=true) {
-        const bool gateChanged=enabled_!=active;enabled_=active;frozen_=frozen;
+    bool update(const weather::Meaning& measured,double dt,double decay,bool frozen,bool reduced,bool active=true,int mode=2) {
+        active=active&&mode!=5;const bool gateChanged=enabled_!=active;enabled_=active;frozen_=frozen;
         if(frozen){pendingDt_=0;if(gateChanged)dirty_=true;return gateChanged;}
+        if(mode_!=mode){mode_=std::clamp(mode,0,5);dirty_=true;}
         reduced_=reduced;dt=std::clamp(std::isfinite(dt)?dt:0.,0.,.25);
         decay_=std::clamp(std::isfinite(decay)?decay:.18,.05,10.);
         const auto previous=state_;
@@ -41,13 +43,15 @@ public:
         const double gate=weather::unit(level/.08);
         const double target=gate*weather::unit(.30*level+.35*measured.bass+.20*measured.flux+.15*measured.width);
         auto smooth=[&](double& value,double goal){const double tau=goal>value?.025:decay_;value=goal+(value-goal)*std::exp(-dt/tau);if(std::abs(value)<1.e-6)value=0;};
+        const auto profile=personality(mode_);
         smooth(state_.energy,target);smooth(state_.level,level);
+        colourBias_=active?synesthesia::musicBias(measured):0;
         smooth(state_.bass,active?weather::unit(measured.bass):0);smooth(state_.flux,active?weather::unit(measured.flux):0);smooth(state_.width,active?weather::unit(measured.width):0);
         smooth(state_.temperature,level>1.e-6?weather::unit(measured.centroid):.5);
         state_.flash=active&&!reduced?std::min(.10f,measured.flash):0;state_.flashPosition=weather::unit(measured.flashPosition);
         state_.glow=.012+.988*std::pow(state_.energy,1.35);
         if(active&&state_.level>1.e-5)
-            state_.phase=std::fmod(state_.phase+dt*(.25+.60*state_.flux+.20*state_.bass)*state_.energy*(reduced?.035:1.),64.);
+            state_.phase=std::fmod(state_.phase+dt*(.25+.60*state_.flux+.20*state_.bass)*state_.energy*profile.speed*(reduced?.035:1.),64.);
         pendingDt_=std::min(.25,pendingDt_+dt);
         const bool changed=gateChanged||std::abs(previous.glow-state_.glow)>1.e-6||previous.phase!=state_.phase||activity_>1.e-5;
         if(changed)dirty_=true;return changed;
@@ -99,7 +103,14 @@ public:
         g.setOpacity(1);g.drawImage(topLiquid_,top(w));g.drawImage(leftLiquid_,side(w,h,false));g.drawImage(rightLiquid_,side(w,h,true));
     }
 private:
+    int mode_=2;
+    struct Personality {float body,gain,speed,turbulence,core;};
+    static Personality personality(int mode) noexcept {
+        constexpr std::array<Personality,6> modes{{{1.10f,1.08f,.75f,.65f,1.8f},{.94f,1.12f,1.30f,1.9f,2.2f},{1,1,1,1,1},{.78f,1.15f,1.4f,.3f,2.5f},{1.15f,.35f,.15f,.12f,.5f},{1,0,0,0,0}}};
+        return modes[(size_t)std::clamp(mode,0,5)];
+    }
     State state_{};bool dirty_=true,enabled_=false,frozen_=false,reduced_=true;
+    float colourBias_=0;
     double pendingDt_=0,decay_=.18;float activity_=0;int visiblePixels_=0;
     std::array<float,30720> density_{};
     std::array<OpticalCell,30720> optics_{};
@@ -122,8 +133,7 @@ private:
         return image;
     }
     static juce::Colour plasmaColour(float balance) {
-        const std::array<juce::Colour,6> colours{juce::Colour(0xff27ddff),juce::Colour(0xff306bff),juce::Colour(0xff9e8bff),juce::Colour(0xffb07df4),juce::Colour(0xfff05bbf),juce::Colour(0xffffab8c)};
-        const float p=weather::unit(balance)*5;const int a=std::min(4,(int)p);float t=p-a;t=t*t*(3-2*t);return colours[(size_t)a].interpolatedWith(colours[(size_t)a+1],t);
+        const auto c=synesthesia::palette(balance);return juce::Colour::fromFloatRGBA(c.r,c.g,c.b,1);
     }
     // A continuous broad river with near-straight banks. Motion is internal
     // advection/shear and four submerged streams, never a travelling spine.
@@ -133,37 +143,41 @@ private:
         const int offset=orientation==0?0:orientation==1?12288:21504;
         const float phase=(float)state_.phase,phi=phase*juce::MathConstants<float>::twoPi;
         const float energy=(float)(state_.energy*state_.level),bass=(float)state_.bass,flux=(float)state_.flux,width=(float)state_.width,centroid=(float)state_.temperature;
-        const float spread=.06f+.07f*width,bodyWidth=.135f+.035f*bass,coreWidth=.032f+.012f*bass;
-        const float agitation=flux*(reduced_?.0015f:.012f),bias=orientation==1?-.045f:orientation==2?.045f:0;
+        const auto profile=personality(mode_);
+        const float spread=.06f+.07f*width,bodyWidth=(.135f+.035f*bass)*profile.body,coreWidth=.032f+.012f*bass;
+        const float agitation=flux*profile.turbulence*(reduced_?.0015f:.012f),bias=orientation==1?-.045f:orientation==2?.045f:0;
         const double dt=frozen_?0:pendingDt_,attack=std::exp(-dt/.035),release=std::exp(-dt/decay_);
         std::array<float,24> reflection{};
         for(int j=0;j<breadth;++j){const float v=j/(float)(breadth-1),a=(v-.18f)/.035f,b=(v-.80f)/.025f;reflection[(size_t)j]=.12f/(1+a*a)+.05f/(1+b*b);}
+        const int currents=mode_==2?4:std::clamp(2+(int)std::round(width*2),2,4);
         for(int i=0;i<length;++i){
             const float u=i/(float)(length-1),bodyCentre=.5f+.012f*std::sin(u*19-phi*2);
             std::array<float,4> centre{},pulse{},weight{};std::array<juce::Colour,4> colours{};
             const std::array<float,4> hue{.08f,.40f,.70f,.96f};
-            for(int strand=0;strand<4;++strand){
-                centre[(size_t)strand]=bodyCentre+spread*((strand-1.5f)/1.5f)+(.008f+agitation)*std::sin(u*(19+strand*2.f)-phi*(1+strand*.5f)+strand*1.8f);
+            for(int strand=0;strand<currents;++strand){
+                centre[(size_t)strand]=bodyCentre+spread*((strand-(currents-1)*.5f)/std::max(.5f,(currents-1)*.5f))+(.008f+agitation)*std::sin(u*(19+strand*2.f)-phi*(1+strand*.5f)+strand*1.8f);
                 const float position=std::fmod(phase*(.75f+strand*.125f)+strand*.25f+orientation*.07f,1.f);
                 const float raw=std::abs(u-position),distance=std::min(raw,1-raw),q=distance/(.095f+.07f*bass),z=1+q*q;
                 pulse[(size_t)strand]=.65f+.35f/(z*z);
                 weight[(size_t)strand]=strand==0?.42f:strand==1?.35f+.15f*(1-std::abs(centroid-.5f)*2):strand==2?.30f+.20f*centroid:.30f+.25f*flux+.15f*centroid;
                 colours[(size_t)strand]=plasmaColour(hue[(size_t)strand]+(centroid-.5f)*.16f-.08f*bass+.10f*flux+bias);
             }
-            const auto bodyColour=plasmaColour(.45f+.35f*std::sin(u*14-phi)+(centroid-.5f)*.35f-.15f*bass+bias);
+            const auto bodyColour=plasmaColour(.45f+.35f*std::sin(u*14-phi)+(centroid-.5f)*.23f-.15f*bass+bias+colourBias_);
             const auto hazeColour=plasmaColour(.42f+.30f*centroid+.1f*std::sin(u*5-phi));
-            const float bodyPulse=.78f+.22f*pulse[0],flashQ=(u-(float)state_.flashPosition)/.07f,flash=(float)state_.flash/(1+flashQ*flashQ);
+            const float pressure=1+(mode_==2?0:.10f)*bass*std::sin(u*18-phi*2);
+            const float rail=mode_==3?.55f+.45f*std::pow(.5f+.5f*std::sin(u*22-phi*3),2.f):1;
+            const float bodyPulse=(.78f+.22f*pulse[0])*rail,flashQ=(u-(float)state_.flashPosition)/.07f,flash=(float)state_.flash/(1+flashQ*flashQ);
             for(int j=0;j<breadth;++j){
-                const float v=j/(float)(breadth-1),d=(v-bodyCentre)/bodyWidth,h=(v-bodyCentre)/(.18f+.06f*bass),hz=1+h*h;
+                const float v=j/(float)(breadth-1),d=(v-bodyCentre)/(bodyWidth*pressure),h=(v-bodyCentre)/(.18f+.06f*bass),hz=1+h*h;
                 const float shear=.80f+.20f*std::sin(u*31-phi*2+v*17+agitation*10*std::sin(u*43-phi*3));
                 const float body=1.55f*bodyPulse*shear/(1+d*d*d*d*d*d),haze=.055f*bodyPulse/(hz*hz);
                 float mass=body+haze,red=body*bodyColour.getFloatRed()+haze*hazeColour.getFloatRed(),green=body*bodyColour.getFloatGreen()+haze*hazeColour.getFloatGreen(),blue=body*bodyColour.getFloatBlue()+haze*hazeColour.getFloatBlue(),core=0;
-                for(int strand=0;strand<4;++strand){
+                for(int strand=0;strand<currents;++strand){
                     const float radius=coreWidth,q=(v-centre[(size_t)strand])/radius,cz=1+q*q;
-                    const float ribbon=weight[(size_t)strand]*pulse[(size_t)strand]/(cz*cz*cz);
+                    const float ribbon=profile.core*weight[(size_t)strand]*pulse[(size_t)strand]/(cz*cz*cz);
                     mass+=ribbon;core+=ribbon;red+=ribbon*colours[(size_t)strand].getFloatRed();green+=ribbon*colours[(size_t)strand].getFloatGreen();blue+=ribbon*colours[(size_t)strand].getFloatBlue();
                 }
-                const float target=enabled_?weather::unit(std::min(.60f,energy*(1.05f+.45f*bass+.55f*flux))*mass):0;
+                const float target=enabled_?weather::unit(std::min(.60f,profile.gain*energy*(1.05f+.45f*bass+.55f*flux))*mass):0;
                 const int ox=orientation?j:i,oy=orientation?i:j,index=offset+oy*image.getWidth()+ox;
                 auto& density=density_[(size_t)index];auto& optical=optics_[(size_t)index];
                 const double response=target>density?attack:release;

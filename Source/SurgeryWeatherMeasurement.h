@@ -18,6 +18,8 @@ struct Snapshot {
     std::uint64_t sequence=0,event=0;
     float fullPower=0,analysisPower=0,unassignedPower=0,centroidHz=0,centroid=0,bandwidthHz=20000;
     float amplitudeDb=-160,width=0,correlation=0,bass=0,flux=0,density=0,level=0;
+    std::array<float,4> musicEnergy{}; // fixed 20-160 / 160-500 / 500-2500 / 2500-20k bands
+    float rms=0,crestDb=0,transient=0;
     float eventStrength=0,eventPosition=.5f,fluxPosition=.5f;
     double eventSeconds=-100;
 };
@@ -46,11 +48,11 @@ private:
     alignas(64) std::atomic<unsigned> read_{0};
 };
 static_assert(std::atomic<unsigned>::is_always_lock_free);
-struct StereoSums {double ll=0,rr=0,lr=0,mid=0,side=0;int count=0;};
+struct StereoSums {double ll=0,rr=0,lr=0,mid=0,side=0,peak=0;int count=0;};
 inline StereoSums stereoSums(const float* left,const float* right,int n) noexcept {
     StereoSums s;s.count=n;
     for(int i=0;i<n;++i){const double l=std::isfinite(left[i])?left[i]:0,r=std::isfinite(right[i])?right[i]:0;
-        s.ll+=l*l;s.rr+=r*r;s.lr+=l*r;s.mid+=(l+r)*(l+r)*.25;s.side+=(l-r)*(l-r)*.25;
+        s.peak=std::max({s.peak,std::abs(l),std::abs(r)});s.ll+=l*l;s.rr+=r*r;s.lr+=l*r;s.mid+=(l+r)*(l+r)*.25;s.side+=(l-r)*(l-r)*.25;
     }
     return s;
 }
@@ -111,6 +113,16 @@ public:
             for(int r=0;r<7;++r)out.power[(size_t)r]+=(float)(power*rootWeights_[(size_t)k][(size_t)r]);
         }
         for(int i=0;i<partCount_;++i){const auto& part=parts_[(size_t)i];bandPower[part.band]+=powers[part.bin]*part.weight;}
+        // Read-only synesthesia features from these same completed bins.
+        constexpr std::array<double,5> musicEdges{20,160,500,2500,20000};
+        std::array<double,4> musicPower{};
+        for(int k=0;k<bins;++k){const double lo=std::max(0.,(k-.5)*df),hi=std::min(rate_*.5,(k+.5)*df);
+            for(int b=0;b<4;++b)musicPower[(size_t)b]+=powers[(size_t)k]*std::max(0.,std::min(hi,std::min(high,musicEdges[(size_t)b+1]))-std::max(lo,musicEdges[(size_t)b]))/std::max(1.e-12,hi-lo);
+        }
+        for(int b=0;b<4;++b)out.musicEnergy[(size_t)b]=intensity(musicPower[(size_t)b]);
+        out.rms=(float)std::sqrt(std::max(0.,(stereo.ll+stereo.rr)/(2*std::max(1,stereo.count))));
+        out.crestDb=out.rms>1.e-8f?(float)std::clamp(20*std::log10(std::max(1.,stereo.peak/out.rms)),0.,60.):0;
+        out.transient=unit((out.crestDb-3)/18.);
         out.fullPower=(float)std::min(full,1.e30);out.analysisPower=(float)std::min(total,1.e30);
         out.amplitudeDb=(float)(20*std::log10(std::max(1.e-8,amplitude)));
         double assigned=0;for(int r=0;r<7;++r){assigned+=out.power[(size_t)r];out.rootIntensity[(size_t)r]=intensity(out.power[(size_t)r]);}
