@@ -492,8 +492,6 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
     configureKnob(attackSlider, " ms", 10.0, 2);
     configureKnob(releaseSlider, " ms", 120.0, 1);
     configureKnob(onyxSlider, " %", 0.0, 1);
-    configureKnob(onyxToneSlider, "", 0.0, 2);
-    configureKnob(onyxBiasSlider, "", 0.05, 2);
 
     addAndMakeVisible(frequencySlider);
     addAndMakeVisible(gainSlider);
@@ -501,8 +499,6 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
     addAndMakeVisible(attackSlider);
     addAndMakeVisible(releaseSlider);
     addAndMakeVisible(onyxSlider);
-    addAndMakeVisible(onyxToneSlider);
-    addAndMakeVisible(onyxBiasSlider);
 
     configureLever();
     addAndMakeVisible(precisionLever);
@@ -528,8 +524,6 @@ PRISMVSTAudioProcessorEditor::PRISMVSTAudioProcessorEditor(PRISMVSTAudioProcesso
     addAndMakeVisible(spectrumDisplay);
 
     onyxA = std::make_unique<SliderAttachment>(processor.apvts, "onyx", onyxSlider);
-    onyxToneA = std::make_unique<SliderAttachment>(processor.apvts, "onyx_tone", onyxToneSlider);
-    onyxBiasA = std::make_unique<SliderAttachment>(processor.apvts, "onyx_bias", onyxBiasSlider);
     bypassA = std::make_unique<ButtonAttachment>(processor.apvts, "master_bypass", bypassButton);
 
     bindSelectedBand(0);
@@ -811,6 +805,4 @@ void PRISMVSTAudioProcessorEditor::resized()
     }
 
     precisionLever.setBounds(w - 126, controlTop + 8, 72, 126);
-    onyxToneSlider.setBounds(w - 98, 132, 80, 100);
-    onyxBiasSlider.setBounds(w - 98, 239, 80, 100);
 }
