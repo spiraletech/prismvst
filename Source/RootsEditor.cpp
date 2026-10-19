@@ -1100,6 +1100,10 @@ thresholdLabel_.setText("COMP THRESHOLD",
     surgery::weather::Snapshot weatherSnapshot;
     const bool newWeather=processor_.readWeather(weatherSnapshot);
     graph_.updateWeather(newWeather?&weatherSnapshot:nullptr,elapsed,pval(processor_.apvts,"sonar_weather_mode")>=.5f&&pval(processor_.apvts,"aura_color")>=.5f,pval(processor_.apvts,"sonar_reduced_motion")>=.5f,pval(processor_.apvts,"aura_memory"));
+    // The carbon jukebox border is another consumer of the existing weather interpretation.
+    // No extra FFT, worker, audio callback, or parameter is introduced.
+    if(jukeLiquid_.update(graph_.weatherMeaning(),elapsed,graph_.weatherActive(),
+                          pval(processor_.apvts,"sonar_reduced_motion")>=.5f,graph_.isFrozen()))repaint();
     const auto state=processor_.getRootsMeter();
     const juce::String status=
         "IN "+juce::String(processor_.getInputPeakDb(),1)+" dBFS  /  OUT "+
@@ -1127,6 +1131,8 @@ void RootsEditor::paint(juce::Graphics& g){
         paintRack(background);backgroundMode_=mode_;backgroundScale_=dpi;
     }
     g.setOpacity(1.f);g.drawImage(rackBackground_,getLocalBounds().toFloat());
+    // Dynamic frame-only pass; children (SONAR/controls) are never modified.
+    surgery::juke::paintLiquid(g,getWidth(),getHeight(),jukeLiquid_);
 }
 void RootsEditor::resized(){rackBackground_={};backgroundScale_=0;layoutRack();repaint();}
 
@@ -1134,11 +1140,8 @@ void RootsEditor::paintRack(juce::Graphics& g){
     const int width=getWidth(),height=getHeight();
     g.fillAll(juce::Colour(0xff020709));
     g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
-    surgery::rack::drawChassis(g,rackChassis_,width,height);
-    g.setColour(juce::Colour(0xff080b0d));
-    juce::Font engraved(juce::FontOptions(18.0f,juce::Font::bold));
-    engraved.setExtraKerningFactor(.06f);g.setFont(engraved);
-    g.drawFittedText("SPIRAL ETHER TECH",surgery::rack::engravingArea(width).toNearestInt(),juce::Justification::centred,1);
+    surgery::juke::paintStatic(g,width,height);
+    // The animated jukebox top channel replaces the previous engraved metal plaque.
     juce::Graphics::ScopedSaveState saved(g);
     g.addTransform(surgery::rack::contentTransform(width,height));
     surgery::rack::bezel(g,{12,7,1096,44},false,6);

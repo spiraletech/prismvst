@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 #include "SurgerySpectrumFill.h"
 #include "SurgeryWeatherField.h"
+#include "SurgeryJukeJuice.h"
 #include "SurgeryLookAndFeel.h"
 #include "SurgeryHeaderLayout.h"
 #include "SurgeryNodeFocus.h"
@@ -123,6 +124,7 @@ private:
     juce::ComboBox analyzerDepth_,weatherMode_;
     juce::TextButton reducedMotion_{"REDUCED MOTION"};
     double weatherTick_=0;
+    surgery::juke::Liquid jukeLiquid_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> weatherModeA_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> reducedMotionA_;
     juce::TextButton heatToggle_{"SONAR ON"},freezeButton_{"FREEZE"};

@@ -1,5 +1,6 @@
 #include <JuceHeader.h>
 #include "../Source/SurgeryWeatherField.h"
+#include "../Source/SurgeryJukeJuice.h"
 #include <iostream>
 #include <fstream>
 void startAllocationProbe() noexcept;
@@ -42,6 +43,36 @@ bool runWeatherFieldTests(){
     stalledField.update(stalled,30.,.18,false);if(stalled.state().level>.00001)return fail("stalled UI ignores elapsed silence");
     for(int i=0;i<1000;++i)stalledField.update(stalled,.1,10,false);
     if(stalled.state().level!=0||stalled.state().flash!=0)return fail("silent subnormal interpretation tail");
+
+    // JUKE uses weather interpretation only. Test reduced motion, Freeze,
+    // display-off, actual lit pixels and settled idle behavior.
+    {
+        surgery::juke::Liquid liquid;
+        surgery::weather::Meaning live;
+        live.level=.85f;live.bass=.8f;live.flux=.7f;live.width=.6f;live.centroid=.55f;live.flash=.08f;
+        for(int frame=0;frame<90;++frame)liquid.update(live,1./60.,true,true,false);
+        if(liquid.level<.8f||liquid.bass<.7f||liquid.phase!=0.f||liquid.flash!=0.f)
+            return fail("JUKE reduced-motion signal response");
+        const auto held=liquid;
+        if(liquid.update({},1./60.,true,false,true)||liquid.level!=held.level||liquid.phase!=held.phase)
+            return fail("JUKE Freeze changed liquid state");
+        juce::Image dark(juce::Image::RGB,1320,880,true),lit(juce::Image::RGB,1320,880,true);
+        dark.clear(dark.getBounds(),juce::Colours::black);
+        lit.clear(lit.getBounds(),juce::Colours::black);
+        {juce::Graphics image(dark);surgery::juke::paintLiquid(image,1320,880,{});}
+        {juce::Graphics image(lit);surgery::juke::paintLiquid(image,1320,880,liquid);}
+        int bright=0;for(int x=150;x<1170;x+=10){
+            const auto p=lit.getPixelAt(x,25);
+            bright+=p.getRed()>15||p.getGreen()>15||p.getBlue()>15?1:0;
+        }
+        if(bright<50||dark.getPixelAt(200,25).getBrightness()>.001f)
+            return fail("JUKE border invisible or falsely lit during silence");
+        if(!liquid.update({},1./60.,false,false,false)||liquid.level!=0||liquid.bass!=0||liquid.phase!=0)
+            return fail("JUKE Standard/OFF leaves light active");
+        if(liquid.update({},1./60.,false,false,false))return fail("JUKE idle repaints");
+        liquid.update(live,1./60.,true,false,false);
+        if(liquid.phase<=0||liquid.level<=0)return fail("JUKE unlocked motion did not advance");
+    }
     startAllocationProbe();
     for(int i=0;i<100;++i){ia.accept(input);a->update(ia,1./60.,.18,false);}
     const auto allocations=finishAllocationProbe();if(allocations!=0)return fail("field update allocates");

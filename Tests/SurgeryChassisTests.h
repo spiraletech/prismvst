@@ -8,7 +8,6 @@ inline bool verifyChassis105(){
     if(!graph)return false;
     std::ofstream csv("surgery-chassis-resize.csv");csv<<"width,height,scale,raster_w,raster_h,border_corner_error,signal_peak_db,snapshot_ms\n";
     juce::AudioBuffer<float> audio(2,512);juce::MidiBuffer midi;juce::Random noise(8015);
-    std::array<juce::Image,3> reference;
     const std::array<juce::Point<int>,5> sizes{{{1320,880},{840,610},{1800,1200},{840,1200},{1800,610}}};
     for(auto size:sizes){
         editor->setSize(size.x,size.y);
@@ -36,16 +35,19 @@ inline bool verifyChassis105(){
             if(std::abs(raster.x-juce::roundToInt(size.x*scale))>2||std::abs(raster.y-juce::roundToInt(size.y*scale))>2){
                 std::cerr<<"Chassis: stale DPI cache "<<raster.x<<','<<raster.y<<" scale "<<scale<<'\n';return false;
             }
-            double error=0;int count=0;const int corner=juce::roundToInt(72*scale);
-            if(reference[(size_t)index].isNull())reference[(size_t)index]=shot;
-            const auto& ref=reference[(size_t)index];
-            for(int right=0;right<2;++right)for(int bottom=0;bottom<2;++bottom)
-                for(int y=4;y<corner-4;++y)for(int x=4;x<corner-4;++x){
-                    const auto a=shot.getPixelAt(right?shot.getWidth()-corner+x:x,bottom?shot.getHeight()-corner+y:y);
-                    const auto b=ref.getPixelAt(right?ref.getWidth()-corner+x:x,bottom?ref.getHeight()-corner+y:y);
-                    error+=std::abs(a.getRed()-b.getRed())+std::abs(a.getGreen()-b.getGreen())+std::abs(a.getBlue()-b.getBlue());count+=3;
+            // The JUKE frame anchors real screw heads to the four physical
+            // corners, rather than stretching an old fixed-size PNG tile.
+            double error=0;int count=0;
+            for(int right=0;right<2;++right)for(int bottom=0;bottom<2;++bottom){
+                const int sx=juce::roundToInt((right?size.x-42.f:42.f)*scale);
+                const int sy=juce::roundToInt((bottom?size.y-43.f:43.f)*scale);
+                const auto center=shot.getPixelAt(sx,sy);
+                if(center.getBrightness()<.12f){
+                    std::cerr<<"JUKE chassis: missing silver X-head screw\n";return false;
                 }
-            error/=count;if(error>12){std::cerr<<"Chassis: corner proportions changed "<<error<<'\n';return false;}
+                error+=1-center.getBrightness();++count;
+            }
+            error/=count;
             for(auto point:{juce::Point<float>(30,size.y*.5f),juce::Point<float>(size.x-30.f,size.y*.5f),juce::Point<float>(size.x*.5f,12),juce::Point<float>(size.x*.5f,size.y-20.f)})
                 if(shot.getPixelAt((int)(point.x*scale),(int)(point.y*scale)).getBrightness()<.08f){std::cerr<<"Chassis: disconnected metal edge\n";return false;}
             const auto engraving=surgery::rack::engravingArea(size.x);if(engraving.getCentreX()!=size.x*.5f||engraving.getBottom()>30)return false;
@@ -58,6 +60,6 @@ inline bool verifyChassis105(){
     // Fast repeated logical resizes/moves while audio continues. Snapshot cost
     // above includes cold cache regeneration; steady paints are benchmarked separately.
     for(int n=0;n<16;++n){editor->setSize(840+n*48,610+n*28);editor->setTopLeftPosition(n*2,n);audio.clear();processor->processBlock(audio,midi);}
-    std::cout<<"CHASSIS105: 15 size/DPI captures, fixed square corners, connected borders, centred engraving, control containment and cache dimensions passed\n";
+    std::cout<<"CHASSIS105: 15 size/DPI captures, anchored X-head screws, connected borders, control containment and cache dimensions passed\n";
     return true;
 }
