@@ -127,10 +127,13 @@ void RootsGraph::updateWeather(const surgery::weather::Snapshot* snapshot,double
     if(changed){heatValid_=false;weatherStyle_=style;weatherField_.clear();repaint();}
     if(!active){weatherInterpretation_.update(elapsed,memory,true);return;}
     if(snapshot)weatherInterpretation_.accept(*snapshot);
+    auto key=[](const surgery::weather::Meaning& f){return std::array<float,16>{f.bass,f.centroid,f.flux,f.width,f.rate,f.density,f.level,f.storm,f.flash,f.flashPosition,f.musicEnergy[0],f.musicEnergy[1],f.musicEnergy[2],f.musicEnergy[3],f.rms,f.crest};};
+    const auto previous=key(weatherInterpretation_.state());const auto previousPhase=visualPhase_;
     const auto& meaning=weatherInterpretation_.update(elapsed,memory,reduced);
     if(!visible)return; // JUKE still consumes this shared measured state.
     visualPhase_=std::fmod(visualPhase_+(float)(std::clamp(elapsed,0.,.25)*meaning.level*(reduced?.035:1.)),64.f);
-    if(style==1)weatherField_.update(weatherInterpretation_,elapsed,memory,reduced,false);
+    const bool fieldChanged=style==1&&weatherField_.update(weatherInterpretation_,elapsed,memory,reduced,false);
+    if(!changed&&!fieldChanged&&previous==key(meaning)&&previousPhase==visualPhase_)return;
     {
         juce::Image::BitmapData pixels(weatherImage_,juce::Image::BitmapData::writeOnly);
         const auto& field=weatherField_.pixels();
