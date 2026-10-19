@@ -268,7 +268,10 @@ void PRISMVSTAudioProcessor::processOnyx(juce::AudioBuffer<float>& buffer)
     const float drive = toGain(driveDb) * (1.0f + amount * 1.75f);
     const float bias = read(apvts, "onyx_bias") * 0.18f * amount;
     const float density = read(apvts, "onyx_density");
-    const float tone = read(apvts, "onyx_tone");
+    // Single ONYX macro: blend a gentle brightness lift as saturation grows.
+    // The hidden tone parameter remains host-accessible for fine adjustment.
+    const float tone = juce::jlimit(-1.0f, 1.0f,
+        read(apvts, "onyx_tone") + 0.15f * amount);
     const float lpAlpha = 1.0f - std::exp(-2.0f * juce::MathConstants<float>::pi * 1800.0f / (float)currentSampleRate);
     const float wet = juce::jlimit(0.0f, 1.0f, amount * (0.55f + 0.45f * density));
     const float norm = std::tanh(drive + std::abs(bias));
