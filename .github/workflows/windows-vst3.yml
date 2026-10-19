@@ -2,7 +2,7 @@ name: Windows VST3
 
 on:
   push:
-    branches: [ main, roots-v2-graph-dsp-rebuild, roots-v2-1hz-spectral-solo-fix, roots-v2-boundary-pair-solo, roots-v2-horizontal-handles-root-gain, roots-v2-root-controls-selector-fix, surgery-eq-v1.0, surgery-eq-v1-confirmed-onyx-patch, improve/surgery-eq-quality-pass ]
+    branches: [ main, roots-v2-graph-dsp-rebuild, roots-v2-1hz-spectral-solo-fix, roots-v2-boundary-pair-solo, roots-v2-horizontal-handles-root-gain, roots-v2-root-controls-selector-fix, surgery-eq-v1.0, surgery-eq-v1-confirmed-onyx-patch, improve/surgery-eq-quality-pass, feature/juke-juice-weather-border ]
   pull_request:
     branches: [ main, alpha-1.2.0-resonant-wax, roots-v2-experimental, roots-v2-graph-dsp-rebuild, surgery-eq-v1-confirmed-onyx-patch ]
   workflow_dispatch:
