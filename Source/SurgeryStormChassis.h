@@ -125,38 +125,41 @@ private:
         const std::array<juce::Colour,6> colours{juce::Colour(0xff27ddff),juce::Colour(0xff306bff),juce::Colour(0xff9e8bff),juce::Colour(0xffb07df4),juce::Colour(0xfff05bbf),juce::Colour(0xffffab8c)};
         const float p=weather::unit(balance)*5;const int a=std::min(4,(int)p);float t=p-a;t=t*t*(3-2*t);return colours[(size_t)a].interpolatedWith(colours[(size_t)a+1],t);
     }
+    // A continuous broad river with near-straight banks. Motion is internal
+    // advection/shear and four submerged streams, never a travelling spine.
     void render(juce::Image& image,int orientation) {
         juce::Image::BitmapData output(image,juce::Image::BitmapData::writeOnly);
         const int length=orientation?image.getHeight():image.getWidth(),breadth=orientation?image.getWidth():image.getHeight();
         const int offset=orientation==0?0:orientation==1?12288:21504;
         const float phase=(float)state_.phase,phi=phase*juce::MathConstants<float>::twoPi;
         const float energy=(float)(state_.energy*state_.level),bass=(float)state_.bass,flux=(float)state_.flux,width=(float)state_.width,centroid=(float)state_.temperature;
-        const float spread=.08f+.24f*width,bodyWidth=.075f+.055f*bass,coreWidth=.020f+.020f*bass;
-        const float agitation=flux*(reduced_?.005f:.04f),bias=orientation==1?-.045f:orientation==2?.045f:0;
+        const float spread=.06f+.07f*width,bodyWidth=.135f+.035f*bass,coreWidth=.032f+.012f*bass;
+        const float agitation=flux*(reduced_?.0015f:.012f),bias=orientation==1?-.045f:orientation==2?.045f:0;
         const double dt=frozen_?0:pendingDt_,attack=std::exp(-dt/.035),release=std::exp(-dt/decay_);
         std::array<float,24> reflection{};
         for(int j=0;j<breadth;++j){const float v=j/(float)(breadth-1),a=(v-.18f)/.035f,b=(v-.80f)/.025f;reflection[(size_t)j]=.12f/(1+a*a)+.05f/(1+b*b);}
         for(int i=0;i<length;++i){
-            const float u=i/(float)(length-1),bodyCentre=.5f+.16f*std::sin(u*10+phi)+agitation*std::sin(u*21-phi*2);
+            const float u=i/(float)(length-1),bodyCentre=.5f+.012f*std::sin(u*19-phi*2);
             std::array<float,4> centre{},pulse{},weight{};std::array<juce::Colour,4> colours{};
             const std::array<float,4> hue{.08f,.40f,.70f,.96f};
             for(int strand=0;strand<4;++strand){
-                centre[(size_t)strand]=strand==0?bodyCentre:bodyCentre+spread*std::sin(u*(8+strand*2.f)+phi*(strand%2?1.f:-1.f)+strand*1.8f);
+                centre[(size_t)strand]=bodyCentre+spread*((strand-1.5f)/1.5f)+(.008f+agitation)*std::sin(u*(19+strand*2.f)-phi*(1+strand*.5f)+strand*1.8f);
                 const float position=std::fmod(phase*(.75f+strand*.125f)+strand*.25f+orientation*.07f,1.f);
                 const float raw=std::abs(u-position),distance=std::min(raw,1-raw),q=distance/(.095f+.07f*bass),z=1+q*q;
-                pulse[(size_t)strand]=.22f+.78f/(z*z);
-                weight[(size_t)strand]=strand==0?1.3f:strand==1?.78f+.30f*(1-std::abs(centroid-.5f)*2):strand==2?.60f+.35f*centroid:.50f+.4f*flux+.25f*centroid;
+                pulse[(size_t)strand]=.65f+.35f/(z*z);
+                weight[(size_t)strand]=strand==0?.42f:strand==1?.35f+.15f*(1-std::abs(centroid-.5f)*2):strand==2?.30f+.20f*centroid:.30f+.25f*flux+.15f*centroid;
                 colours[(size_t)strand]=plasmaColour(hue[(size_t)strand]+(centroid-.5f)*.16f-.08f*bass+.10f*flux+bias);
             }
-            const auto bodyColour=plasmaColour(.45f+.35f*std::sin(u*10+phi)+(centroid-.5f)*.35f-.15f*bass+bias);
+            const auto bodyColour=plasmaColour(.45f+.35f*std::sin(u*14-phi)+(centroid-.5f)*.35f-.15f*bass+bias);
             const auto hazeColour=plasmaColour(.42f+.30f*centroid+.1f*std::sin(u*5-phi));
-            const float bodyPulse=.35f+.65f*pulse[0],flashQ=(u-(float)state_.flashPosition)/.07f,flash=(float)state_.flash/(1+flashQ*flashQ);
+            const float bodyPulse=.78f+.22f*pulse[0],flashQ=(u-(float)state_.flashPosition)/.07f,flash=(float)state_.flash/(1+flashQ*flashQ);
             for(int j=0;j<breadth;++j){
                 const float v=j/(float)(breadth-1),d=(v-bodyCentre)/bodyWidth,h=(v-bodyCentre)/(.18f+.06f*bass),hz=1+h*h;
-                const float body=1.75f*bodyPulse/(1+d*d*d*d*d*d),haze=.055f*bodyPulse/(hz*hz);
+                const float shear=.80f+.20f*std::sin(u*31-phi*2+v*17+agitation*10*std::sin(u*43-phi*3));
+                const float body=1.55f*bodyPulse*shear/(1+d*d*d*d*d*d),haze=.055f*bodyPulse/(hz*hz);
                 float mass=body+haze,red=body*bodyColour.getFloatRed()+haze*hazeColour.getFloatRed(),green=body*bodyColour.getFloatGreen()+haze*hazeColour.getFloatGreen(),blue=body*bodyColour.getFloatBlue()+haze*hazeColour.getFloatBlue(),core=0;
                 for(int strand=0;strand<4;++strand){
-                    const float radius=coreWidth*(strand==0?1.f:.72f),q=(v-centre[(size_t)strand])/radius,cz=1+q*q;
+                    const float radius=coreWidth,q=(v-centre[(size_t)strand])/radius,cz=1+q*q;
                     const float ribbon=weight[(size_t)strand]*pulse[(size_t)strand]/(cz*cz*cz);
                     mass+=ribbon;core+=ribbon;red+=ribbon*colours[(size_t)strand].getFloatRed();green+=ribbon*colours[(size_t)strand].getFloatGreen();blue+=ribbon*colours[(size_t)strand].getFloatBlue();
                 }
@@ -171,7 +174,7 @@ private:
                 const float illumination=enabled_?std::max(0.f,density-.015f)*(.8f+.6f*(float)state_.glow)*(1+flash*2):0;
                 const float alpha=masks_[(size_t)index]/255.f*(illumination*4.8f/(1+illumination*4.8f));
                 if(alpha>.10f){++visiblePixels_;++chamberVisible_[(size_t)orientation];}
-                const float denominator=std::max(1.e-6f,density),white=weather::unit(optical.core*(.55f+.2f*flux)+flash*optical.core*2);
+                const float denominator=std::max(1.e-6f,density),white=weather::unit(optical.core*(.18f+.15f*flux)+flash*optical.core*2);
                 const float gloss=reflection[(size_t)j];
                 auto channel=[&](float c,float glass){c=weather::unit(c/denominator);return weather::unit((c+(1-c)*white)*(1-gloss)+glass*gloss);};
                 const float r=channel(optical.r,.85f),g=channel(optical.g,.95f),b=channel(optical.b,1);

@@ -44,6 +44,14 @@ bool runStormChassisTests(){
     if(active.maximum<.04||active.renderedLitFraction<.25||active.renderedLitFraction>.45)return fail("normal liquid occupancy outside 25-45 percent");
     for(auto occupancy:active.chamberOccupancy)if(occupancy<.25||occupancy>.45)return fail("individual chamber normal occupancy outside target");
     for(auto families:active.colourFamilies)for(auto count:families)if(count<12)return fail("a chamber lacks multicolour currents");
+    // A river fills a continuous central channel; its banks must not swing
+    // across the chamber like a single winding filament.
+    int minCentre=100,maxCentre=0,continuous=0;
+    for(int x=100;x<1020;++x){int lo=35,hi=-1;
+        for(int y=7;y<33;++y)if(vessel.getPixelAt(x,y).getAlpha()>25){lo=std::min(lo,y);hi=std::max(hi,y);}
+        if(hi>=lo){minCentre=std::min(minCentre,lo+hi);maxCentre=std::max(maxCentre,lo+hi);if(hi-lo>=6)++continuous;}
+    }
+    if(continuous<900||maxCentre-minCentre>6)return fail("river loses broad continuity / develops winding spine");
     auto density=std::make_unique<std::array<float,30720>>(hollow.densityField());auto optics=std::make_unique<std::array<StormChassis::OpticalCell,30720>>(hollow.opticalField());auto current=hollow.state();
     for(int frame=0;frame<30;++frame){hollow.update(signal,1./60.,.3,true,false);draw();}
     if(std::memcmp(&current,&hollow.state(),sizeof(current))||*density!=hollow.densityField()||*optics!=hollow.opticalField())return fail("Freeze advances plasma/trails");
