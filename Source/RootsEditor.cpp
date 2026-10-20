@@ -811,7 +811,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         b->setColour(juce::TextButton::textColourOnId,juce::Colours::white);
         addAndMakeVisible(*b);
     }
-    static constexpr const char* labels[]{"ROOT","CARVE","ONYX","ANALYZE"};
+    static constexpr const char* labels[]{"ROOT","CARVE","QUARTZ","ANALYZE"};
     for(int i=0;i<4;++i){
         auto& b=modeButtons_[(size_t)i];
         b.setButtonText(labels[i]);
@@ -841,12 +841,12 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         b->setClickingTogglesState(true);
         addAndMakeVisible(*b);
     }
-    const std::array<const char*,4> names{"SPARKLE","SHINE","SMOOTHENING","VINTAGE TAPE"};
-    for(int i=0;i<4;++i){
+    const std::array<const char*,5> names{"SPARKLE","SHINE","SMOOTHENING","VINTAGE TAPE","QUARTZ"};
+    for(int i=0;i<5;++i){
         auto& s=onyxSliders_[(size_t)i];
         rotary(s," %",0.0);s.setRange(0.0,100.0,0.1);
         s.setMouseDragSensitivity(1200);
-        static const char* tips[]{"Transient harmonic shimmer; fine low-level travel, zero is neutral.","Smooth linear presence shelf; adds openness without a saturator.","Dynamic high-frequency edge taming; preserves the dry attack.","Low-drive antialiased tape warmth with gentle high-frequency rounding."};
+        static const char* tips[]{"Transient harmonic shimmer; fine low-level travel, zero is neutral.","Smooth linear presence shelf; adds openness without a saturator.","Dynamic high-frequency edge taming; preserves the dry attack.","Low-drive antialiased tape warmth with gentle high-frequency rounding.","Linear phase-aware darkening and softening; no added harmonics."};
         s.setTooltip(tips[i]);
         s.setDoubleClickReturnValue(true,0.0);
         addAndMakeVisible(s);
@@ -941,8 +941,8 @@ void RootsEditor::choosePreset(bool saving){
 void RootsEditor::bindNode(int n){
     node_=juce::jlimit(0,prism::roots::v2::kNodes-1,n);
     for(auto& a:onyxAttachments_)a.reset();
-    const std::array<const char*,4> names{"onyx_sparkle","onyx_shine","onyx_smooth","onyx_tape"};
-    for(int i=0;i<4;++i)
+    const std::array<const char*,5> names{"onyx_sparkle","onyx_shine","onyx_smooth","onyx_tape","quartz_tone"};
+    for(int i=0;i<5;++i)
         onyxAttachments_[(size_t)i]=std::make_unique<SliderA>(
             processor_.apvts,
             PRISMVSTAudioProcessor::rootsRootControlId(node_/2,names[(size_t)i]),
@@ -1030,7 +1030,7 @@ void RootsEditor::setMode(int next){
     gain_.setVisible(mode_==0);gainLabel_.setVisible(mode_==0);
     threshold_.setVisible(mode_==0);
     thresholdLabel_.setVisible(mode_==0);
-    for(int i=0;i<4;++i){
+    for(int i=0;i<5;++i){
         onyxSliders_[(size_t)i].setVisible(mode_==2);
         onyxLabels_[(size_t)i].setVisible(mode_==2);
     }
@@ -1153,8 +1153,8 @@ void RootsEditor::paintRack(juce::Graphics& g){
     g.setFont(juce::Font(juce::FontOptions(10.0f)));
     g.drawText("SONAR ROOTS PROCESSOR",800,17,285,23,juce::Justification::centredRight);
     if(mode_==2){
-        for(int i=1;i<4;++i){
-            float x=204+i*218.f;
+        for(int i=1;i<5;++i){
+            float x=204+i*174.4f;
             g.setColour(juce::Colour(0xff324148));g.drawLine(x,591,x,700,.6f);
             surgery::rack::screw(g,x,590,3);surgery::rack::screw(g,x,700,3);
         }
@@ -1192,7 +1192,7 @@ void RootsEditor::layoutRack(){
     const std::array<juce::Label*,3> cl{&carveFrequencyLabel_,&carveDepthLabel_,&carveQLabel_};
     for(int i=0;i<3;++i){cl[(size_t)i]->setBounds(211+i*235,588,202,18);cs[(size_t)i]->setBounds(211+i*235,607,202,94);}
     for(int i=0;i<4;++i)carveSlotButtons_[(size_t)i].setBounds(938+(i%2)*72,612+(i/2)*42,66,30);
-    for(int i=0;i<4;++i){onyxLabels_[(size_t)i].setBounds(204+i*218,588,218,18);onyxSliders_[(size_t)i].setBounds(204+i*218,607,218,94);}
+    for(int i=0;i<5;++i){onyxLabels_[(size_t)i].setBounds(204+i*174,588,174,18);onyxSliders_[(size_t)i].setBounds(204+i*174,607,174,94);}
     analyzerLegend_.setBounds(28,606,239,20);
     weatherMode_.setBounds(28,631,228,32);reducedMotion_.setBounds(28,673,228,26);
     analyzerDepthLabel_.setBounds(285,612,175,18);analyzerDepth_.setBounds(285,638,175,34);
