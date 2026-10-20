@@ -150,7 +150,7 @@ private:
     std::array<juce::MemoryBlock, 2> comparisonStates;
     int comparisonSlot_ = 0;
     struct RootParameters {
-        std::array<std::atomic<float>*, 12> values {};
+        std::array<std::atomic<float>*, 13> values {};
     };
     std::array<RootParameters, numSections> rootParameters;
     std::array<std::array<std::atomic<float>*, 2>, 14> nodeParameters {};
