@@ -17,6 +17,7 @@ public:
         dcA=alpha(8.0);
         attack=1.0-std::exp(-1.0/(.0015*sr));
         release=1.0-std::exp(-1.0/(.055*sr));
+        quartzA=alpha(std::min(3600.0,sr*.16));
         *this=resetState(*this);
     }
     void setRootBand(double low,double high) noexcept {
@@ -24,9 +25,17 @@ public:
         exciteA=alpha(std::clamp(high*1.5,120.0,std::min(6500.0,sr*.12)));
     }
     double sample(double x,const std::array<double,4>& amounts) noexcept {
+        return sample(x, std::array<double,5>{amounts[0],amounts[1],amounts[2],amounts[3],0.0});
+    }
+    double sample(double x,const std::array<double,5>& amounts) noexcept {
         if(!std::isfinite(x))x=0;
         const double sp=law(amounts[0]),sh=law(amounts[1]);
         const double sm=law(amounts[2]),tp=law(amounts[3]);
+        const double quartz=law(amounts[4]);
+        // Linear minimum-phase HF softening: H(z)=(1-q)+q*a/(1-(1-a)z^-1).
+        // No nonlinear waveshaping or dry/wet delay difference.
+        quartzLow+=quartzA*(x-quartzLow);
+        const double quartzTone=x+0.72*quartz*(quartzLow-x);
         air+=airA*(x-air);
         presence+=presenceA*(x-presence);
         // Two low-pass poles attenuate the exciter's input near Nyquist.
@@ -58,6 +67,7 @@ public:
         y+=sp*.75*nyquistGuard*(.35+.65*transient)*(sparkle-sparkleDC);
         // Low-drive tape residue with restrained HF rounding; unity small-signal gain.
         y+=tp*(.60*(tape-tapeDC)-.045*(x-air));
+        y+=quartzTone-x;
         return std::isfinite(y)?y:0.0;
     }
     static double law(double amount) noexcept {
@@ -69,6 +79,7 @@ private:
         Onyx result;
         result.sr=coeff.sr;result.airA=coeff.airA;result.bandA=coeff.bandA;
         result.presenceA=coeff.presenceA;result.dcA=coeff.dcA;
+        result.quartzA=coeff.quartzA;
         result.attack=coeff.attack;result.release=coeff.release;
         result.detailA=coeff.airA;result.exciteA=coeff.bandA;
         return result;
@@ -90,6 +101,7 @@ private:
     }
     double sr=48000,airA=.4,bandA=.5,presenceA=.2,dcA=.001,attack=.01,release=.001;
     double detailA=.4,exciteA=.5,detail=0;
+    double quartzA=.4,quartzLow=0;
     double air=0,presence=0,band1=0,band2=0,fast=0,slow=0;
     double tape1=0,tape2=0,previousTape=0,previousSparkle=0,tapeDC=0,sparkleDC=0;
 };
