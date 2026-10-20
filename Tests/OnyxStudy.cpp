@@ -111,5 +111,47 @@ int main(int argc,char** argv){
             transfer<<x<<","<<std::tanh(4.5*x)/std::tanh(4.5)<<","<<x+.6*(std::tanh(1.7*x)/1.7-x)<<"\n";
         }
     }
+    // QUARTZ linearity, phase response, silence, bypass, and harmonic tests.
+    for (double sr : {44100.,48000.,96000.}) {
+        surgery::Onyx a,b,c; a.prepare(sr);b.prepare(sr);c.prepare(sr);
+        std::array<double,5> full{0,0,0,0,1}, zero{0,0,0,0,0};
+        double neutralError=0,silenceError=0;
+        for(int n=0;n<(int)sr;++n) {
+            const double t=n/sr;
+            const double x=.45*std::sin(2*std::numbers::pi*1000*t);
+            const double u=.3*std::sin(2*std::numbers::pi*400*t);
+            const double v=.2*std::sin(2*std::numbers::pi*4000*t);
+            neutralError=std::max(neutralError,std::abs(x-a.sample(x,zero)));
+        }
+        // Exact bypass, even if filter states are running.
+        if(neutralError>1e-12)throw std::runtime_error("QUARTZ neutral changed dry audio");
+        // Reset and compare a sum against two separately filtered signals (superposition).
+        surgery::Onyx sumFx,lowFx,hiFx,blank;sumFx.prepare(sr);lowFx.prepare(sr);hiFx.prepare(sr);blank.prepare(sr);
+        for(int n=0;n<(int)sr;++n) {
+            const double u=.3*std::sin(2*std::numbers::pi*400*n/sr);
+            const double v=.2*std::sin(2*std::numbers::pi*4000*n/sr);
+            const double combined=sumFx.sample(u+v,full);
+            const double components=lowFx.sample(u,full)+hiFx.sample(v,full);
+            if(std::abs(combined-components)>1e-10)throw std::runtime_error("QUARTZ nonlinear/harmonic regression");
+            silenceError=std::max(silenceError,std::abs(blank.sample(0.0,full)));
+        }
+        if(silenceError>1e-12)throw std::runtime_error("QUARTZ silence/DC regression");
+        // Analytic response: H(e^jw) = (1-q) + q*a/(1-(1-a)e^-jw).
+        const double alpha=1-std::exp(-2*std::numbers::pi*3600.0/sr), q=.72;
+        const auto response=[&](double hz) {
+            const double omega=2*std::numbers::pi*hz/sr;
+            const double denRe=1-(1-alpha)*std::cos(omega);
+            const double denIm=(1-alpha)*std::sin(omega);
+            const double den2=denRe*denRe+denIm*denIm;
+            const double real=1-q+q*alpha*denRe/den2;
+            const double imag=-q*alpha*denIm/den2;
+            return std::pair<double,double>{std::hypot(real,imag),std::atan2(imag,real)};
+        };
+        const auto [bass,bassPhase]=response(100.0);
+        const auto [treble,treblePhase]=response(12000.0);
+        if(!(bass>.98 && treble<.75 && treble>.25 &&
+             std::abs(bassPhase)<.1 && std::abs(treblePhase)<1.0))
+            throw std::runtime_error("QUARTZ magnitude/phase target regression");
+    }
     std::cout<<"ONYX: 44.1/48/96k; four controls at 20/100%; 0.1/0.7 input; 1/8 kHz. Exact zero null="<<maxNeutral<<" max peak="<<maxPeak<<"; DC tail passed\n";
 }
