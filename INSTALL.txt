@@ -1,14 +1,14 @@
-SURGERY EQ 1.0.11 - Windows x64 VST3
+SURGERY EQ 1.0.12 - Windows x64 VST3
 
 Close your DAW and back up the previous bundle outside scanned folders.
 Copy the COMPLETE SURGERY EQ v1.0.vst3 folder into:
 C:\Program Files\Common Files\VST3
-Rescan and verify v1.0.11. Keep one scanned copy. Bundle/class IDs are retained.
+Rescan and verify v1.0.12. Keep one scanned copy. Bundle/class IDs are retained.
 Unsigned development build; test copies of production projects first.
 
-ANALYZE > VISUAL MODE selects Standard, Storm Symbiote, Synesthesia,
-Brooding, Pulse, Aura, Focus or Standard+. Standard remains the default.
-SONAR ON/OFF gates analyzer colour/weather overlays; the accurate trace remains.
+ANALYZE > SONAR 2.1 / VISUAL MODE now contains Standard+ ONLY.
+All earlier saved/automated SONAR choices render Standard+.
+SONAR ON/OFF independently gates its overlays; the accurate trace remains.
 
 ANALYZE > JUKE MODE independently selects Real Jukebox, Storm Tube,
 Symbiote Flow, Pulse Rail, Ambient Idle or Off. Real Jukebox is the fresh-instance
@@ -19,7 +19,7 @@ Freeze holds both visual simulations. Off controls override visibility while
 frozen. Reduced Motion defaults ON and preserves light response with less drift
 and turbulence. Silence leaves faint casing reflections after decay.
 
-Old sessions retain the two-choice SONAR automation parameter. The expanded
-selector uses a new appended parameter; old projects with Storm+SONAR ON recall
-Symbiote Flow, otherwise JUKE Off. Existing controls/geometry and DSP are retained.
-See VISUAL_MODES_1_0_11.md and BUILD-NOTES.txt for validation and limitations.
+Historical SONAR parameter IDs/ranges/values are retained for project and
+normalized automation compatibility. They cannot reactivate removed styles.
+JUKE choices, existing control positions, analyzer geometry and DSP are retained.
+See STANDARD_PLUS_1_0_12.md and BUILD-NOTES.txt for validation and limitations.

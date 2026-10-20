@@ -50,9 +50,9 @@ bool runWeatherFieldTests(){
     std::array<std::uint64_t,8> hashes{};
     for(int mode=0;mode<8;++mode){std::uint64_t h=1469598103934665603ull;
         for(int y=0;y<64;++y)for(int x=0;x<128;++x){const auto c=surgery::visual::style(mode,shared,.7f,x/127.f,y/63.f,field.pixels()[(size_t)(y*128+x)]);h^=(c.r<<16)|(c.g<<8)|c.b;h*=1099511628211ull;}
-        hashes[(size_t)mode]=h;for(int old=0;old<mode;++old)if(hashes[(size_t)old]==h)return fail("SONAR styles produce identical scenes");
+        hashes[(size_t)mode]=h;if(mode>1&&h!=hashes[1])return fail("retired styles must alias Standard+");
     }
     std::ofstream report("surgery-weather-field.csv");report<<"field_bytes,interpretation_bytes,measurement_bytes,queue_bytes,cells,flash_limit_hz,density_30fps,density_60fps,density_120fps\n"<<sizeof(Field)<<','<<sizeof(Interpretation)<<','<<sizeof(Measurement)<<','<<sizeof(SnapshotQueue<Snapshot>)<<','<<Field::count<<','<<1/.75<<','<<density[0]<<','<<density[1]<<','<<density[2]<<'\n';
-    std::cout<<"WEATHER FIELD: deterministic approved-palette field, eight distinct styles, 30/60/120 Hz physics, bounded field, silence/idle, reduced motion and hard flash rate limit passed; fixed field bytes "<<sizeof(Field)<<'\n';
+    std::cout<<"WEATHER FIELD: deterministic approved-palette field, Standard+ legacy aliases, 30/60/120 Hz physics, bounded field, silence/idle, reduced motion and hard flash rate limit passed; fixed field bytes "<<sizeof(Field)<<'\n';
     return true;
 }

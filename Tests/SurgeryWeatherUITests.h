@@ -54,7 +54,7 @@ inline bool verifyWeatherUI(){
             block.setSample(0,i,(float)value);block.setSample(1,i,(float)right);
         }p->processBlock(block,midi);if(n%4==3){pump(16);if(kind==5&&n%8==7)save(editor->createComponentSnapshot(editor->getLocalBounds()),"surgery-ui-vessel-motion-"+juce::String(n/8).paddedLeft('0',2)+".png");if(kind==4&&!lightningCaptured&&graph->weatherMeaning().flash>.01f){lightningCaptured=save(editor->createComponentSnapshot(editor->getLocalBounds()),"surgery-ui-weather-onset.png");}}}pump(90);
     };
-    feed(0,48);if(!graph->spectralMetrics().signalPresent||graph->weatherActive())return fail("standard regression");
+    feed(0,48);if(!graph->spectralMetrics().signalPresent||!graph->weatherActive())return fail("Standard+ default regression");
     if(!save(editor->createComponentSnapshot(editor->getLocalBounds()),"surgery-ui-weather-standard.png"))return false;
     set(*p,"sonar_weather_mode",1);set(*p,"aura_memory",.18f);
     feed(0,96);if(!graph->weatherActive()||graph->weatherMeaning().bass<.15||graph->weatherMeaning().flash!=0)return fail("bass/reduced weather response");
@@ -87,7 +87,7 @@ inline bool verifyWeatherUI(){
     set(*p,"aura_color",0);pump(40);if(graph->weatherActive())return fail("OFF ignored while frozen");
     graph->setFrozen(false);set(*p,"aura_color",0);feed(4,24);if(graph->weatherActive()||!graph->spectralMetrics().signalPresent)return fail("visualization OFF");
     if(!save(editor->createComponentSnapshot(editor->getLocalBounds()),"surgery-ui-weather-OFF.png"))return false;
-    set(*p,"aura_color",1);set(*p,"sonar_weather_mode",0);feed(4,24);if(graph->weatherActive())return fail("standard mode cannot be restored");
+    set(*p,"aura_color",1);set(*p,"sonar_weather_mode",0);feed(4,24);if(!graph->weatherActive())return fail("legacy Standard value must render Standard+");
     set(*p,"sonar_weather_mode",1);set(*p,"sonar_reduced_motion",0);
     juce::MemoryBlock state;p->getStateInformation(state);auto restored=std::make_unique<PRISMVSTAudioProcessor>();restored->setStateInformation(state.getData(),(int)state.getSize());
     if(restored->apvts.getRawParameterValue("sonar_weather_mode")->load()!=1||restored->apvts.getRawParameterValue("sonar_reduced_motion")->load()!=0)return fail("mode state recall");
@@ -106,24 +106,23 @@ inline bool verifyWeatherUI(){
     if(!mode("ANALYZE"))return fail("Analyze selector");
     juce::ComboBox *sonarBox=nullptr,*jukeBox=nullptr;
     for(auto* child:editor->getChildren())if(auto* box=dynamic_cast<juce::ComboBox*>(child)){
-        if(box->getNumItems()==8&&box->getItemText(7)=="Standard+")sonarBox=box;
+        if(box->getNumItems()==1&&box->getItemText(0)=="Standard+")sonarBox=box;
         if(box->getNumItems()==6&&box->getItemText(0)=="Real Jukebox")jukeBox=box;
     }
     if(!sonarBox||!jukeBox||sonarBox->getBounds().intersects(jukeBox->getBounds()))return fail("independent dropdown layout");
     set(*p,"sonar_weather_mode",1);set(*p,"sonar_visual_style",6);pump(40);
     if(p->apvts.getRawParameterValue("sonar_weather_mode")->load()!=1)return fail("host style update rewrites legacy automation");
-    set(*p,"sonar_visual_style",0);pump(40);if(sonarBox->getSelectedId()!=2)return fail("legacy Storm selector display");
-    sonarBox->setSelectedId(1,juce::sendNotificationSync);pump(40);
-    if(p->apvts.getRawParameterValue("sonar_weather_mode")->load()!=0)return fail("explicit Standard gesture leaves legacy Storm enabled");
+    set(*p,"sonar_visual_style",0);pump(40);if(sonarBox->getSelectedId()!=8)return fail("legacy values must display Standard+");
+    if(sonarBox->getNumItems()!=1)return fail("removed modes remain visible");
     set(*p,"sonar_weather_mode",0);set(*p,"sonar_visual_style",0);set(*p,"juke_mode",0);set(*p,"aura_color",0);feed(4,60);
     if(graph->weatherActive()||graph->weatherMeaning().level<.01f)return fail("JUKE cannot run independently of SONAR");
     for(int j=0;j<6;++j){set(*p,"juke_mode",(float)j);feed(4,24);save(editor->createComponentSnapshot(editor->getLocalBounds()),"surgery-ui-111-juke-"+juce::String(j)+".png");}
     set(*p,"juke_mode",5);set(*p,"aura_color",1);
     std::ofstream modesReport("surgery-visual-modes.csv");modesReport<<"style,active,level\n";
     for(int v=0;v<8;++v){set(*p,"sonar_visual_style",(float)v);feed(4,48);
-        if(graph->weatherActive()!=(v>0))return fail("analyzer mode activation / JUKE independence");
+        if(!graph->weatherActive()||sonarBox->getSelectedId()!=8)return fail("legacy automation escapes Standard+");
         modesReport<<v<<','<<graph->weatherActive()<<','<<graph->weatherMeaning().level<<'\n';
-        save(editor->createComponentSnapshot(editor->getLocalBounds()),"surgery-ui-111-sonar-"+juce::String(v)+".png");
+        save(editor->createComponentSnapshot(editor->getLocalBounds()),"surgery-ui-112-legacy-alias-"+juce::String(v)+".png");
     }
     set(*p,"sonar_visual_style",6);set(*p,"juke_mode",3);p->getStateInformation(state);restored->setStateInformation(state.getData(),(int)state.getSize());
     if(restored->apvts.getRawParameterValue("sonar_visual_style")->load()!=6||restored->apvts.getRawParameterValue("juke_mode")->load()!=3)return fail("expanded mode recall");

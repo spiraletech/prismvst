@@ -27,12 +27,12 @@ public:
     }
 };
 
-// New selector keeps legacy normalized automation intact. Host/state updates
-// never mutate the legacy lane; only an explicit dropdown gesture clears it.
+// Retained parameter values preserve host/project compatibility. The only
+// visible choice and active presentation are Standard+.
 class SurgeryVisualChoiceAttachment final {
 public:
     SurgeryVisualChoiceAttachment(juce::RangedAudioParameter& parameter,juce::RangedAudioParameter& legacy,juce::ComboBox& box)
-        : box_(box),legacy_(legacy),attachment_(parameter,[this](float v){box_.setSelectedId(juce::roundToInt(v)+1,juce::dontSendNotification);},nullptr) {
+        : box_(box),legacy_(legacy),attachment_(parameter,[this](float){box_.setSelectedId(8,juce::dontSendNotification);},nullptr) {
         attachment_.sendInitialUpdate();
         box_.onChange=[this]{legacy_.beginChangeGesture();legacy_.setValueNotifyingHost(0);legacy_.endChangeGesture();attachment_.setValueAsCompleteGesture((float)(box_.getSelectedId()-1));};
     }

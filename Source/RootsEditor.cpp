@@ -118,6 +118,7 @@ void RootsGraph::updateAnalyzer(
     if(previous!=bands_||previousPeaks!=peaks_)repaint();
 }
 void RootsGraph::updateWeather(const surgery::weather::Snapshot* snapshot,double elapsed,bool active,bool reduced,double memory,int style){
+    style=style>0?7:0; // All retained legacy values resolve to Standard+.
     const bool visible=active&&style>0;
     const bool changed=visible!=weatherActive_||style!=weatherStyle_;
     weatherActive_=visible;
@@ -363,9 +364,8 @@ void RootsGraph::paint(juce::Graphics& g){
     g.setFont(juce::Font(juce::FontOptions(10.5f)));
     const auto& meaning=weatherInterpretation_.state();
     const auto& measured=weatherInterpretation_.measured();
-    static constexpr std::array<const char*,8> styleNames{"STANDARD","STORM SYMBIOTE","SYNESTHESIA","BROODING","PULSE","AURA","FOCUS","STANDARD+"};
     const juce::String caption=weatherActive_?
-        "SONAR 2.1 / "+juce::String(styleNames[(size_t)std::clamp(weatherStyle_,0,7)])+" / R"+juce::String(selected_/2+1)+" PWR "+juce::String(surgery::weather::dbPower(measured.power[(size_t)(selected_/2)]),1)+" dBFS  B "+juce::String(meaning.bass,2)+"  C "+juce::String(meaning.centroid,2)+"  F "+juce::String(meaning.flux,2)+"  W "+juce::String(meaning.width,2)+"  R "+juce::String(meaning.rate,2)+"  D "+juce::String(meaning.density,2)+"  CORR "+juce::String(measured.correlation,2)+(measured.correlation<-.2f?" / MONO CAUTION":""):
+        "SONAR 2.1 / STANDARD+ / R"+juce::String(selected_/2+1)+" PWR "+juce::String(surgery::weather::dbPower(measured.power[(size_t)(selected_/2)]),1)+" dBFS  B "+juce::String(meaning.bass,2)+"  C "+juce::String(meaning.centroid,2)+"  F "+juce::String(meaning.flux,2)+"  W "+juce::String(meaning.width,2)+"  R "+juce::String(meaning.rate,2)+"  D "+juce::String(meaning.density,2)+"  CORR "+juce::String(measured.correlation,2)+(measured.correlation<-.2f?" / MONO CAUTION":""):
         "SYNESTHESIA V1 / FREQUENCY > HUE / LEVEL > LIGHT     CARVE / STATIC RESPONSE";
     g.drawText(caption,
                juce::Rectangle<float>(r.getX(),r.getBottom()+23.0f,r.getWidth(),16.0f).toNearestInt(),
@@ -793,7 +793,7 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         label->setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::plain)));
         label->setJustificationType(juce::Justification::centredLeft);
     }
-    title_.setText("SURGERY EQ  /  v1.0.11",juce::dontSendNotification);
+    title_.setText("SURGERY EQ  /  v1.0.12",juce::dontSendNotification);
     analyzerLegend_.setFont(juce::Font(juce::FontOptions(12.0f,juce::Font::bold)));
     analyzerLegend_.setText("SYNESTHESIA V1   /   HUE x ENERGY",
                             juce::dontSendNotification);
@@ -892,8 +892,8 @@ RootsEditor::RootsEditor(PRISMVSTAudioProcessor& p)
         freezeButton_.setButtonText(graph_.isFrozen()?"RESUME":"FREEZE");
     };
     addAndMakeVisible(freezeButton_);
-    weatherMode_.addItemList({"Standard","Storm Symbiote","Synesthesia","Brooding","Pulse","Aura","Focus","Standard+"},1);addAndMakeVisible(weatherMode_);
-    weatherMode_.setTooltip("Optional creative acoustic-feature weather. The accurate spectrum and all audio processing remain unchanged.");
+    weatherMode_.addItem("Standard+",8);addAndMakeVisible(weatherMode_);
+    weatherMode_.setTooltip("Standard+ is the sole SONAR presentation. Historical mode values recall as Standard+; SONAR ON/OFF remains independent of JUKE.");
     weatherModeA_=std::make_unique<SurgeryVisualChoiceAttachment>(*processor_.apvts.getParameter("sonar_visual_style"),*processor_.apvts.getParameter("sonar_weather_mode"),weatherMode_);
     jukeMode_.addItemList({"Real Jukebox","Storm Tube","Symbiote Flow","Pulse Rail","Ambient Idle","Off"},1);addAndMakeVisible(jukeMode_);
     jukeModeA_=std::make_unique<ComboA>(processor_.apvts,"juke_mode",jukeMode_);
@@ -1115,8 +1115,7 @@ thresholdLabel_.setText("COMP THRESHOLD",
     const double elapsed=weatherTick_>0?now-weatherTick_:1./60.;weatherTick_=now;
     surgery::weather::Snapshot weatherSnapshot;
     const bool newWeather=processor_.readWeather(weatherSnapshot);
-    const int selectedStyle=juce::roundToInt(pval(processor_.apvts,"sonar_visual_style"));
-    const int style=selectedStyle>0?selectedStyle:(pval(processor_.apvts,"sonar_weather_mode")>=.5f?1:0);
+    constexpr int style=7; // Standard+ is the only active SONAR mode.
     const int juke=juce::roundToInt(pval(processor_.apvts,"juke_mode"));
     const bool sonar=pval(processor_.apvts,"aura_color")>=.5f,reduced=pval(processor_.apvts,"sonar_reduced_motion")>=.5f;
     if(weatherMode_.getSelectedId()!=style+1)weatherMode_.setSelectedId(style+1,juce::dontSendNotification);

@@ -1,0 +1,9 @@
+# Surgery EQ 1.0.12 — Standard+ only
+
+SONAR 2.1 / VISUAL MODE contains one item: Standard+. Standard, Storm Symbiote, Synesthesia, Brooding, Pulse, Aura and Focus are removed from the plugin interface and active rendering. Every historical SONAR choice/automation value resolves to Standard+ when SONAR is ON. The legacy parameter IDs, choice ranges, defaults, stored values and normalized host-automation identity remain intact for recall; retaining this metadata does not retain the retired presentations.
+
+SONAR ON/OFF, Freeze, Reduced Motion and the independent six-choice JUKE MODE selector remain. All JUKE rendering, shared music measurements, audio/DSP, knobs, analyzer coordinates/geometry, controls, tab layout and existing positions are preserved. The visual selector uses the same bounds. The Standard+ measured trace, restrained colour fill and shared music response are retained from 1.0.11.
+
+Verification requires the Windows x64 Release build, all 21 CTest suites and pluginval strictness 8. Updated UI checks require exactly one visible SONAR item and Standard+ display/rendering for each of the eight retained raw values. All six native dropdowns remain tested at 100/125/150%, including screen edges. Existing JUKE independence/recall, old-state migration, Freeze/Off/silence, four-rate bit-exact audio/FFT and callback-allocation checks remain. Source comparison protects every existing layout bound, core DSP and the complete JUKE implementation.
+
+No automatic installation or PR merge. The build is unsigned. Manual FL Studio production-project listening, physical DPI switching, compositor window dragging, device dropout certification and full-editor 60 FPS remain unverified. Actual native captures and measured timings accompany the compiled VST3; no concept rendering substitutes for verification.
