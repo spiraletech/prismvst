@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(PRISMVST VERSION 1.0.0 LANGUAGES CXX)
+project(PRISMVST VERSION 1.0.12 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -37,9 +37,12 @@ juce_add_plugin(PRISMVST
 )
 
 juce_generate_juce_header(PRISMVST)
+juce_add_binary_data(SurgeryRackAssets SOURCES Assets/OnyxRack/chassis-1.0.3.png Assets/StormChassis/approved-reference.png)
+target_link_libraries(PRISMVST PRIVATE SurgeryRackAssets)
 
 target_sources(PRISMVST PRIVATE
   Source/PluginProcessor.cpp
+  Source/SurgeryWeatherAnalysis.cpp
   Source/PluginProcessor.h
   Source/PluginEditor.cpp
   Source/PluginEditor.h
@@ -65,11 +68,21 @@ target_link_libraries(PRISMVST PRIVATE
 
 option(PRISMVST_BUILD_TESTS "Build DSP smoke tests" ON)
 if(PRISMVST_BUILD_TESTS)
+  add_executable(surgery_onyx_study Tests/OnyxStudy.cpp)
+  target_compile_features(surgery_onyx_study PRIVATE cxx_std_20)
+  add_test(NAME surgery_onyx_character_regression COMMAND surgery_onyx_study)
   enable_testing()
+  configure_file("${juce_SOURCE_DIR}/examples/Assets/singing.ogg" "${CMAKE_BINARY_DIR}/surgery-test-music.ogg" COPYONLY)
   juce_add_console_app(prismvst_tests PRODUCT_NAME "PRISMVST Tests")
   target_sources(prismvst_tests PRIVATE
     Tests/ProcessorTests.cpp
+    Tests/QualityTests.cpp
+    Tests/SurgeryWeatherTests.cpp
+    Tests/SurgeryWeatherFieldTests.cpp
+    Tests/SurgeryStormChassisTests.cpp
+    Tests/AllocationProbe.cpp
     Source/PluginProcessor.cpp
+    Source/SurgeryWeatherAnalysis.cpp
     Source/PluginProcessor.h
     Source/PluginEditor.cpp
     Source/PluginEditor.h
@@ -80,7 +93,9 @@ if(PRISMVST_BUILD_TESTS)
     Source/SurgeryLookAndFeel.h
   )
   juce_generate_juce_header(prismvst_tests)
+  target_link_libraries(prismvst_tests PRIVATE SurgeryRackAssets)
   target_compile_definitions(prismvst_tests PRIVATE
+    JUCE_MODAL_LOOPS_PERMITTED=1
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
@@ -89,7 +104,13 @@ if(PRISMVST_BUILD_TESTS)
     juce::juce_audio_utils
     juce::juce_dsp
   )
+  if(MSVC)
+    target_link_options(prismvst_tests PRIVATE /STACK:8388608)
+  endif()
   add_test(NAME prismvst_tests COMMAND prismvst_tests)
+  add_test(NAME surgery_weather_calibration COMMAND prismvst_tests --weather-calibration)
+  add_test(NAME surgery_weather_field COMMAND prismvst_tests --weather-field)
+  add_test(NAME surgery_storm_chassis COMMAND prismvst_tests --storm-chassis)
   # Independent native C++20 ROOTS core; deliberately not linked into v1.2 DSP.
   add_executable(prism_roots_tests Tests/RootsCoreTests.cpp Source/PrismRootsCore.h)
   target_compile_features(prism_roots_tests PRIVATE cxx_std_20)

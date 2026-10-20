@@ -59,8 +59,16 @@ bool finiteBuffer(const juce::AudioBuffer<float>& buffer)
 }
 }
 
-int main()
+bool runQualityTests();
+bool runWeatherCalibration();
+bool runWeatherFieldTests();
+bool runStormChassisTests();
+int main(int argc,char** argv)
 {
+    if(argc>1&&juce::String(argv[1])=="--weather-calibration")return runWeatherCalibration()?0:71;
+    if(argc>1&&juce::String(argv[1])=="--weather-field")return runWeatherFieldTests()?0:72;
+    if(argc>1&&juce::String(argv[1])=="--storm-chassis")return runStormChassisTests()?0:73;
+    juce::ScopedJuceInitialiser_GUI gui;
     // Keep ROOTS distinct in FL Studio's plugin database / VST3 identity.
     {
         PRISMVSTAudioProcessor p;
@@ -488,5 +496,6 @@ int main()
         }
     }
     std::cout << "PRISM ROOTS PROTO 001 legacy DSP compatibility tests passed\n";
+    if(!runQualityTests())return 70;
     return 0;
 }

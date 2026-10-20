@@ -1,0 +1,14 @@
+44.1 kHz / 8 kHz tone / 0.7 peak / 100%:
+SPARKLE 0 THD+N -39.77 out-of-harmonic -39.77 gain 1.59
+SPARKLE 1 THD+N -73.38 out-of-harmonic -73.38 gain 0.0
+SHINE 0 THD+N -153.68 out-of-harmonic -153.68 gain 2.0
+SHINE 1 THD+N -153.37 out-of-harmonic -153.37 gain 1.69
+SMOOTHENING 0 THD+N -152.43 out-of-harmonic -152.43 gain -8.28
+SMOOTHENING 1 THD+N -112.87 out-of-harmonic -112.87 gain -1.04
+VINTAGE TAPE 0 THD+N -11.71 out-of-harmonic -11.71 gain 4.78
+VINTAGE TAPE 1 THD+N -60.59 out-of-harmonic -60.59 gain -0.23
+CPU: version,seconds,audio_seconds,checksum
+0,0.0614254,10,-0.215774
+1,0.094445,10,6.25585
+
+Measured 192 tone cases; plots, metrics and 12 level-matched synthetic WAVs generated.

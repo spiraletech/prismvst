@@ -3,71 +3,47 @@
 // Tactile light guides, accessible hit areas, high-DPI vector rendering.
 #include <JuceHeader.h>
 #include <cmath>
+#include "OnyxRackSkin.h"
 class SurgeryLookAndFeel final : public juce::LookAndFeel_V4 {
 public:
-    void setTheme(int t) noexcept {theme_=juce::jlimit(0,3,t);}
+    SurgeryLookAndFeel(){
+        setColour(juce::PopupMenu::backgroundColourId,juce::Colour(0xff10191e));
+        setColour(juce::PopupMenu::textColourId,juce::Colour(0xffd7e4e8));
+        setColour(juce::PopupMenu::highlightedBackgroundColourId,juce::Colour(0xff153d47));
+        setColour(juce::PopupMenu::highlightedTextColourId,juce::Colour(0xff83e7ef));
+        setColour(juce::ComboBox::textColourId,juce::Colour(0xffd7e4e8));
+    }
+    juce::Font getComboBoxFont(juce::ComboBox&) override {return juce::Font(juce::FontOptions(13.0f));}
+    juce::Font getPopupMenuFont() override {return juce::Font(juce::FontOptions(13.0f));}
+    void positionComboBoxText(juce::ComboBox& box,juce::Label& label) override {
+        label.setBounds(10,1,juce::jmax(0,box.getWidth()-36),box.getHeight()-2);
+        label.setFont(getComboBoxFont(box));
+        label.setJustificationType(juce::Justification::centredLeft);
+    }
+    juce::PopupMenu::Options getOptionsForComboBoxPopupMenu(juce::ComboBox& box,juce::Label&) override {
+        // Target component carries host DPI and our uniform editor transform.
+        // No item-to-align: JUCE can place the complete list below, then fall
+        // back above/clamp to its display work area when space is insufficient.
+        return juce::PopupMenu::Options().withTargetComponent(&box)
+            .withMinimumWidth(box.getWidth()).withMaximumNumColumns(1)
+            .withStandardItemHeight(28).withInitiallySelectedItem(box.getSelectedId())
+            .withPreferredPopupDirection(juce::PopupMenu::Options::PopupDirection::downwards);
+    }
+    bool shouldPopupMenuScaleWithTargetComponent(const juce::PopupMenu::Options&) override {return true;}
+    void drawPopupMenuItem(juce::Graphics& g,const juce::Rectangle<int>& area,bool separator,bool active,
+                          bool highlighted,bool ticked,bool submenu,const juce::String& text,
+                          const juce::String& shortcut,const juce::Drawable* icon,const juce::Colour* colour) override {
+        juce::LookAndFeel_V4::drawPopupMenuItem(g,area,separator,active,highlighted||ticked,ticked,submenu,text,shortcut,icon,colour);
+        if(ticked&&!separator){g.setColour(juce::Colour(0xff43d6e4));g.fillRect(area.getX()+2,area.getY()+4,2,area.getHeight()-8);}
+    }
     void drawRotarySlider(juce::Graphics& g,int x,int y,int w,int h,float position,
                           float start,float end,juce::Slider&) override {
-        const float cx=x+w*0.5f,cy=y+h*0.48f;
-        const float r=juce::jmax(13.0f,juce::jmin(w,h)*0.36f);
-        const auto shadow=juce::Rectangle<float>(cx-r-3,cy-r+2,2*r+6,2*r+6);
-        g.setColour(juce::Colour(0xff03070b).withAlpha(0.65f));
-        g.fillEllipse(shadow);
-        juce::ColourGradient body(
-            theme_==1?juce::Colour(0xfff7f8f7):juce::Colour(0xffa5b5bd),
-            cx-r,cy-r,theme_==1?juce::Colour(0xff586970):juce::Colour(0xff263742),
-            cx+r,cy+r,false);
-        body.addColour(0.42,theme_==1?juce::Colour(0xffcfd8d9):juce::Colour(0xff637884));
-        g.setGradientFill(body);
-        g.fillEllipse(cx-r,cy-r,2*r,2*r);
-        g.setColour(juce::Colour(0xff14202a));
-        g.drawEllipse(cx-r,cy-r,2*r,2*r,1.4f);
-        g.setColour(juce::Colour(0xff091319));
-        g.fillEllipse(cx-r*.74f,cy-r*.74f,1.48f*r,1.48f*r);
-        juce::ColourGradient inner(juce::Colour(0xff566a76),cx-r,cy-r,
-                                   juce::Colour(0xff111e29),cx+r,cy+r,false);
-        g.setGradientFill(inner);
-        g.fillEllipse(cx-r*.65f,cy-r*.65f,1.3f*r,1.3f*r);
-        const auto accent=theme_==2?juce::Colour(0xff76ebba):
-                          theme_==3?juce::Colour(0xffddaa7d):
-                                    juce::Colour(0xff7adbe8);
-        juce::Path outer;
-        outer.addCentredArc(cx,cy,r*1.08f,r*1.08f,0.0f,start,end,true);
-        g.setColour(juce::Colour(0xff344d56));
-        g.strokePath(outer,juce::PathStrokeType(2.8f));
-        juce::Path active;
-        active.addCentredArc(cx,cy,r*1.08f,r*1.08f,0.0f,start,start+position*(end-start),true);
-        g.setColour(accent);
-        g.strokePath(active,juce::PathStrokeType(3.0f));
-        const float theta=start+position*(end-start);
-        g.setColour(juce::Colours::white);
-        g.drawLine(cx,cy,cx+std::sin(theta)*r*.53f,
-                   cy-std::cos(theta)*r*.53f,2.1f);
-        g.setColour(juce::Colours::white.withAlpha(.13f));
-        g.drawEllipse(cx-r*.56f,cy-r*.56f,1.12f*r,1.12f*r,.8f);
+        surgery::rack::knob(g,x,y,w,h,position,start,end);
     }
     void drawButtonBackground(juce::Graphics& g,juce::Button& button,
                               const juce::Colour&,bool over,bool down) override {
-        const auto r=button.getLocalBounds().toFloat().reduced(1.5f);
-        const bool enabled=button.getToggleState();
-        const auto accent=theme_==2?juce::Colour(0xff50dcb1):
-                          theme_==3?juce::Colour(0xffdda67a):
-                                    juce::Colour(0xff65bdd4);
-        juce::ColourGradient metallic(enabled?juce::Colour(0xff2b5964):juce::Colour(0xff33444d),
-                                      r.getX(),r.getY(),
-                                      juce::Colour(0xff0a131a),r.getX(),r.getBottom(),false);
-        g.setGradientFill(metallic);
-        g.fillRoundedRectangle(r,4.0f);
-        g.setColour(enabled?accent:juce::Colour(0xff62737b));
-        g.drawRoundedRectangle(r,4.0f,enabled?1.5f:0.9f);
-        if(enabled){
-            g.setColour(accent.withAlpha(.93f));
-            g.fillRoundedRectangle(r.getX()+5,r.getY()+3,r.getWidth()-10,2.0f,1.0f);
-        }
-        if(down||over){
-            g.setColour(juce::Colours::white.withAlpha(down?.08f:.035f));
-            g.fillRoundedRectangle(r,4.0f);
-        }
+        surgery::rack::bezel(g,button.getLocalBounds().toFloat().reduced(2.0f),button.getToggleState(),3);
+        if(over||down){g.setColour(juce::Colours::white.withAlpha(down?.1f:.04f));g.fillPath(surgery::rack::cut(button.getLocalBounds().toFloat().reduced(3),3));}
     }
     void drawButtonText(juce::Graphics& g,juce::TextButton& b,bool,bool) override {
         g.setColour(b.isEnabled()?juce::Colour(0xffe4f0f1):juce::Colour(0xff83969c));
@@ -75,6 +51,35 @@ public:
         g.drawFittedText(b.getButtonText(),b.getLocalBounds().reduced(5,2),
                          juce::Justification::centred,1);
     }
-private:
-    int theme_=0;
+    void drawComboBox(juce::Graphics& g,int w,int h,bool,int,int,int,int,juce::ComboBox& box) override {
+        surgery::rack::bezel(g,juce::Rectangle<float>(1,1,(float)w-2,(float)h-2),false,2);
+        g.setColour(juce::Colour(0xffd7eff4));
+        juce::Path arrow;arrow.startNewSubPath((float)w-20,h*.42f);arrow.lineTo((float)w-15,h*.6f);arrow.lineTo((float)w-10,h*.42f);
+        g.strokePath(arrow,juce::PathStrokeType(1.6f));
+    }
+    void drawLabel(juce::Graphics& g,juce::Label& label) override {
+        if(dynamic_cast<juce::Slider*>(label.getParentComponent())!=nullptr){
+            const auto r=label.getLocalBounds().toFloat().reduced(.5f);
+            g.setColour(juce::Colour(0xff010608));g.fillRoundedRectangle(r,1.5f);
+            g.setColour(juce::Colour(0xff00bbd3).withAlpha(.65f));g.drawRoundedRectangle(r,1.5f,.7f);
+            if(!label.isBeingEdited()){
+                g.setColour(juce::Colour(0xffe9f9fc));g.setFont(juce::Font(juce::FontOptions(12.5f,juce::Font::bold)));
+                g.drawFittedText(label.getText(),label.getLocalBounds().reduced(2),juce::Justification::centred,1);
+            }
+            return;
+        }
+        juce::LookAndFeel_V4::drawLabel(g,label);
+    }
+    void drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,float pos,float min,float max,
+                          juce::Slider::SliderStyle style,juce::Slider& slider) override {
+        if(style!=juce::Slider::LinearHorizontal){juce::LookAndFeel_V4::drawLinearSlider(g,x,y,width,height,pos,min,max,style,slider);return;}
+        auto track=juce::Rectangle<float>((float)x,(float)y+height*.35f,(float)width,height*.3f);
+        g.setColour(juce::Colour(0xff010506));g.fillRoundedRectangle(track.expanded(2),3);
+        g.setColour(juce::Colour(0xff19353d));g.fillRoundedRectangle(track,2);
+        auto fill=track.withWidth(juce::jlimit(0.f,(float)width,pos-x));
+        juce::ColourGradient light(juce::Colour(0xff00efff),fill.getX(),fill.getY(),juce::Colour(0xff008ea9),fill.getRight(),fill.getY(),false);
+        g.setGradientFill(light);g.fillRoundedRectangle(fill,2);
+        g.setColour(juce::Colour(0xff00d9ec));g.fillEllipse(pos-6,track.getCentreY()-6,12,12);
+        g.setColour(juce::Colour(0xffb2f5ff));g.drawEllipse(pos-6,track.getCentreY()-6,12,12,.7f);
+    }
 };
