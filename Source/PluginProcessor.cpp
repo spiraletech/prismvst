@@ -250,9 +250,9 @@ PRISMVSTAudioProcessor::PRISMVSTAudioProcessor()
       apvts(*this, nullptr, "PARAMETERS", createParameterLayout())
 {
     const char* rootNames[] = { "gain_db", "mono", "on", "domain", "comp", "detector", "threshold",
-        "onyx_sparkle", "onyx_shine", "onyx_smooth", "onyx_tape", "solo" };
+        "onyx_sparkle", "onyx_shine", "onyx_smooth", "onyx_tape", "solo", "quartz_tone" };
     for (int root = 0; root < numSections; ++root)
-        for (int field = 0; field < 12; ++field)
+        for (int field = 0; field < 13; ++field)
             rootParameters[(size_t)root].values[(size_t)field] = apvts.getRawParameterValue(rootsRootControlId(root, rootNames[field]));
     for (int node = 0; node < 14; ++node)
         for (int field = 0; field < 2; ++field)
@@ -534,6 +534,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout PRISMVSTAudioProcessor::crea
             juce::ParameterID{id("detector"),1},label+"Compression Domain",
             juce::StringArray{"STEREO LINK","DUAL MID/SIDE","MID ONLY","SIDE ONLY"},0));
     }
+
+    // QUARTZ is the independent, linear tonal darkening parameter per ROOT.
+    for (int root=0;root<numSections;++root)
+        p.push_back(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { rootsRootControlId(root,"quartz_tone"), 1 },
+            juce::String(sectionName(root)) + " QUARTZ Tone",
+            juce::NormalisableRange<float>(0.0f,100.0f,0.1f),0.0f));
 
     // The v1.0 global ONYX IDs remain registered for session compatibility;
     // they no longer alter the master bus.
@@ -1150,6 +1157,7 @@ void PRISMVSTAudioProcessor::processRootsEngine(juce::AudioBuffer<float>& buffer
         c.shine=juce::jlimit(0.0f,1.0f,rootParameters[(size_t)root].values[8]->load()*0.01f);
         c.smooth=juce::jlimit(0.0f,1.0f,rootParameters[(size_t)root].values[9]->load()*0.01f);
         c.tape=juce::jlimit(0.0f,1.0f,rootParameters[(size_t)root].values[10]->load()*0.01f);
+        c.quartz=juce::jlimit(0.0f,1.0f,rootParameters[(size_t)root].values[12]->load()*0.01f);
         rootsEngine.config(i,c);
     }
     if(buffer.getNumChannels()>=2)

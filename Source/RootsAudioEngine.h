@@ -20,7 +20,7 @@ struct Config {
     Domain domain=Domain::stereo;
     Compressor comp=Compressor::off;
     Detector detector=Detector::linked;
-    double sparkle=0.0,shine=0.0,smooth=0.0,tape=0.0;
+    double sparkle=0.0,shine=0.0,smooth=0.0,tape=0.0,quartz=0.0;
     bool enabled=true,solo=false;
 };
 struct Meter { double correlation=1.0,midRms=0.0,sideRms=0.0,spaceApplied=1.0,largestGrDb=0.0; };
@@ -89,7 +89,7 @@ public:
             node.midTap.reset();node.sideTap.reset();
             node.e1=node.e2=node.sideEnergy=node.midEnergy=0.0;
             node.onyxMid.prepare(sr_);node.onyxSide.prepare(sr_);
-            node.fx={node.config.sparkle,node.config.shine,node.config.smooth,node.config.tape};
+            node.fx={node.config.sparkle,node.config.shine,node.config.smooth,node.config.tape,node.config.quartz};
             node.enableMix=node.config.enabled?1.0:0.0;
             node.monoMix=rootMono_[(size_t)(i/2)]?1.0:0.0;
             node.compMix=node.config.comp==Compressor::off?0.0:1.0;
@@ -270,7 +270,7 @@ private:
         Filter midEq,sideEq,midTap,sideTap;
         double e1=0.0,e2=0.0,midEnergy=0.0,sideEnergy=0.0;
         OnyxMemory onyxMid{},onyxSide{};
-        std::array<double,4> fx{};
+        std::array<double,5> fx{};
         double enableMix=1,monoMix=0,compMix=0,threshold=0;
         Compressor profile=Compressor::optical3;
     };
@@ -280,8 +280,8 @@ private:
         const auto& c=node.config;
         const double originalM=m,originalS=s;
         const double a=1.0-gainSmoothingAlpha_;
-        const std::array<double,4> targets{c.sparkle,c.shine,c.smooth,c.tape};
-        for(size_t i=0;i<4;++i)node.fx[i]+=a*(targets[i]-node.fx[i]);
+        const std::array<double,5> targets{c.sparkle,c.shine,c.smooth,c.tape,c.quartz};
+        for(size_t i=0;i<5;++i)node.fx[i]+=a*(targets[i]-node.fx[i]);
         node.enableMix+=a*((c.enabled?1.0:0.0)-node.enableMix);
         node.monoMix+=a*((rootMono_[(size_t)root]?1.0:0.0)-node.monoMix);
         node.compMix+=a*((c.comp==Compressor::off?0.0:1.0)-node.compMix);

@@ -133,9 +133,9 @@ private:
     std::array<juce::TextButton,4> modeButtons_;
     std::array<juce::TextButton,4> carveSlotButtons_;
     juce::Slider carveFrequency_,carveDepth_,carveQ_;
-    std::array<juce::Slider,4> onyxSliders_;
-    std::array<juce::Label,4> onyxLabels_;
-    std::array<std::unique_ptr<SliderA>,4> onyxAttachments_;
+    std::array<juce::Slider,5> onyxSliders_;
+    std::array<juce::Label,5> onyxLabels_;
+    std::array<std::unique_ptr<SliderA>,5> onyxAttachments_;
     juce::TextButton carveOn_{"CARVE ON"},carveDynamic_{"DYNAMIC"};
     juce::Label carveFrequencyLabel_,carveDepthLabel_,carveQLabel_;
     std::unique_ptr<SliderA> carveFrequencyA_,carveDepthA_,carveQA_;
