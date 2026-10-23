@@ -35,6 +35,9 @@ public:
         // Linear minimum-phase HF softening: H(z)=(1-q)+q*a/(1-(1-a)z^-1).
         // No nonlinear waveshaping or dry/wet delay difference.
         quartzLow+=quartzA*(x-quartzLow);
+        // Flush only QUARTZ's inaudible recursive tail before it becomes
+        // subnormal. 1e-30 is below -600 dBFS; no allocation or host calls.
+        if (std::abs(quartzLow) < 1e-30) quartzLow=0.0;
         const double quartzTone=x+0.72*quartz*(quartzLow-x);
         air+=airA*(x-air);
         presence+=presenceA*(x-presence);
