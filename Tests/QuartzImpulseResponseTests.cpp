@@ -80,6 +80,27 @@ void checkNeutralAndWarmSwitch(double sr) {
     requireNear(switched.sample(1.0, on), fresh.sample(1.0, on), 0.0,
                 "QUARTZ prepare retained filter history");
 }
+// After a normal-amplitude impulse, QUARTZ's recursive low-pass state must
+// settle without emitting subnormal samples during subsequent digital silence.
+// This does not certify the four independent legacy ONYX filter states.
+void checkQuartzDenormalTail(double sr) {
+    surgery::Onyx processor;
+    processor.prepare(sr);
+    const std::array<double, 5> quartzOnly{0.0, 0.0, 0.0, 0.0, 1.0};
+    int lastNonzero = -1;
+    for (int n = 0; n < 12000; ++n) {
+        const double output = processor.sample(n == 0 ? 1.0 : 0.0, quartzOnly);
+        if (!std::isfinite(output))
+            throw std::runtime_error("QUARTZ impulse tail became non-finite");
+        if (std::fpclassify(output) == FP_SUBNORMAL)
+            throw std::runtime_error("QUARTZ impulse tail emitted a subnormal sample at n="
+                                     + std::to_string(n));
+        if (output != 0.0)
+            lastNonzero = n;
+    }
+    if (lastNonzero >= 8000)
+        throw std::runtime_error("QUARTZ impulse tail failed to settle to zero");
+}
 } // namespace
 
 int main() {
@@ -87,7 +108,8 @@ int main() {
         for (double amount : {0.2, 0.5, 1.0})
             checkImpulse(sr, amount);
         checkNeutralAndWarmSwitch(sr);
+        checkQuartzDenormalTail(sr);
     }
     std::cout << "QUARTZ: impulse/complex transfer/neutral/legacy/warm-switch/reset"
-              << " verified at 44.1, 48 and 96 kHz\n";
+              << "/denormal-tail verified at 44.1, 48 and 96 kHz\n";
 }
