@@ -25,7 +25,7 @@ int main(int argc,char** argv){
     double maxNeutral=0,maxPeak=0;int index=0;
     for(double sr:{44100.,48000.,96000.}){
         surgery::Onyx zero;zero.prepare(sr);
-        for(int n=0;n<(int)sr;++n){double x=.7*std::sin(2*std::numbers::pi*997*n/sr);maxNeutral=std::max(maxNeutral,std::abs(x-zero.sample(x,{})));}
+        for(int n=0;n<(int)sr;++n){double x=.7*std::sin(2*std::numbers::pi*997*n/sr);maxNeutral=std::max(maxNeutral,std::abs(x-zero.sample(x,std::array<double,4>{})));}
         for(int knob=0;knob<4;++knob)for(double amount:{.2,1.})for(double level:{.1,.7})for(double hz:{1000.,8000.}){
             surgery::Onyx fx;fx.prepare(sr);Baseline old;old.sr=sr;
             std::array<double,4>a{};a[(size_t)knob]=amount;
@@ -58,7 +58,7 @@ int main(int argc,char** argv){
         }
         // Automation back to zero, silence decay and finite/DC regression.
         surgery::Onyx fx;fx.prepare(sr);double tail=0;
-        for(int n=0;n<3*(int)sr;++n){double x=n<(int)sr?.8:0;tail=fx.sample(x,{1,1,1,1});}
+        for(int n=0;n<3*(int)sr;++n){double x=n<(int)sr?.8:0;tail=fx.sample(x,std::array<double,4>{1,1,1,1});}
         if(std::abs(tail)>1e-8)throw std::runtime_error("ONYX DC tail");
     }
     if(maxNeutral!=0)throw std::runtime_error("ONYX zero must null exactly");
@@ -79,7 +79,7 @@ int main(int argc,char** argv){
         for(int v=0;v<2;++v){
             surgery::Onyx fx;fx.prepare(48000);Baseline old;double check=0;
             auto started=std::chrono::steady_clock::now();
-            for(int n=0;n<48000*10;++n){double x=.7*std::sin(n*.13);check+=v==0?old.sample(x,{1,1,1,1}):fx.sample(x,{1,1,1,1});}
+            for(int n=0;n<48000*10;++n){double x=.7*std::sin(n*.13);check+=v==0?old.sample(x,{1,1,1,1}):fx.sample(x,std::array<double,4>{1,1,1,1});}
             double elapsed=std::chrono::duration<double>(std::chrono::steady_clock::now()-started).count();
             cpu<<v<<","<<elapsed<<",10,"<<check<<"\n";
         }
